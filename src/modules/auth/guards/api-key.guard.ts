@@ -107,13 +107,38 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     // Body fence. Sends carry their target chat in the body, not the path (`POST /messages` and the
-    // other write routes). Every send DTO names it `chatId`, so one check here fences the whole send
-    // surface instead of one per handler — and a handler cannot forget it. Remaining body shapes
-    // (bulk `items[].chatId`, forward `to`) are enumerated by the structural coverage spec.
+    // other write routes). Single sends name it `chatId`, bulk send names `messages[].chatId`, and
+    // forward names `fromChatId` and `toChatId`. Fenced centrally here so the whole send surface is
+    // protected and a handler cannot forget it.
     const body: unknown = request.body;
-    const bodyChatId = body !== null && typeof body === 'object' ? (body as { chatId?: unknown }).chatId : undefined;
-    if (typeof bodyChatId === 'string' && bodyChatId && !this.chatScope.allows(apiKey, bodyChatId)) {
-      throw new ForbiddenException('API key not authorized for this chat');
+    if (body !== null && typeof body === 'object') {
+      const b = body as Record<string, unknown>;
+
+      const bodyChatId = b.chatId;
+      if (typeof bodyChatId === 'string' && bodyChatId && !this.chatScope.allows(apiKey, bodyChatId)) {
+        throw new ForbiddenException('API key not authorized for this chat');
+      }
+
+      const fromChatId = b.fromChatId;
+      if (typeof fromChatId === 'string' && fromChatId && !this.chatScope.allows(apiKey, fromChatId)) {
+        throw new ForbiddenException('API key not authorized for this chat');
+      }
+
+      const toChatId = b.toChatId;
+      if (typeof toChatId === 'string' && toChatId && !this.chatScope.allows(apiKey, toChatId)) {
+        throw new ForbiddenException('API key not authorized for this chat');
+      }
+
+      const bodyMessages = b.messages;
+      if (Array.isArray(bodyMessages)) {
+        for (const item of bodyMessages) {
+          const itemChatId =
+            item !== null && typeof item === 'object' ? (item as { chatId?: unknown }).chatId : undefined;
+          if (typeof itemChatId === 'string' && itemChatId && !this.chatScope.allows(apiKey, itemChatId)) {
+            throw new ForbiddenException('API key not authorized for this chat');
+          }
+        }
+      }
     }
 
     // Routes marked @RequireUnscopedKey carry no session dimension, so the allowedSessions check

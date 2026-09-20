@@ -33,12 +33,14 @@ function createMockContext(
   headers: Record<string, string> = {},
   params: Record<string, string> = {},
   socketIp = '127.0.0.1',
+  body?: unknown,
 ): ExecutionContext {
   const request = {
     headers,
     params,
     ip: socketIp,
     socket: { remoteAddress: socketIp },
+    body,
   };
 
   return {
@@ -409,5 +411,150 @@ describe('ApiKeyGuard', () => {
     await guard.canActivate(context);
 
     expect(authService.validateApiKey).toHaveBeenCalledWith('key', '203.0.113.50', undefined);
+  });
+
+  describe('chat scope enforcement', () => {
+    const ALLOWED_GROUP = '120363000000000000@g.us';
+    const FORBIDDEN_GROUP = '120363999999999999@g.us';
+    const ALLOWED_CONTACT = '919999999999@c.us';
+    const FORBIDDEN_CONTACT = '918888888888@c.us';
+
+    it('rejects a route param chat outside allowedChats with 403', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, { chatId: FORBIDDEN_GROUP });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+    });
+
+    it('admits a route param chat inside allowedChats', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, { chatId: ALLOWED_GROUP });
+      expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('rejects a single-send body.chatId outside allowedChats with 403', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        chatId: FORBIDDEN_GROUP,
+        text: 'hi',
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+    });
+
+    it('admits a single-send body.chatId inside allowedChats', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        chatId: ALLOWED_GROUP,
+        text: 'hi',
+      });
+      expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('rejects message forward when fromChatId is outside allowedChats with 403', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP, ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        fromChatId: FORBIDDEN_GROUP,
+        toChatId: ALLOWED_CONTACT,
+        messageId: 'm1',
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+    });
+
+    it('rejects message forward when toChatId is outside allowedChats with 403', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP, ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        fromChatId: ALLOWED_GROUP,
+        toChatId: FORBIDDEN_CONTACT,
+        messageId: 'm1',
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+    });
+
+    it('admits message forward when both fromChatId and toChatId are inside allowedChats', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP, ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        fromChatId: ALLOWED_GROUP,
+        toChatId: ALLOWED_CONTACT,
+        messageId: 'm1',
+      });
+      expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('rejects bulk send when any message recipient is outside allowedChats with 403', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        messages: [
+          { chatId: ALLOWED_GROUP, type: 'text', content: { text: 'one' } },
+          { chatId: FORBIDDEN_CONTACT, type: 'text', content: { text: 'two' } },
+        ],
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+    });
+
+    it('admits bulk send when every message recipient is inside allowedChats', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP, ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        messages: [
+          { chatId: ALLOWED_GROUP, type: 'text', content: { text: 'one' } },
+          { chatId: ALLOWED_CONTACT, type: 'text', content: { text: 'two' } },
+        ],
+      });
+      expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('admits forward and bulk send for an unrestricted key (allowedChats null)', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const apiKey = createMockApiKey({ allowedChats: null });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const forwardContext = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        fromChatId: FORBIDDEN_GROUP,
+        toChatId: FORBIDDEN_CONTACT,
+        messageId: 'm1',
+      });
+      expect(await guard.canActivate(forwardContext)).toBe(true);
+
+      reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+      const bulkContext = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        messages: [{ chatId: FORBIDDEN_CONTACT, type: 'text', content: { text: 'unrestricted' } }],
+      });
+      expect(await guard.canActivate(bulkContext)).toBe(true);
+    });
   });
 });

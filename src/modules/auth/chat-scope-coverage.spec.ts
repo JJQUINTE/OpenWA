@@ -29,14 +29,12 @@ const GUARD_CHAT_PARAMS = ['chatId', 'groupId', 'contactId'];
  */
 const ALLOWLIST = new Map<string, string>([
   ['message.controller.ts :: getMessages', 'GET /messages without chatId: require chatId or filter the page'],
-  ['message.controller.ts :: sendBulk', 'bulk send: each items[].chatId must be checked'],
-  ['message.controller.ts :: forward', 'forward target travels as `to`, not chatId'],
 ]);
 
 /**
- * Request DTOs that carry a chat id, mapped to how the id is named. `chatId` is fenced centrally by
- * the ApiKeyGuard's body rule; any other chat-targeting property (e.g. forward's `to`) is not, so a
- * `@Body()` of that shape is an offender until a handler checks it or it is allowlisted.
+ * Request DTOs that carry a chat id, mapped to how the id is named. `chatId`, forward chats, and
+ * bulk messages are fenced centrally by the ApiKeyGuard's body rule; any other chat-targeting
+ * property is not, so a `@Body()` of that shape is an offender until a handler checks it or it is allowlisted.
  */
 function chatBearingDtoClasses(dir: string): Map<string, 'chatId' | 'other'> {
   const out = new Map<string, 'chatId' | 'other'>();
@@ -53,8 +51,14 @@ function chatBearingDtoClasses(dir: string): Map<string, 'chatId' | 'other'> {
       for (const chunk of source.split(/export\s+class\s+/).slice(1)) {
         const name = /^([A-Za-z0-9_]+)/.exec(chunk)?.[1];
         if (!name) continue;
-        if (/\bchatId[!?]?\s*:/.test(chunk)) out.set(name, 'chatId');
-        else if (/\b(?:to|recipient)[!?]?\s*:/.test(chunk)) out.set(name, 'other');
+        if (
+          /\b(?:chatId|toChatId|fromChatId)[!?]?\s*:/.test(chunk) ||
+          /\bmessages[!?]?\s*:\s*BulkMessageItemDto\[\]/.test(chunk)
+        ) {
+          out.set(name, 'chatId');
+        } else if (/\b(?:to|recipient)[!?]?\s*:/.test(chunk)) {
+          out.set(name, 'other');
+        }
       }
     }
   };
@@ -101,12 +105,15 @@ function listControllerFiles(dir: string): string[] {
 }
 
 describe('chat-scoped keys cannot reach chats outside their allowedChats', () => {
-  it('the guard fences both the path chat params and body.chatId', () => {
+  it('the guard fences both the path chat params, body.chatId, forward chats, and bulk send messages', () => {
     const guard = readFileSync(join(__dirname, 'guards', 'api-key.guard.ts'), 'utf8');
     for (const param of GUARD_CHAT_PARAMS) {
       expect(guard).toContain(`request.params['${param}']`);
     }
     expect(guard).toMatch(/bodyChatId/);
+    expect(guard).toMatch(/fromChatId/);
+    expect(guard).toMatch(/toChatId/);
+    expect(guard).toMatch(/bodyMessages/);
   });
 
   it('flags a handler that reads @Query(chatId) without ChatScopeService', () => {
