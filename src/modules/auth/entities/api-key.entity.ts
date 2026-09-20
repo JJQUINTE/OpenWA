@@ -36,6 +36,13 @@ export class ApiKey {
   @Column({ type: 'simple-array', nullable: true })
   allowedSessions!: string[] | null;
 
+  // Chat-level allowlist, independent of allowedSessions and the same fail-open semantic: NULL or
+  // empty means "every chat". Entries are WhatsApp chat ids (a group `<id>@g.us`, a contact
+  // `<phone>@c.us` / `<lid>@lid`, or a bare phone number). Enforced on the read surface and on
+  // sends; see src/common/security/chat-scope.ts.
+  @Column({ type: 'simple-array', nullable: true })
+  allowedChats!: string[] | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 

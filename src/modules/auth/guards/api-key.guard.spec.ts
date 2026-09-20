@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ApiKeyGuard } from './api-key.guard';
 import { AuthService } from '../auth.service';
+import { ChatScopeService } from '../chat-scope.service';
 import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../audit/entities/audit-log.entity';
@@ -17,6 +18,7 @@ function createMockApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
     role: ApiKeyRole.OPERATOR,
     allowedIps: null,
     allowedSessions: null,
+    allowedChats: null,
     isActive: true,
     expiresAt: null,
     lastUsedAt: null,
@@ -64,6 +66,7 @@ describe('ApiKeyGuard', () => {
       reflector,
       configService as ConfigService,
       auditService as AuditService,
+      new ChatScopeService(),
     );
   }
 

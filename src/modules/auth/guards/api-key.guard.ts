@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
+import { ChatScopeService } from '../chat-scope.service';
 import { ApiKeyRole } from '../entities/api-key.entity';
 import { REQUIRED_ROLE_KEY, PUBLIC_KEY, SESSION_SCOPED_KEY, UNSCOPED_KEY } from '../decorators/auth.decorators';
 import { resolveClientIp } from '../../../common/utils/ip';
@@ -17,6 +18,7 @@ export class ApiKeyGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
+    private readonly chatScope: ChatScopeService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -90,6 +92,28 @@ export class ApiKeyGuard implements CanActivate {
 
     if (requiredRole && !this.authService.hasPermission(apiKey, requiredRole)) {
       throw new ForbiddenException(`Insufficient permissions. Required: ${requiredRole}`);
+    }
+
+    // Chat fence. Routes that name a chat in the path — `:chatId`, `:groupId`, `:contactId` — are
+    // rejected when the chat is outside the key's `allowedChats`, exactly as a session outside
+    // `allowedSessions` is rejected inside validateApiKey. An unrestricted key (no allowlist) admits
+    // every chat, so the model stays fail-open. List routes (`/chats`, `/contacts`, `/groups`, …) and
+    // sends whose target travels in the body carry no such param; they scope themselves through
+    // ChatScopeService, which is what the structural coverage spec enforces.
+    const scopedChatId = (request.params['chatId'] || request.params['groupId'] || request.params['contactId']) as
+      string | undefined;
+    if (scopedChatId && !this.chatScope.allows(apiKey, scopedChatId)) {
+      throw new ForbiddenException('API key not authorized for this chat');
+    }
+
+    // Body fence. Sends carry their target chat in the body, not the path (`POST /messages` and the
+    // other write routes). Every send DTO names it `chatId`, so one check here fences the whole send
+    // surface instead of one per handler — and a handler cannot forget it. Remaining body shapes
+    // (bulk `items[].chatId`, forward `to`) are enumerated by the structural coverage spec.
+    const body: unknown = request.body;
+    const bodyChatId = body !== null && typeof body === 'object' ? (body as { chatId?: unknown }).chatId : undefined;
+    if (typeof bodyChatId === 'string' && bodyChatId && !this.chatScope.allows(apiKey, bodyChatId)) {
+      throw new ForbiddenException('API key not authorized for this chat');
     }
 
     // Routes marked @RequireUnscopedKey carry no session dimension, so the allowedSessions check

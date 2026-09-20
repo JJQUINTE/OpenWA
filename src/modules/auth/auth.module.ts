@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ApiKey } from './entities/api-key.entity';
 import { AuthService } from './auth.service';
 import { ApiKeyUsageTracker } from './api-key-usage-tracker.service';
+import { ChatScopeService } from './chat-scope.service';
 import { AuthController } from './auth.controller';
 import { AuthValidateController } from './auth-validate.controller';
 import { ApiKeyGuard } from './guards/api-key.guard';
@@ -16,6 +17,7 @@ import { ProxyAwareThrottlerGuard } from '../../common/security/proxy-aware-thro
   providers: [
     AuthService,
     ApiKeyUsageTracker,
+    ChatScopeService,
     {
       provide: APP_GUARD,
       useClass: ProxyAwareThrottlerGuard,
@@ -25,6 +27,6 @@ import { ProxyAwareThrottlerGuard } from '../../common/security/proxy-aware-thro
       useClass: ApiKeyGuard,
     },
   ],
-  exports: [AuthService],
+  exports: [AuthService, ChatScopeService],
 })
 export class AuthModule {}

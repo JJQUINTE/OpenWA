@@ -9947,6 +9947,17 @@
               "type": "string"
             }
           },
+          "allowedChats": {
+            "description": "Chat ids this key may read and send to — a curated allowlist independent of `allowedSessions`. Entries are a group `<id>@g.us`, a contact `<phone>@c.us` / `<lid>@lid`, or a bare phone number. A contact entry also matches its resolved `@lid` form (and vice versa) through the lid mapping table. Omit or leave empty to let the key reach every chat.",
+            "example": [
+              "120363000000000000@g.us",
+              "919999999999@c.us"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "expiresAt": {
             "type": "string",
             "description": "Expiration date (ISO 8601)",
@@ -9985,6 +9996,12 @@
             }
           },
           "allowedSessions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedChats": {
             "type": "array",
             "items": {
               "type": "string"
@@ -10058,6 +10075,12 @@
               "type": "string"
             }
           },
+          "allowedChats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "isActive": {
             "type": "boolean"
           },
@@ -10108,6 +10131,12 @@
             }
           },
           "allowedSessions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedChats": {
             "type": "array",
             "items": {
               "type": "string"

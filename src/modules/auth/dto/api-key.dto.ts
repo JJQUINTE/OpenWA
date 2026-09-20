@@ -13,6 +13,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiKeyRole } from '../entities/api-key.entity';
 import { IsIpOrCidrConstraint } from './is-ip-or-cidr.validator';
 import { IsSessionIdConstraint } from './is-session-id.validator';
+import { IsChatIdConstraint } from './is-chat-id.validator';
 
 export class CreateApiKeyDto {
   @ApiProperty({
@@ -58,6 +59,21 @@ export class CreateApiKeyDto {
   allowedSessions?: string[];
 
   @ApiPropertyOptional({
+    description:
+      'Chat ids this key may read and send to — a curated allowlist independent of `allowedSessions`. ' +
+      'Entries are a group `<id>@g.us`, a contact `<phone>@c.us` / `<lid>@lid`, or a bare phone number. ' +
+      'A contact entry also matches its resolved `@lid` form (and vice versa) through the lid mapping ' +
+      'table. Omit or leave empty to let the key reach every chat.',
+    example: ['120363000000000000@g.us', '919999999999@c.us'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayUnique()
+  @Validate(IsChatIdConstraint, { each: true })
+  allowedChats?: string[];
+
+  @ApiPropertyOptional({
     description: 'Expiration date (ISO 8601)',
     example: '2027-12-31T23:59:59Z',
   })
@@ -86,6 +102,9 @@ export class ApiKeyResponseDto {
 
   @ApiPropertyOptional()
   allowedSessions?: string[];
+
+  @ApiPropertyOptional()
+  allowedChats?: string[];
 
   @ApiProperty()
   isActive!: boolean;
@@ -147,6 +166,14 @@ export class UpdateApiKeyDto {
   @ArrayUnique()
   @Validate(IsSessionIdConstraint, { each: true })
   allowedSessions?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayUnique()
+  @Validate(IsChatIdConstraint, { each: true })
+  allowedChats?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -185,6 +185,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       role: dto.role || ApiKeyRole.OPERATOR,
       allowedIps: dto.allowedIps || null,
       allowedSessions: normalizeScopeList(dto.allowedSessions),
+      allowedChats: normalizeScopeList(dto.allowedChats),
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
     });
 
@@ -231,6 +232,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       role: apiKey.role,
       allowedIps: apiKey.allowedIps,
       allowedSessions: apiKey.allowedSessions,
+      allowedChats: apiKey.allowedChats,
       expiresAt: apiKey.expiresAt,
     };
 
@@ -239,6 +241,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (dto.role) patch.role = dto.role;
     if (dto.allowedIps !== undefined) patch.allowedIps = dto.allowedIps;
     if (dto.allowedSessions !== undefined) patch.allowedSessions = normalizeScopeList(dto.allowedSessions);
+    if (dto.allowedChats !== undefined) patch.allowedChats = normalizeScopeList(dto.allowedChats);
     if (dto.expiresAt !== undefined) patch.expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
 
     let saved: ApiKey;
