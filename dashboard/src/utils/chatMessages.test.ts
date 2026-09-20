@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildMentionNameMap,
+  resolveMentions,
   mapEngineHistoryMessage,
   mergeChatMessages,
   mergeReactionSnapshot,
@@ -438,4 +440,40 @@ test('mergeReactionSnapshot treats an EMPTY snapshot as an answer, not as absenc
 
 test('mergeReactionSnapshot stays undefined when neither side knows anything', () => {
   assert.equal(mergeReactionSnapshot(undefined, undefined), undefined);
+});
+
+test('buildMentionNameMap keys on the author JID\'s local part, stripped of a :device suffix', () => {
+  const map = buildMentionNameMap([
+    msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' }),
+    msg({ author: '628111@c.us:7', chatName: 'Group Admin' }),
+  ]);
+  assert.equal(map.get('166868170059932'), 'Sneha Desai');
+  assert.equal(map.get('628111'), 'Group Admin');
+});
+
+test('buildMentionNameMap skips a row with no author or no resolved name', () => {
+  const map = buildMentionNameMap([msg({ author: undefined, chatName: 'Sneha Desai' }), msg({ author: '628@c.us', chatName: undefined })]);
+  assert.equal(map.size, 0);
+});
+
+test('resolveMentions replaces a matched @<digits> token with @<FirstName>', () => {
+  const names = buildMentionNameMap([msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' })]);
+  assert.equal(
+    resolveMentions('Hi @166868170059932, any update?', names),
+    'Hi @Sneha, any update?',
+  );
+});
+
+test('resolveMentions leaves an unmatched @<digits> token exactly as WhatsApp sent it', () => {
+  const names = buildMentionNameMap([msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' })]);
+  assert.equal(resolveMentions('Hi @999999999, who is this?', names), 'Hi @999999999, who is this?');
+});
+
+test('resolveMentions does not touch a short @-token that is not a real mention (below the digit floor)', () => {
+  const names = buildMentionNameMap([msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' })]);
+  assert.equal(resolveMentions('see item @42', names), 'see item @42');
+});
+
+test('resolveMentions is a no-op with an empty name map (skips the regex pass entirely)', () => {
+  assert.equal(resolveMentions('Hi @166868170059932', new Map()), 'Hi @166868170059932');
 });
