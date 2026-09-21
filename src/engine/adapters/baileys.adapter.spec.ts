@@ -5172,6 +5172,98 @@ describe('BaileysAdapter contact + chat reads', () => {
     });
   });
 
+  describe('address book on a first link', () => {
+    // During a first link's initial sync Baileys folds the app-state contacts.upsert (the saved name)
+    // into the messaging-history.set record it already holds for that id, so the saved name arrives
+    // as a chat title and is stripped. That run opens at accountSyncCounter 0, where hydrateNames
+    // skips the snapshot pull, so the pull has to follow the end of the initial sync instead.
+    const addressbookPulls = (): unknown[] =>
+      fakeSock.authState.keys.set.mock.calls.filter(
+        ([arg]) => JSON.stringify(arg) === JSON.stringify({ 'app-state-sync-version': { critical_unblock_low: null } }),
+      );
+    const absorbed = { id: '628111@s.whatsapp.net', name: 'Saved' };
+
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+      fakeSock.authState.creds.accountSyncCounter = 0;
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+      fakeSock.authState.creds.accountSyncCounter = 0;
+    });
+
+    it('pulls the snapshot once the initial history sync goes quiet, and a reconnect still repairs', async () => {
+      const adapter = await ready();
+      await jest.advanceTimersByTimeAsync(0);
+      fakeSock.fire('messaging-history.set', { contacts: [absorbed], chats: [], messages: [] });
+      await expect(adapter.getContacts()).resolves.toHaveLength(0);
+
+      fakeSock.fire('creds.update', { accountSyncCounter: 1 });
+      await jest.advanceTimersByTimeAsync(10_000);
+      // A later chunk pushes the pull back: pulling now would be absorbed into it the same way.
+      fakeSock.fire('messaging-history.set', { contacts: [absorbed], chats: [], messages: [] });
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(addressbookPulls()).toHaveLength(0);
+
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(addressbookPulls()).toHaveLength(1);
+      expect(fakeSock.resyncAppState).toHaveBeenCalledWith(['critical_unblock_low'], true);
+      fakeSock.fire('contacts.upsert', [absorbed]);
+      await expect(adapter.getContacts()).resolves.toEqual([
+        expect.objectContaining({ id: '628111@c.us', name: 'Saved' }),
+      ]);
+
+      // The first-link pull is not this instance's one reconnect pull, which covers a chunk that
+      // arrived after the quiet window and absorbed the names again.
+      fakeSock.authState.creds.accountSyncCounter = 1;
+      fakeSock.fire('connection.update', { connection: 'open' });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(addressbookPulls()).toHaveLength(2);
+    });
+
+    it('arms the pull only on the counter leaving 0, not on a whole-creds update', async () => {
+      await ready();
+      await jest.advanceTimersByTimeAsync(0);
+      // Baileys emits the whole creds object (counter included) on 'open' and elsewhere.
+      fakeSock.fire('creds.update', { accountSyncCounter: 0, lastPropHash: 'h' });
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(addressbookPulls()).toHaveLength(0);
+
+      fakeSock.fire('creds.update', { accountSyncCounter: 1 });
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(addressbookPulls()).toHaveLength(1);
+      fakeSock.fire('creds.update', { accountSyncCounter: 1, lastPropHash: 'h' });
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(addressbookPulls()).toHaveLength(1);
+    });
+
+    it('never arms the pull on an established session', async () => {
+      const { useMultiFileAuthState } = jest.requireMock<{ useMultiFileAuthState: jest.Mock }>(
+        '@whiskeysockets/baileys',
+      );
+      useMultiFileAuthState.mockResolvedValueOnce({ state: { creds: { accountSyncCounter: 5 }, keys: {} }, saveCreds });
+      fakeSock.authState.creds.accountSyncCounter = 5;
+      await ready();
+      await jest.advanceTimersByTimeAsync(0);
+      const afterOpen = addressbookPulls().length;
+      fakeSock.fire('creds.update', { accountSyncCounter: 5, lastPropHash: 'h' });
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(addressbookPulls()).toHaveLength(afterOpen);
+    });
+
+    it('drops a pending pull when the connection closes', async () => {
+      await ready();
+      await jest.advanceTimersByTimeAsync(0);
+      fakeSock.fire('creds.update', { accountSyncCounter: 1 });
+      fakeSock.fire('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: new Boom('lost', { statusCode: 428 }) },
+      });
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(addressbookPulls()).toHaveLength(0);
+    });
+  });
+
   it('contact/chat reads reject with EngineNotReadyError before connect', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});

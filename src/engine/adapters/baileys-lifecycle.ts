@@ -148,6 +148,8 @@ export interface BaileysLifecycleHost {
   captureHistoryMessages: BaileysHistory['captureHistoryMessages'];
   /** Backfill names the initial sync skipped (runs on connection 'open'). */
   hydrateNames: BaileysHistory['hydrateNames'];
+  /** Pull the saved address book from a snapshot (a first link's pull, once its history sync is quiet). */
+  restoreAddressbookSnapshot: BaileysHistory['restoreAddressbookSnapshot'];
   /** The currently-registered onQRCode callback, if any (assigned at initialize()). */
   getOnQRCode(): EngineEventCallbacks['onQRCode'];
   /** The currently-registered onReady callback, if any (assigned at initialize()). */
@@ -170,6 +172,8 @@ export class BaileysLifecycle {
   /** A close this long after the previous close means the connection had been healthy in between —
    *  the backoff counter restarts from scratch instead of inheriting an old incident's attempts. */
   private static readonly RECONNECT_STABILITY_RESET_MS = 5 * 60_000;
+  /** How long a first link's history sync must stay silent before the address-book pull runs. */
+  private static readonly ADDRESSBOOK_QUIET_MS = 20_000;
 
   /** Live Baileys socket, null when disconnected. Public so the adapter's `sock` accessor can alias
    *  it (an unmodified spec pokes `adapter.sock` through a cast; delegate hosts read it live). */
@@ -185,6 +189,8 @@ export class BaileysLifecycle {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   /** The current socket's BAILEYS_WS_CONNECTING_DEADLINE_MS backstop. */
   private connectingTimer?: ReturnType<typeof setTimeout>;
+  /** A first link's pending address-book pull (see scheduleAddressbookRestore). */
+  private addressbookTimer?: ReturnType<typeof setTimeout>;
   /** Date.now() of the last close that scheduled a reconnect — input to the stability reset. */
   private lastConnectionCloseAt = 0;
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
@@ -391,16 +397,21 @@ export class BaileysLifecycle {
     }, BAILEYS_WS_CONNECTING_DEADLINE_MS);
     this.connectingTimer.unref();
 
-    sock.ev.on(
-      'creds.update',
-      () =>
-        void saveCreds().catch(err => {
-          this.host.logger.warn('Baileys creds.update save failed', {
-            sessionId: this.host.config.sessionId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }),
-    );
+    // Baileys raises the counter above 0 once, when a first link's initial sync ends (or times out).
+    // Whole-creds emits carry the field too, so only that transition on a first link arms the pull.
+    let awaitingFirstSync = !((state.creds.accountSyncCounter ?? 0) > 0);
+    sock.ev.on('creds.update', update => {
+      void saveCreds().catch(err => {
+        this.host.logger.warn('Baileys creds.update save failed', {
+          sessionId: this.host.config.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      if (awaitingFirstSync && (update.accountSyncCounter ?? 0) > 0) {
+        awaitingFirstSync = false;
+        this.scheduleAddressbookRestore(sock);
+      }
+    });
     sock.ev.on('connection.update', update => this.handleConnectionUpdate(update));
     sock.ev.on('messages.upsert', event => this.host.handleMessagesUpsert(event));
     sock.ev.on('messages.update', updates => this.host.handleMessagesUpdate(updates));
@@ -433,6 +444,10 @@ export class BaileysLifecycle {
     sock.ev.on('groups.upsert', groups => this.host.handleGroupsUpsert(groups));
     sock.ev.on('group.join-request', event => this.host.handleGroupJoinRequest(event));
     sock.ev.on('messaging-history.set', history => {
+      // A chunk still arriving means the pull could be absorbed into the next one: wait again.
+      if (this.addressbookTimer) {
+        this.scheduleAddressbookRestore(sock);
+      }
       // History sync copies conversation.displayName into `name`, which is a chat title, not the
       // address-book saved name (that arrives via contacts.upsert from app-state contactAction).
       // Fold the title into notify so chat-name fallback still works, and leave `name` unset so
@@ -466,6 +481,35 @@ export class BaileysLifecycle {
     sock.ev.on('lid-mapping.update', ({ lid, pn }) => this.host.addLidMappings([{ lid, pn }]));
     sock.ev.on('call', calls => this.host.handleCallEvents(calls));
     sock.ev.on('presence.update', update => this.host.handlePresenceUpdate(update));
+  }
+
+  /**
+   * Pull the address book once a first link's history sync has gone quiet. During the initial sync
+   * Baileys folds saved names into the history batch, where they are stripped as chat titles (see
+   * BaileysHistory.hydrateNames), and that run opens with accountSyncCounter 0, so the pull on
+   * 'open' skips it. Pulling straight away would share the event buffer with the next history chunk
+   * and be absorbed the same way, so every chunk pushes the pull back by the quiet window.
+   */
+  private scheduleAddressbookRestore(sock: WASocket): void {
+    this.cancelAddressbookRestore();
+    this.addressbookTimer = setTimeout(() => {
+      this.addressbookTimer = undefined;
+      if (this.sock !== sock) {
+        return;
+      }
+      this.host.restoreAddressbookSnapshot().catch(err => {
+        this.host.logger.warn('Address-book restore after the initial sync failed', {
+          sessionId: this.host.config.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, BaileysLifecycle.ADDRESSBOOK_QUIET_MS);
+    this.addressbookTimer.unref();
+  }
+
+  private cancelAddressbookRestore(): void {
+    clearTimeout(this.addressbookTimer);
+    this.addressbookTimer = undefined;
   }
 
   private handleConnectionUpdate(update: {
@@ -525,6 +569,7 @@ export class BaileysLifecycle {
 
     if (connection === 'close') {
       clearTimeout(this.connectingTimer);
+      this.cancelAddressbookRestore();
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
         ?.statusCode;
 
@@ -735,6 +780,7 @@ export class BaileysLifecycle {
       this.reconnectTimer = undefined;
     }
     clearTimeout(this.connectingTimer);
+    this.cancelAddressbookRestore();
     void this.sock?.end(undefined);
     this.sock = null;
     // Cached call handles die with the socket — drop them so a later rejectCall() reports
@@ -816,6 +862,7 @@ export class BaileysLifecycle {
       this.reconnectTimer = undefined;
     }
     clearTimeout(this.connectingTimer);
+    this.cancelAddressbookRestore();
     try {
       void sourceSock.end(undefined);
     } catch {
@@ -900,6 +947,7 @@ export class BaileysLifecycle {
       this.reconnectTimer = undefined;
     }
     clearTimeout(this.connectingTimer);
+    this.cancelAddressbookRestore();
     void this.sock?.end(undefined);
     this.sock = null;
     this.host.liveCalls.clear();

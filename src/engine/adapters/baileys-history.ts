@@ -148,6 +148,11 @@ export class BaileysHistory {
    * is then PARTIAL rather than empty, and a count-based gate reads partial as "nothing to do" and
    * never repairs it. The snapshot pull is the only source that cannot be absorbed, so it runs on its
    * own schedule instead of on a count.
+   *
+   * A first link opens with the counter still at 0, so this method skips the pull there; the
+   * lifecycle pulls once the initial history sync has gone quiet instead (see
+   * BaileysLifecycle.scheduleAddressbookRestore). That pull does not count as this instance's one, so
+   * a first reconnect still repairs whatever a late history chunk absorbed again.
    */
   async hydrateNames(): Promise<void> {
     try {
@@ -211,11 +216,11 @@ export class BaileysHistory {
    * then sets `return_snapshot` because the collection has no version. `isInitialSync: true` keeps
    * delete-chat mutations from wiping conversations that history is not about to rebuild.
    */
-  private async restoreAddressbookSnapshot(): Promise<void> {
+  async restoreAddressbookSnapshot(): Promise<void> {
     const name = BaileysHistory.ADDRESSBOOK_COLLECTION;
     await this.sock().authState.keys.set({ 'app-state-sync-version': { [name]: null } });
     await this.sock().resyncAppState([name], true);
-    this.host.logger.debug('Restored address-book snapshot after reconnect', {
+    this.host.logger.debug('Restored address-book snapshot', {
       action: 'baileys_restore_addressbook',
       contacts: this.host.contactCount(),
     });
