@@ -4089,6 +4089,7 @@ describe('BaileysAdapter store-backed ops', () => {
 });
 
 describe('BaileysAdapter group management', () => {
+  const PNG_INPUT = { mimetype: 'image/png', data: 'QUJD' };
   const META = {
     id: '123-456@g.us',
     subject: 'G',
@@ -4410,8 +4411,46 @@ describe('BaileysAdapter group management', () => {
     await expect(call(adapter)).rejects.toBeInstanceOf(GroupNotFoundError);
   });
 
-  it('deleteGroupPicture keeps a 404 as a refusal: that IQ is not addressed to the group', async () => {
+  it('deleteGroupPicture keeps a 404 as a refusal when the group resolves: that IQ is not addressed to it', async () => {
     fakeSock.removeProfilePicture.mockRejectedValueOnce(Object.assign(new Error('item-not-found'), { data: 404 }));
+    fakeSock.groupMetadata.mockResolvedValueOnce(META);
+    const adapter = await ready();
+    await expect(adapter.deleteGroupPicture('123-456@g.us')).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
+  it.each([
+    ['setGroupPicture', (a: BaileysAdapter) => a.setGroupPicture('123-456@g.us', PNG_INPUT), 'updateProfilePicture'],
+    ['deleteGroupPicture', (a: BaileysAdapter) => a.deleteGroupPicture('123-456@g.us'), 'removeProfilePicture'],
+  ])('%s answers 404 for a refused write to a group that does not resolve', async (_name, call, sockMethod) => {
+    (fakeSock as unknown as Record<string, jest.Mock>)[sockMethod].mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), { data: 403 }),
+    );
+    fakeSock.groupMetadata.mockRejectedValueOnce(Object.assign(new Error('item-not-found'), { data: 404 }));
+    const adapter = await ready();
+    await expect(call(adapter)).rejects.toBeInstanceOf(GroupNotFoundError);
+  });
+
+  // groupMetadata answers 401/403 for a group the account left or was removed from; the sibling
+  // group writes answer 403 there, so the picture writes must not read it as an unknown group.
+  it.each([401, 403])('a group picture refusal stays 403 when the metadata lookup answers %i', async code => {
+    fakeSock.updateProfilePicture.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { data: 403 }));
+    fakeSock.groupMetadata.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { data: code }));
+    const adapter = await ready();
+    await expect(adapter.setGroupPicture('123-456@g.us', PNG_INPUT)).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
+  it('a group picture refusal stays a refusal when the metadata lookup itself fails', async () => {
+    fakeSock.removeProfilePicture.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { data: 403 }));
+    fakeSock.groupMetadata.mockRejectedValueOnce(new Error('Connection Closed'));
+    const adapter = await ready();
+    await expect(adapter.deleteGroupPicture('123-456@g.us')).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
+  it('a group picture refusal stays a refusal when the metadata lookup throws synchronously', async () => {
+    fakeSock.removeProfilePicture.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { data: 403 }));
+    fakeSock.groupMetadata.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read properties of null (reading 'groupMetadata')");
+    });
     const adapter = await ready();
     await expect(adapter.deleteGroupPicture('123-456@g.us')).rejects.toBeInstanceOf(EngineRefusedError);
   });

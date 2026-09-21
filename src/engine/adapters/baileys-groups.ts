@@ -447,18 +447,47 @@ export class BaileysGroups {
     this.host.ensureReady();
     // Same socket call as the own-account picture, addressed at the group JID.
     const { data } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
-    // Not groupWrite: the w:profile:picture IQ goes to the server with the group as `target`, so a
-    // 404 there is not known to mean the group is gone (on a removal it may mean "no picture").
-    await mapServerRefusal('Setting the group picture', () =>
+    await this.pictureWrite(groupId, 'Setting the group picture', () =>
       this.confirmed(this.sock().updateProfilePicture(groupId, data), 'the group picture change'),
     );
   }
 
   async deleteGroupPicture(groupId: string): Promise<void> {
     this.host.ensureReady();
-    await mapServerRefusal('Removing the group picture', () =>
+    await this.pictureWrite(groupId, 'Removing the group picture', () =>
       this.confirmed(this.sock().removeProfilePicture(groupId), 'the group picture removal'),
     );
+  }
+
+  /**
+   * Not groupWrite: the w:profile:picture IQ goes to the server with the group as `target`, so a
+   * 404 there is not known to mean the group is gone (on a removal it may mean "no picture"). A
+   * refusal is therefore checked against the group metadata, and only a metadata item-not-found (404)
+   * answers 404; a group the account left or was removed from (401/403) stays a 403 refusal, as in
+   * groupWrite. The extra query is paid on the refusal path alone.
+   */
+  private async pictureWrite(groupId: string, operation: string, op: () => Promise<void>): Promise<void> {
+    try {
+      await mapServerRefusal(operation, op);
+    } catch (err) {
+      if (err instanceof EngineRefusedError) {
+        // Inside the chain so a socket torn down meanwhile (sock() throwing) is a failed lookup too.
+        const lookupCode = await Promise.resolve()
+          .then(() =>
+            withQueryDeadline(
+              this.sock().groupMetadata(groupId),
+              this.queryBudgetMs,
+              'WhatsApp did not answer the group metadata query in time',
+            ),
+          )
+          .then(
+            () => undefined,
+            (lookupErr: unknown) => refusedStatusCode(lookupErr),
+          );
+        if (lookupCode === 404) throw new GroupNotFoundError(groupId);
+      }
+      throw err;
+    }
   }
 
   async setGroupMemberAddMode(groupId: string, mode: GroupMemberAddMode): Promise<void> {
