@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isMediaUrl, MEDIA_URL_MESSAGE } from '../../../common/media/media-url';
 import { ApiKeyRole } from '../../../modules/auth/entities/api-key.entity';
 import type { MessageService } from '../../../modules/message/message.service';
 import {
@@ -32,6 +33,13 @@ const quotedMessageIdSchema = z
     'Quote an earlier message, making this send a reply. Engine-specific: whatsapp-web.js takes ' +
       'the serialized message id, Baileys the raw key id of a message it has already stored.',
   );
+
+/**
+ * The same media url rule as the REST routes: both engines fetch only a string that starts with
+ * http(s):// and decode anything else as base64, so any other value would go out as garbage bytes.
+ */
+const mediaUrl = (label: string) =>
+  z.string().refine(isMediaUrl, { error: MEDIA_URL_MESSAGE }).optional().describe(`${label} URL (http/https)`);
 
 /**
  * Mirrors the REST `mentions` field. The element rule and both caps come from the DTO rather than
@@ -169,7 +177,7 @@ export function messageTools(message: MessageService): AnyToolDescriptor[] {
       inputSchema: z.object({
         sessionId,
         chatId: z.string().describe('Chat JID'),
-        url: z.string().url().optional().describe('Image URL (http/https)'),
+        url: mediaUrl('Image'),
         base64: z.string().optional().describe('Base64-encoded image data'),
         mimetype: z.string().optional().describe('MIME type (required when using base64)'),
         filename: z.string().max(255).optional(),
@@ -198,7 +206,7 @@ export function messageTools(message: MessageService): AnyToolDescriptor[] {
       inputSchema: z.object({
         sessionId,
         chatId: z.string().describe('Chat JID'),
-        url: z.string().url().optional().describe('Video URL (http/https)'),
+        url: mediaUrl('Video'),
         base64: z.string().optional().describe('Base64-encoded video data'),
         mimetype: z.string().optional().describe('MIME type (required when using base64)'),
         filename: z.string().max(255).optional(),
@@ -227,7 +235,7 @@ export function messageTools(message: MessageService): AnyToolDescriptor[] {
       inputSchema: z.object({
         sessionId,
         chatId: z.string().describe('Chat JID'),
-        url: z.string().url().optional().describe('Audio URL (http/https)'),
+        url: mediaUrl('Audio'),
         base64: z.string().optional().describe('Base64-encoded audio data'),
         mimetype: z.string().optional().describe('MIME type (required when using base64)'),
         filename: z.string().max(255).optional(),
@@ -258,7 +266,7 @@ export function messageTools(message: MessageService): AnyToolDescriptor[] {
       inputSchema: z.object({
         sessionId,
         chatId: z.string().describe('Chat JID'),
-        url: z.string().url().optional().describe('Document URL (http/https)'),
+        url: mediaUrl('Document'),
         base64: z.string().optional().describe('Base64-encoded document data'),
         mimetype: z.string().optional().describe('MIME type (required when using base64)'),
         filename: z.string().max(255).optional(),
@@ -337,7 +345,7 @@ export function messageTools(message: MessageService): AnyToolDescriptor[] {
       inputSchema: z.object({
         sessionId,
         chatId: z.string().describe('Chat JID'),
-        url: z.string().url().optional().describe('Sticker URL (http/https)'),
+        url: mediaUrl('Sticker'),
         base64: z.string().optional().describe('Base64-encoded sticker data'),
         mimetype: z.string().optional().describe('MIME type (required when using base64)'),
         filename: z.string().max(255).optional(),
