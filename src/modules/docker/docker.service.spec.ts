@@ -1,5 +1,5 @@
 import Docker from 'dockerode';
-import { DockerService } from './docker.service';
+import { DockerService, prestartBuiltinDatabase } from './docker.service';
 
 // Prevent actual Docker connections on module init during tests
 jest.mock('dockerode');
@@ -240,6 +240,53 @@ describe('DockerService.onModuleInit', () => {
 
     await expect(service.onModuleInit()).resolves.toBeUndefined();
     expect(service.isDockerAvailable()).toBe(true);
+  });
+});
+
+describe('prestartBuiltinDatabase', () => {
+  const builtin = { DATABASE_TYPE: 'postgres', POSTGRES_BUILTIN: 'true' };
+
+  afterEach(() => DockerMock.mockReset());
+
+  it('starts a stopped built-in postgres container through a real DockerService', async () => {
+    const container = {
+      inspect: jest.fn().mockResolvedValue({ State: { Running: false } }),
+      start: jest.fn().mockResolvedValue(undefined),
+    };
+    const docker = {
+      ping: jest.fn().mockResolvedValue(undefined),
+      listContainers: jest.fn().mockResolvedValue([{ Id: 'pg' }]),
+      getContainer: jest.fn().mockReturnValue(container),
+    };
+    DockerMock.mockImplementation(() => docker);
+
+    await prestartBuiltinDatabase(builtin, new DockerService());
+
+    expect(docker.listContainers).toHaveBeenCalledWith({
+      all: true,
+      filters: { label: ['com.openwa.service=database'] },
+    });
+    expect(container.start).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['an sqlite deployment', { DATABASE_TYPE: 'sqlite', POSTGRES_BUILTIN: 'true' }],
+    ['an external postgres', { DATABASE_TYPE: 'postgres', POSTGRES_BUILTIN: 'false' }],
+    ['no built-in flag', { DATABASE_TYPE: 'postgres' }],
+  ])('does nothing for %s', async (_label, env) => {
+    const service = { startBuiltinDatabase: jest.fn().mockResolvedValue(undefined) };
+    await prestartBuiltinDatabase(env, service);
+    expect(service.startBuiltinDatabase).not.toHaveBeenCalled();
+  });
+
+  it('gives up after the timeout when the Docker endpoint never answers', async () => {
+    const service = { startBuiltinDatabase: () => new Promise<void>(() => undefined) };
+    await expect(prestartBuiltinDatabase(builtin, service, 10)).resolves.toBeUndefined();
+  });
+
+  it('never throws, so boot proceeds to the data connection as before', async () => {
+    const service = { startBuiltinDatabase: jest.fn().mockRejectedValue(new Error('boom')) };
+    await expect(prestartBuiltinDatabase(builtin, service)).resolves.toBeUndefined();
   });
 });
 
