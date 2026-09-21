@@ -271,6 +271,54 @@ test('an empty message or a media type with no file or URL keeps Send disabled',
   assert.equal(sendMessageButton().disabled, true);
 });
 
+test('a session that stops being ready is replaced by what the selector shows', async () => {
+  const status: Record<string, string> = { s1: 'ready', s2: 'ready' };
+  const sends: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(
+        jsonResponse([
+          { id: 's1', name: 'Alpha', status: status.s1, phone: '15550000001' },
+          { id: 's2', name: 'Beta', status: status.s2, phone: '15550000002' },
+        ]),
+      );
+    }
+    if (url.endsWith('/groups')) return Promise.resolve(jsonResponse([{ id: 'g1@g.us', name: 'Family' }]));
+    if (url.endsWith('/messages/send-text')) {
+      sends.push(url);
+      return Promise.resolve(jsonResponse({ messageId: 'm1', timestamp: 1 }, 201));
+    }
+    return Promise.resolve(jsonResponse([]));
+  }) as typeof fetch;
+  window.localStorage.setItem('openwa_user_role', 'admin');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
+  const { container } = rtl.render(
+    createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
+  );
+  await rtl.screen.findByRole('option', { name: /Beta/ });
+  const select = field(container, '#mt-1');
+  rtl.fireEvent.change(select, { target: { value: 's2' } });
+  await rtl.waitFor(() => assert.equal(select.value, 's2'));
+
+  status.s2 = 'disconnected';
+  await client.invalidateQueries({ queryKey: ['sessions'] });
+  await rtl.waitFor(() => assert.equal(select.value, 's1'));
+
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Group' }));
+  rtl.fireEvent.click(await rtl.screen.findByRole('checkbox', { name: 'Family' }));
+  rtl.fireEvent.change(rtl.screen.getByPlaceholderText('Enter your message here...'), { target: { value: 'hi' } });
+  await rtl.waitFor(() => assert.equal(sendButton().disabled, false));
+  rtl.fireEvent.click(sendButton());
+  await rtl.waitFor(() => assert.equal(sends.length, 1));
+  assert.ok(sends[0].includes('/sessions/s1/'), sends[0]);
+
+  status.s1 = 'disconnected';
+  await client.invalidateQueries({ queryKey: ['sessions'] });
+  await rtl.waitFor(() => assert.equal(select.value, ''));
+  assert.equal(sendButton().disabled, true);
+});
+
 test('a recipients file over the cap is refused without being read', async () => {
   const { container } = await pickRecipientsFile(maxBytes + 1);
 

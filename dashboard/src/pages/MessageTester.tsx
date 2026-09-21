@@ -178,10 +178,10 @@ export function MessageTester() {
 
   const { data: groups = [], isLoading: loadingGroups } = useSessionGroupsQuery(session, recipientType === 'group');
 
+  // Also re-picks when the chosen session leaves the ready list on a refetch: the select would show
+  // the first option while every send still went to the dropped one.
   useEffect(() => {
-    if (sessions.length > 0 && !session) {
-      setSession(sessions[0].id);
-    }
+    if (!sessions.some(s => s.id === session)) setSession(sessions[0]?.id ?? '');
   }, [sessions, session]);
 
   useEffect(() => {
