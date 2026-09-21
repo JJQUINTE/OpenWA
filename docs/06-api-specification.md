@@ -6013,6 +6013,11 @@ Disable a plugin.
 { "success": true, "message": "Plugin disabled successfully" }
 ```
 
+The engine plugin `ENGINE_TYPE` selects (`baileys` or `whatsapp-web.js`) cannot be disabled at runtime:
+the gateway runs that engine whatever its plugin status says. The request is refused in-band as
+`{ "success": false, "message": "…" }` (still HTTP 200) and changes nothing; set `ENGINE_TYPE` and
+restart to switch engines.
+
 **Errors:** `401` · `403` · `404` unknown id
 
 ---
