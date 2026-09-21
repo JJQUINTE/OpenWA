@@ -299,6 +299,35 @@ describe('MessageSendService', () => {
       expect(calls[1][1]).toMatchObject({ message: { status: MessageStatus.FAILED } });
     });
 
+    it('logs an engine-side send failure with the session, chat and type', async () => {
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger,
+        'warn',
+      );
+      const pageError = new Error('t');
+      pageError.name = 't';
+      mockEngine.sendTextMessage.mockRejectedValueOnce(pageError);
+
+      await expect(service.sendText('sess-1', { chatId: '628123456789@c.us', text: 'hi' })).rejects.toThrow();
+
+      expect(warn).toHaveBeenCalledWith(
+        'Send failed in the engine (text)',
+        expect.objectContaining({ sessionId: 'sess-1', chatId: '628123456789@c.us', error: 't: t' }),
+      );
+    });
+
+    it('does not log a client-fault send failure', async () => {
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger,
+        'warn',
+      );
+      mockEngine.sendTextMessage.mockRejectedValueOnce(new BadRequestException('bad chat id'));
+
+      await expect(service.sendText('sess-1', { chatId: '628123456789@c.us', text: 'hi' })).rejects.toThrow();
+
+      expect(warn).not.toHaveBeenCalledWith('Send failed in the engine (text)', expect.anything());
+    });
+
     it('reconciles provider indexes when the send echo won the race: upsert the surviving row + drop the ghost (#906)', async () => {
       const echoRow = {
         id: 'echo-uuid-9',
@@ -938,6 +967,47 @@ describe('MessageSendService', () => {
 
       expect(mockEngine.sendTextMessage).toHaveBeenCalledWith('test@c.us', 'hi');
     });
+
+    it('stores the quoted message body, not an empty quote box', async () => {
+      // Every sender but reply and click-button routes the quoted id through the shared persist,
+      // which hardcoded an empty body, so the dashboard drew a blank quote above a quoted image,
+      // location, contact or poll.
+      (repository.findOne as jest.Mock).mockResolvedValueOnce({ id: 'row-9', body: 'the original text' });
+
+      await service.sendImage('sess-1', {
+        chatId: 'test@c.us',
+        url: 'https://example.com/a.png',
+        quotedMessageId: 'wa-quoted-9',
+      });
+
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { sessionId: 'sess-1', waMessageId: 'wa-quoted-9' },
+      });
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            quotedMessage: { id: 'wa-quoted-9', body: 'the original text' },
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('still stores the quote when the quoted row cannot be read', async () => {
+      (repository.findOne as jest.Mock).mockRejectedValueOnce(new Error('database is locked'));
+
+      await service.sendLocation('sess-1', {
+        chatId: 'test@c.us',
+        latitude: 1,
+        longitude: 2,
+        quotedMessageId: 'wa-quoted-9',
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ quotedMessage: { id: 'wa-quoted-9', body: '' } }) as unknown,
+        }),
+      );
+    });
   });
 
   // ── reply / forward ───────────────────────────────────────────────
@@ -1029,6 +1099,31 @@ describe('MessageSendService', () => {
             quotedMessage: { id: 'PROMPT-1', body: '' },
             button: { id: 'yes', text: 'Sim' },
           },
+        }),
+      );
+    });
+
+    it('quotes the prompt body so the dashboard renders the answered prompt, not an empty box', async () => {
+      // A click IS a reply to the prompt. The quote box is rendered from this metadata, and it was
+      // hardcoded empty while the reply path resolved the same field from the stored message.
+      (repository.findOne as jest.Mock).mockResolvedValueOnce({ id: 'row-1', body: 'Confirmar o pedido?' });
+
+      await service.clickButton('sess-1', {
+        chatId: 'test@c.us',
+        messageId: 'PROMPT-1',
+        buttonId: 'yes',
+      });
+
+      // The lookup is scoped to the session: without it, one session's prompt body could be quoted
+      // into another session's outgoing row.
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { sessionId: 'sess-1', waMessageId: 'PROMPT-1' },
+      });
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            quotedMessage: { id: 'PROMPT-1', body: 'Confirmar o pedido?' },
+          }) as unknown,
         }),
       );
     });

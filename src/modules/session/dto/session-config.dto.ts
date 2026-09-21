@@ -21,7 +21,7 @@ export class UpdateSessionConfigDto {
       'Auto-reject every incoming call as soon as it rings. Baileys engine only: whatsapp-web.js cannot ' +
       'reject a call. The call.received event is still ' +
       'emitted first, so a webhook consumer sees the call regardless. Takes effect on the next ' +
-      'incoming call — the session is not restarted.',
+      'incoming call, and the session is not restarted.',
     example: true,
     nullable: true,
     // Explicit because the TypeScript type is a union: emitDecoratorMetadata reduces `boolean | null`

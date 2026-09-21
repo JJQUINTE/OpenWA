@@ -287,6 +287,25 @@ describe('validateIngressManifest: response contract', () => {
     ).toThrow(/invalid characters/);
   });
 
+  it('rejects a non-string ack body', () => {
+    // A manifest is third-party JSON. Left unchecked, a number or object here reached the renderer,
+    // which drops anything that is not a string, so the route answered every delivery with an EMPTY
+    // ack while the manifest read as if it declared one.
+    expect(() =>
+      validateIngressManifest(manifestWithRoute({ response: { ack: { body: 42 as unknown as string } } })),
+    ).toThrow(/ack\.body/);
+  });
+
+  it('rejects a non-string ack header value', () => {
+    // Same silent drop, and the CR/LF guard below does not catch it: RegExp.test coerces its
+    // argument, so a number passes the injection check and is then filtered out at render time.
+    expect(() =>
+      validateIngressManifest(
+        manifestWithRoute({ response: { ack: { headers: { 'x-retry': 5 as unknown as string } } } }),
+      ),
+    ).toThrow(/'x-retry'/);
+  });
+
   it('rejects a non-token ack header name', () => {
     expect(() =>
       validateIngressManifest(manifestWithRoute({ response: { ack: { headers: { 'bad header': 'x' } } } })),

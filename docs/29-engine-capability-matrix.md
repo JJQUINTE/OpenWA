@@ -25,7 +25,7 @@ Statuses used in the tables:
 
 Two complementary views:
 
-- **29.4 — the OpenWA contract view.** Rows are the 113 `IWhatsAppEngine` methods; use it to see
+- **29.4, the OpenWA contract view.** Rows are the 113 `IWhatsAppEngine` methods; use it to see
   what a REST caller gets per engine. Source of truth: `src/engine/engine-capability-matrix.ts`
   (per-cell `evidence` strings cite the exact library `file:symbol` inspected).
 - **29.5 — the full engine inventory.** Rows are **every method the installed libraries expose**,
@@ -158,27 +158,32 @@ reaching READY is not evidence that every patch landed. See docs/12 for the oper
 This is the patch visibility the matrix cells refer to. Every patch is engine-specific (8 on wwjs,
 2 on Baileys), and **no row carries a row-level patch mark on both engines**. The two column-wide
 patches are a separate matter: 🔧¹ underwrites every wwjs cell and 🔧⁵ every baileys cell, so in
-that sense every row does depend on a patch on each side. "Patch-dependent" below means the
-row-level marks.
+that sense every row does depend on a patch on each side. "Patch-dependent" below means a patch
+this row needs specifically, which is usually marked in the row and, for the two that cover a whole
+class of rows (🔧⁸ and 🔧¹⁰), stated in the table instead.
 
-| Patch                       | Matrix rows that depend on it                                                                                                                                                                                                                                                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🔧¹ message-id backport     | **The whole wwjs column** (header-marked, not repeated per row): every wwjs cell that sends, receives or resolves a message id. On unpatched 1.34.7 against WhatsApp Web ≥ 2.3000.x, sends return no message object and chat/media reads throw the minified `r: r`. Not row-specific, so the wwjs column header carries `🔧¹`.                         |
-| 🔧² status-send repair      | `postTextStatus`, `postImageStatus`, `postVideoStatus`, `postVoiceStatus` — **wwjs cells only**. Stock 1.34.7 throws before any status send on current WhatsApp Web builds. These four rows are ✅ on both engines, but the wwjs side works only because of this patch.                                                                                |
-| 🔧³ newsletter link preview | `sendTextMessage` (and any send carrying a link preview) **to a channel JID** on wwjs. Row-marked on `sendTextMessage` as the common case.                                                                                                                                                                                                             |
-| 🔧⁴ ready-sync              | `initialize` on wwjs (warm-restore readiness race). Row-marked.                                                                                                                                                                                                                                                                                        |
-| 🔧⁵ app-state resync bound  | No single row — keeps the Baileys socket's app-state resync from spinning (~1000 wasted 60s queries/day). Connection health under **every baileys cell**; the baileys column header carries `🔧⁵`.                                                                                                                                                     |
-| 🔧⁶ newsletter-create parse | `createChannel` on **baileys** — without it the call always answers 500 and leaks the channel it just created. Row-marked.                                                                                                                                                                                                                             |
-| 🔧⁷ participant arity       | `removeParticipants`, `promoteParticipants`, `demoteParticipants` on **wwjs**. Without it a request naming only non-members throws an arity assertion on removal, and promote/demote answer `200` for people WhatsApp never touched; the patch returns one boolean per REQUESTED id so the adapter reports a real per-participant outcome. Row-marked. |
-| 🔧⁹ group description       | `setGroupDescription` on **wwjs**. Without it every call throws in the page and answers a bare `500`, so the capability is dead rather than degraded; `setGroupSubject` beside it is unaffected. Row-marked.                                                                                                                                           |
-| 🔧⁸ block/unblock           | `blockContact`, `unblockContact` on **wwjs**. Without it both answer an opaque `500` on every id, so the capability is dead rather than degraded; the blocklist read still works, which makes the failure look one-sided.                                                                                                                              |
+| Patch                       | Matrix rows that depend on it                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔧¹ message-id backport     | **The whole wwjs column** (header-marked, not repeated per row): every wwjs cell that sends, receives or resolves a message id. On unpatched 1.34.7 against WhatsApp Web ≥ 2.3000.x, sends return no message object and chat/media reads throw the minified `r: r`. Not row-specific, so the wwjs column header carries `🔧¹`.                                                                                                                              |
+| 🔧² status-send repair      | `postTextStatus`, `postImageStatus`, `postVideoStatus`, `postVoiceStatus` — **wwjs cells only**. Stock 1.34.7 throws before any status send on current WhatsApp Web builds. These four rows are ✅ on both engines, but the wwjs side works only because of this patch.                                                                                                                                                                                     |
+| 🔧³ newsletter link preview | `sendTextMessage` (and any send carrying a link preview) **to a channel JID** on wwjs. Row-marked on `sendTextMessage` as the common case.                                                                                                                                                                                                                                                                                                                  |
+| 🔧⁴ ready-sync              | `initialize` on wwjs (warm-restore readiness race). Row-marked.                                                                                                                                                                                                                                                                                                                                                                                             |
+| 🔧⁵ app-state resync bound  | No single row — keeps the Baileys socket's app-state resync from spinning (~1000 wasted 60s queries/day). Connection health under **every baileys cell**; the baileys column header carries `🔧⁵`.                                                                                                                                                                                                                                                          |
+| 🔧⁶ newsletter-create parse | `createChannel` on **baileys** — without it the call always answers 500 and leaks the channel it just created. Row-marked.                                                                                                                                                                                                                                                                                                                                  |
+| 🔧⁷ participant arity       | `removeParticipants`, `promoteParticipants`, `demoteParticipants` on **wwjs**. Without it a request naming only non-members throws an arity assertion on removal, and promote/demote answer `200` for people WhatsApp never touched; the patch returns one boolean per REQUESTED id so the adapter reports a real per-participant outcome. Row-marked.                                                                                                      |
+| 🔧⁹ group description       | `setGroupDescription` on **wwjs**. Without it every call throws in the page and answers a bare `500`, so the capability is dead rather than degraded; `setGroupSubject` beside it is unaffected. Row-marked.                                                                                                                                                                                                                                                |
+| 🔧⁸ block/unblock           | `blockContact`, `unblockContact` on **wwjs**. Without it both answer an opaque `500` on every id, so the capability is dead rather than degraded; the blocklist read still works, which makes the failure look one-sided.                                                                                                                                                                                                                                   |
+| 🔧¹⁰ media send repair      | Every **wwjs** send that carries media: `sendImageMessage`, `sendVideoMessage`, `sendAudioMessage` (voice notes included, through `ptt`), `sendDocumentMessage`, `sendStickerMessage` and the media status posts. On the WhatsApp Web builds from 2026-09-17 the library's own id is clobbered by the media model and every such send answers a bare `500`, while text sends keep working. Not row-marked: it covers a whole class of rows rather than one. |
 
 Rows that are ✅ on **both** engines where one side is patch-dependent: `initialize` (🔧⁴ wwjs),
 `sendTextMessage` (🔧³ wwjs), `postTextStatus` / `postImageStatus` / `postVideoStatus` /
 `postVoiceStatus` (🔧² wwjs), `removeParticipants` / `promoteParticipants` / `demoteParticipants`
-(🔧⁷ wwjs), `setGroupDescription` (🔧⁹ wwjs). Everything else that is ✅-both carries no row-level mark, but still
-rests on the column-wide 🔧¹ (wwjs) and 🔧⁵ (baileys) — no row runs on stock library code on both
-sides.
+(🔧⁷ wwjs), `setGroupDescription` (🔧⁹ wwjs), `blockContact` / `unblockContact` (🔧⁸ wwjs), and
+every media-carrying send (🔧¹⁰ wwjs). The last two carry no mark in the rows themselves and are
+recorded in the table above instead: 🔧¹⁰ because it covers a whole class of rows rather than one,
+🔧⁸ simply because its two rows were never marked. Everything else that is ✅-both carries no patch
+dependency of its own, but still rests on the column-wide 🔧¹ (wwjs) and 🔧⁵ (baileys), so no row
+runs on stock library code on both sides.
 
 ### 29.3.3 Why no patch surfaces `transferChannelOwnership`'s swallowed reason
 
@@ -204,7 +209,7 @@ opens `if (!channel) return false;` before its try, so its `false` conflates _ch
 _WhatsApp refused_, and the adapter answers 403 for both. That distinction is ours to make in our own
 adapter and involves no library change.
 
-## 29.4 Full capability matrix — the OpenWA contract view (113 methods)
+## 29.4 Full capability matrix: the OpenWA contract view (113 methods)
 
 Legend recap: **✅** supported · **✅🔧ⁿ** supported via OpenWA patch `🔧ⁿ` (29.3) ·
 **❌ gap** adapter-gap · **❌ lib** library-limitation. Column headers carry the engine-wide
@@ -884,7 +889,7 @@ adapter boundary — none silently stubs.
 
 ✅ means works end-to-end — but these rows carry behavioral differences worth knowing:
 
-- **`clickButton` (Baileys) — native-flow is unverified.** Classic `buttonsMessage` /
+- **`clickButton` (Baileys), native-flow is unverified.** Classic `buttonsMessage` /
   `templateMessage` / `listMessage` prompts go through Baileys' `buttonReply` / `listReply`
   helpers. A native-flow `interactiveMessage` prompt is answered with the same template
   `buttonReply` shape; Baileys also has `InteractiveResponseMessage.nativeFlowResponseMessage`,
@@ -903,7 +908,7 @@ adapter boundary — none silently stubs.
   `NotImplementedException` → HTTP 501) at `ensureNotChannelRecipient`
   (`wwebjs-messaging.ts:425` for the media funnel, `:492` for stickers). whatsapp-web.js calls
   `msg.avParams()`, removed in a recent WA Web build (upstream wwebjs#201823, unresolved).
-  Text→channel is unaffected, and Baileys has no such restriction — so these five rows answer `501`
+  Text→channel is unaffected, and Baileys has no such restriction, so these five rows answer `501`
   without a per-row ❌ in 29.4.
 - **`sendStickerMessage` — what each engine converts.** Both engines guarantee the payload really is
   WebP, but they reach it differently and they do not accept the same inputs. whatsapp-web.js passes

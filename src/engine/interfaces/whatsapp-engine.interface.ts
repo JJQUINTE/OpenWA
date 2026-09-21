@@ -146,7 +146,7 @@ export interface IncomingMessage {
    * Set when the sender tapped a WhatsApp Business button, template quick-reply, list row, or
    * native-flow control. `id` is the stable handle the business defined on the button/row; `text`
    * is the visible label when WhatsApp still carries it (also mirrored into `body`). **Baileys
-   * only** — whatsapp-web.js does not surface interactive replies as structured fields.
+   * only**: whatsapp-web.js does not surface interactive replies as structured fields.
    */
   button?: {
     id: string;
@@ -154,7 +154,7 @@ export interface IncomingMessage {
   };
   /**
    * Set on an inbound WhatsApp Business prompt that offers buttons (or list rows flattened as
-   * buttons): the choices shown to the recipient. URL/call CTAs are omitted — they are not
+   * buttons): the choices shown to the recipient. URL/call CTAs are omitted, since they are not
    * clickable via {@link IWhatsAppEngine.clickButton} and must not masquerade as button ids.
    * Distinct from {@link IncomingMessage.button}, which is set only when someone *taps* a choice.
    * **Baileys only.** Capped (count and label length) so a malformed prompt cannot bloat
@@ -1058,13 +1058,13 @@ export interface MessageOperationsCapability {
   /**
    * Reply to a WhatsApp Business button / list prompt as if the account tapped a choice.
    * `buttonId` is the stable id from the prompt (see inbound `buttons[].id`); `text` is the visible
-   * label when known. **Baileys only** — whatsapp-web.js has no interactive-reply send path.
+   * label when known. **Baileys only**: whatsapp-web.js has no interactive-reply send path.
    *
    * The prompt must already be in the engine message store (received while the session was live).
    * Classic `buttonsMessage` / `templateMessage` / `listMessage` prompts go through Baileys'
    * `buttonReply` / `listReply` helpers. Native-flow `interactiveMessage` replies are unverified
    * against a live business prompt and must not be treated as fully supported. URL/call CTA
-   * buttons are not clickable this way — only quick-reply style choices and list rows.
+   * buttons are not clickable this way, only quick-reply style choices and list rows.
    */
   clickButton(chatId: string, messageId: string, buttonId: string, text?: string): Promise<MessageResult>;
 

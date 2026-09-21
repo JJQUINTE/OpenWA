@@ -33,11 +33,19 @@ function readCallHookState(): boolean | null {
 /**
  * Warn when a ready session's page carries no call hook.
  *
- * whatsapp-web.js installs the call hook in the same `evaluate` as its message listeners, and that
- * evaluate has no `try`/`catch`: a module that stops resolving earlier in it leaves the message
- * bridge registered and the call hook silently absent. The session then looks completely healthy,
- * keeps delivering messages, and never reports a single incoming call. Operators have no way to see
- * that from the outside, so say it in the log.
+ * whatsapp-web.js patches the call collection only when the page's module for it exposes an `.on`
+ * function. That is the one failure this check can actually see: a WhatsApp Web build that keeps
+ * the module and its internal Map but drops or renames `.on` makes the library skip the hook while
+ * the rest of the evaluate completes, so the session looks completely healthy, keeps delivering
+ * messages, and never reports a single incoming call. Operators have no way to see that from the
+ * outside, so say it in the log.
+ *
+ * The neighbouring failures are NOT this one and are deliberately not reported. A build that
+ * removes or renames the module makes the library's own `require` for it throw, which aborts the
+ * whole evaluate and takes the inbound message bridge registered after it, so that session is
+ * loudly broken for messages too. A build that restructures the collection past recognition leaves
+ * {@link readCallHookState} with nothing to compare and it answers `null`. Both read as
+ * inconclusive here, and inconclusive stays silent.
  *
  * Deliberately advisory: it never changes the session's status. Detection is the only thing lost,
  * and a false alarm on an inconclusive read would send operators after a problem they do not have.
@@ -57,7 +65,9 @@ export async function reportMissingCallHook(
   if (installed !== false) return;
   logger.warn(
     'Incoming calls cannot be detected on this session: the page-side call hook is not installed. ' +
-      'Messages are unaffected; restart the session to reinject it.',
+      'Messages are unaffected. This is a mismatch between whatsapp-web.js and the WhatsApp Web ' +
+      'build it loaded, so a restart only helps if the page was in a transient state; if it repeats, ' +
+      'the library needs an update. Switch the session to the Baileys engine to keep call events.',
     { sessionId, action: 'call_hook_missing' },
   );
 }

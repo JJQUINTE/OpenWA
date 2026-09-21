@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} mevcut",
     "loading": "Yükleniyor...",
     "cancel": "İptal",
     "delete": "Sil",
@@ -312,7 +313,7 @@
       "created": "Oluşturuldu",
       "lastActive": "Son Görülme",
       "autoRejectCalls": "Aramaları otomatik reddet",
-      "autoRejectCallsHint": "Gelen aramalar çaldığı anda reddedilir. call.received webhook'u yine de ilk olarak tetiklenir. Bir sonraki arama için geçerlidir — yeniden başlatma gerekmez. Yalnızca Baileys motorunda: whatsapp-web.js aramaları reddedemez."
+      "autoRejectCallsHint": "Gelen aramalar çaldığı anda reddedilir. call.received webhook'u yine de ilk olarak tetiklenir. Bir sonraki arama için geçerlidir, yeniden başlatma gerekmez. Yalnızca Baileys motorunda: whatsapp-web.js aramaları reddedemez."
     },
     "proxy": {
       "title": "Proxy Configuration",
@@ -644,6 +645,12 @@
     "loadingGroups": "Gruplar yükleniyor...",
     "noGroupsFound": "Grup bulunamadı",
     "selectGroupHint": "WhatsApp'ınızdan bir grup seçin",
+    "selectAllGroups": "Tümünü seç",
+    "selectMatchingGroups": "Eşleşenleri seç",
+    "clearGroupSelection": "Temizle",
+    "groupsSelectedCount": "Seçilen: {{count}}/{{max}}",
+    "noGroupsMatch": "Aramanızla eşleşen grup yok",
+    "forwardUsesFirstGroup": "İletme yalnızca seçilen ilk grubu, iletilecek mesajın bulunduğu sohbet olarak kullanır.",
     "phoneHint": "Boşluk bırakmadan uluslararası formatı kullanın",
     "messageType": "Mesaj Türü",
     "types": {
@@ -701,17 +708,29 @@
     "bulkRecipientsCount": "Alıcılar: {{count}}",
     "bulkDelay": "Mesajlar Arası Gecikme (ms)",
     "bulkDelayHint": "1000–60000 ms (varsayılan 3000)",
+    "bulkMediaKind": "Gönderme biçimi",
+    "bulkMediaHint": "Dosya eklendiğinde mesaj, dosyanın açıklaması olur. Seçilen dosya isteğin içinde gönderilir; bu yüzden çok sayıda alıcıya büyük dosya göndermek için herkese açık bir medya URL'si kullanın.",
+    "bulkMediaTooLarge": "Bu dosya {{count}} alıcıya doğrudan gönderilemeyecek kadar büyük: bu alıcı sayısında dosya en fazla {{size}} olabilir. Bunun yerine herkese açık bir medya URL'si kullanın veya daha az alıcıya gönderin.",
+    "bulkMediaUrlInvalid": "http:// veya https:// ile başlayan tam bir adres girin, örneğin https://example.com/file.pdf.",
+    "bulkCaptionTooLong": "Dosya eklendiğinde mesaj, dosyanın açıklaması olarak gönderilir ve açıklama en fazla {{max}} karakter olabilir (şu an {{count}}).",
+    "bulkAudioNoCaption": "Ses açıklama olmadan gönderilir, bu yüzden bu metin gönderilmez. Mesajı temizleyin veya başka bir tür seçin.",
     "send": "Mesajı Gönder",
     "sending": "Gönderiliyor...",
+    "sendingProgress": "Gönderiliyor {{current}}/{{total}}...",
     "viewOnly": "Yalnızca Görüntüle",
     "responseEmpty": "API yanıtını görmek için bir mesaj gönderin",
     "successLabel": "Başarılı",
     "failedLabel": "Başarısız",
+    "groupsSentSummary": "{{sent}}/{{total}} gönderildi",
+    "groupSendCancelled": "{{count}}, iptal edildi",
+    "groupSendStopped": "{{count}}, HTTP {{status}} sonrası durduruldu",
     "response": {
       "timestamp": "Zaman Damgası",
       "messageId": "Mesaj ID'si",
       "batchId": "Toplu İşlem ID'si (Batch ID)",
-      "error": "Hata"
+      "error": "Hata",
+      "groups": "Gruplar",
+      "notSent": "Gönderilmedi"
     },
     "sendFailed": "Mesaj gönderilemedi",
     "notOnWhatsApp": "Bu numara WhatsApp'ta kayıtlı değil",

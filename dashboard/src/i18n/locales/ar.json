@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "الإصدار v{{version}} متاح",
     "loading": "جارٍ التحميل...",
     "cancel": "إلغاء",
     "delete": "حذف",
@@ -318,7 +319,7 @@
       "created": "تاريخ الإنشاء",
       "lastActive": "آخر نشاط",
       "autoRejectCalls": "الرفض التلقائي للمكالمات",
-      "autoRejectCallsHint": "يتم رفض المكالمات الواردة فور رنينها. ولا يزال الويب هوك call.received يُرسل قبل ذلك. يسري على المكالمة التالية — دون الحاجة إلى إعادة التشغيل. مع محرك Baileys فقط: لا يستطيع whatsapp-web.js رفض المكالمات."
+      "autoRejectCallsHint": "يتم رفض المكالمات الواردة فور رنينها. ولا يزال الويب هوك call.received يُرسل قبل ذلك. يسري على المكالمة التالية, دون الحاجة إلى إعادة التشغيل. مع محرك Baileys فقط: لا يستطيع whatsapp-web.js رفض المكالمات."
     },
     "proxy": {
       "title": "Proxy Configuration",
@@ -659,6 +660,12 @@
     "loadingGroups": "جارٍ تحميل المجموعات...",
     "noGroupsFound": "لم يتم العثور على مجموعات",
     "selectGroupHint": "اختر مجموعة من واتساب الخاص بك",
+    "selectAllGroups": "تحديد الكل",
+    "selectMatchingGroups": "تحديد النتائج",
+    "clearGroupSelection": "مسح",
+    "groupsSelectedCount": "المحدد: {{count}}/{{max}}",
+    "noGroupsMatch": "لا توجد مجموعات تطابق بحثك",
+    "forwardUsesFirstGroup": "تستخدم إعادة التوجيه أول مجموعة محددة فقط، كمحادثة يُعاد التوجيه منها.",
     "phoneHint": "استخدم الصيغة الدولية بدون مسافات",
     "messageType": "نوع الرسالة",
     "types": {
@@ -716,17 +723,29 @@
     "bulkRecipientsCount": "المستلمون: {{count}}",
     "bulkDelay": "التأخير بين الرسائل (مللي ثانية)",
     "bulkDelayHint": "1000–60000 مللي ثانية (الافتراضي 3000)",
+    "bulkMediaKind": "إرسال كـ",
+    "bulkMediaHint": "عند إرفاق ملف تصبح الرسالة تعليقًا عليه. يُرسل الملف المختار داخل الطلب نفسه، لذا تحتاج الملفات الكبيرة لعدد كبير من المستلمين إلى رابط وسائط عام بدلًا منه.",
+    "bulkMediaTooLarge": "هذا الملف كبير جدًا لإرساله مضمَّنًا إلى {{count}} مستلمين: بهذا العدد يمكن أن يصل حجم الملف إلى {{size}} كحد أقصى. استخدم رابط وسائط عامًا بدلًا منه، أو أرسل إلى عدد أقل من المستلمين.",
+    "bulkMediaUrlInvalid": "استخدم عنوانًا كاملًا يبدأ بـ http:// أو https://، مثل https://example.com/file.pdf.",
+    "bulkCaptionTooLong": "عند إرفاق ملف تُرسل الرسالة كتعليق عليه، والحد الأقصى للتعليق {{max}} حرفًا (الآن {{count}}).",
+    "bulkAudioNoCaption": "يُرسَل الصوت بدون تعليق، لذا لن يُرسَل هذا النص. امسح الرسالة أو اختر نوعًا آخر.",
     "send": "إرسال الرسالة",
     "sending": "جارٍ الإرسال...",
+    "sendingProgress": "جارٍ الإرسال {{current}}/{{total}}...",
     "viewOnly": "للعرض فقط",
     "responseEmpty": "أرسل رسالة لرؤية استجابة API",
     "successLabel": "نجاح",
     "failedLabel": "فشل",
+    "groupsSentSummary": "تم إرسال {{sent}}/{{total}}",
+    "groupSendCancelled": "{{count}}، أُلغيت",
+    "groupSendStopped": "{{count}}، توقف بعد HTTP {{status}}",
     "response": {
       "timestamp": "الوقت",
       "messageId": "معرّف الرسالة",
       "batchId": "معرّف الدفعة",
-      "error": "خطأ"
+      "error": "خطأ",
+      "groups": "المجموعات",
+      "notSent": "لم تُرسل"
     },
     "sendFailed": "فشل إرسال الرسالة",
     "notOnWhatsApp": "هذا الرقم غير مسجَّل على واتساب",

@@ -300,8 +300,8 @@ export class SessionEngineControls {
         let tornDown = await this.fences.teardownEngineSafely(id, engine, e => e.disconnect(), 'disconnect');
         if (!tornDown) {
           // The graceful disconnect threw or timed out, so the engine may be half-attached (a leaked
-          // Chromium process or a live socket). Escalate to the hard kill — the same forceDestroy()
-          // forceKill() uses for a wedged engine — before reporting the stop.
+          // Chromium process or a live socket). Escalate to the hard kill, the same forceDestroy()
+          // that forceKill() uses for a wedged engine, before reporting the stop.
           this.logger.warn(`Graceful disconnect failed for session ${session.name}; escalating to force-destroy`, {
             sessionId: id,
             action: 'stop_escalate_force_destroy',
@@ -320,7 +320,7 @@ export class SessionEngineControls {
           throw new BadGatewayException({
             statusCode: HttpStatus.BAD_GATEWAY,
             message:
-              'Session was stopped locally, but the engine teardown did not complete — the engine ' +
+              'Session was stopped locally, but the engine teardown did not complete: the engine ' +
               'process may still be running. Retry the stop; restart the node to reap a leaked process.',
             error: 'Bad Gateway',
             code: 'SESSION_STOP_INCOMPLETE',

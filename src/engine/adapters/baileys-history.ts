@@ -31,9 +31,9 @@ export interface BaileysHistoryHost {
   upsertContacts(records: Partial<BaileysContact>[]): void;
   upsertChats(records: Partial<Chat>[]): void;
   /**
-   * How many contacts the in-memory session store currently holds. Used to decide whether a
-   * reconnect must re-pull the address-book snapshot (Baileys skips history + app-state snapshot
-   * once `accountSyncCounter > 0`, and this store does not survive a process restart).
+   * How many saved contacts the in-memory session store currently holds. Reported alongside the
+   * address-book restore so a log line says what the pull was worth; it does not decide whether the
+   * pull happens, because a partial address book counts as plenty (see restoreAddressbookSnapshot).
    */
   contactCount(): number;
   /** The chat's cached disappearing-messages timer extraction (`msg.ephemeralDuration` primary). */
@@ -42,16 +42,48 @@ export interface BaileysHistoryHost {
   getOnHistoryMessages(): EngineEventCallbacks['onHistoryMessages'];
 }
 
-/** Baileys timestamps are `number | Long`; normalize to unix seconds. */
-export function toUnixSeconds(ts: number | { toNumber(): number } | null | undefined): number {
+/**
+ * Baileys timestamps are `number | Long`; normalize to unix seconds.
+ *
+ * A third shape reaches here that the proto type does not admit: a decimal STRING. The library
+ * decodes a message off the wire with `messageTimestamp` as a Long, and a Long serializes to its
+ * decimal string, so a message read back out of `baileys_messages` (a JSON round trip) carries a
+ * string where the type says number. Not EVERY stored message does: one persisted straight from a
+ * send return was built in process with a plain number and round-trips as one. Delete-for-me and
+ * edit both read this field off a stored message, so without the string arm they threw
+ * `ts.toNumber is not a function` for any message that had come off the wire.
+ *
+ * Never answers NaN or Infinity, from any arm: a timestamp is not worth failing an operation over,
+ * but a non-finite one poisons every arithmetic consumer downstream and would reach the wire. An
+ * unusable value falls back to now, like an absent one.
+ */
+export function toUnixSeconds(ts: number | string | { toNumber(): number } | null | undefined): number {
+  const now = (): number => Math.floor(Date.now() / 1000);
   if (ts == null) {
-    return Math.floor(Date.now() / 1000);
+    return now();
   }
-  return typeof ts === 'number' ? ts : ts.toNumber();
+  if (typeof ts === 'number') {
+    return Number.isFinite(ts) ? ts : now();
+  }
+  if (typeof ts === 'string') {
+    const parsed = Number(ts);
+    return Number.isFinite(parsed) ? parsed : now();
+  }
+  const converted = ts.toNumber();
+  return Number.isFinite(converted) ? converted : now();
 }
 
 export class BaileysHistory {
   constructor(private readonly host: BaileysHistoryHost) {}
+
+  /**
+   * Whether the address-book snapshot has been pulled for this engine instance.
+   *
+   * One pull per process is what the in-memory contact store needs: it is empty at construction and
+   * dies with the process, so every later reconnect on the same instance would re-download the whole
+   * contact collection for a store that already holds it.
+   */
+  private addressbookRestored = false;
 
   /** Post-connect socket handle (hydrateNames runs on connection 'open'). */
   private sock(): WASocket {
@@ -102,10 +134,20 @@ export class BaileysHistory {
    *
    * On a reconnect (`accountSyncCounter > 0`) Baileys skips history sync and the address-book snapshot
    * entirely: WhatsApp assumes the linked device kept its local copy. This gateway's contact store is
-   * in-memory, so a process restart leaves GET /contacts empty. When that happens we drop the stored
-   * version of the contact collection (so the next resync asks for a snapshot, not an incremental
-   * patch) and process its mutations as an initial sync, which is what emits `contacts.upsert` for the
-   * saved address book. The other collections keep the incremental resync below.
+   * in-memory, so a process restart leaves GET /contacts empty. Once per engine instance we therefore drop
+   * the stored version of the contact collection (so the next resync asks for a snapshot, not an
+   * incremental patch) and process its mutations as an initial sync, which is what emits
+   * `contacts.upsert` for the saved address book. The other collections keep the incremental resync
+   * below.
+   *
+   * Once per engine instance, not "only when no saved contact is held": during the initial sync the event
+   * buffer folds an app-state `contacts.upsert` into a `messaging-history.set` record it is already
+   * holding for that id (`absorbed contact upsert in contact set` in Baileys' event-buffer), and the
+   * whole initial sync is buffered as one batch, so those saved names arrive only inside the history
+   * event, where the handler strips `name` because a history name is a chat title. The address book
+   * is then PARTIAL rather than empty, and a count-based gate reads partial as "nothing to do" and
+   * never repairs it. The snapshot pull is the only source that cannot be absorbed, so it runs on its
+   * own schedule instead of on a count.
    */
   async hydrateNames(): Promise<void> {
     try {
@@ -135,8 +177,16 @@ export class BaileysHistory {
         return;
       }
       const alreadySynced = (this.sock().authState?.creds?.accountSyncCounter ?? 0) > 0;
-      if (alreadySynced && this.host.contactCount() === 0) {
-        await this.restoreAddressbookSnapshot();
+      if (alreadySynced && !this.addressbookRestored) {
+        // Set before the await so a second connect cannot start a concurrent pull, and cleared again
+        // if it fails, so one bad attempt does not count as the one pull this instance gets.
+        this.addressbookRestored = true;
+        try {
+          await this.restoreAddressbookSnapshot();
+        } catch (err) {
+          this.addressbookRestored = false;
+          throw err;
+        }
       }
       await this.sock().resyncAppState(collections, false);
       this.host.logger.debug('Re-synced app state for contact names', { action: 'baileys_resync_appstate' });

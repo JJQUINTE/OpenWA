@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} disponibile",
     "loading": "Caricamento...",
     "cancel": "Annulla",
     "delete": "Elimina",
@@ -307,7 +308,7 @@
       "created": "Creata",
       "lastActive": "Ultima Attività",
       "autoRejectCalls": "Rifiuta automaticamente le chiamate",
-      "autoRejectCallsHint": "Le chiamate in arrivo vengono rifiutate appena squillano. Il webhook call.received viene comunque inviato prima. Si applica alla prossima chiamata — nessun riavvio necessario. Solo con il motore Baileys: whatsapp-web.js non può rifiutare le chiamate."
+      "autoRejectCallsHint": "Le chiamate in arrivo vengono rifiutate appena squillano. Il webhook call.received viene comunque inviato prima. Si applica alla prossima chiamata, nessun riavvio necessario. Solo con il motore Baileys: whatsapp-web.js non può rifiutare le chiamate."
     },
     "proxy": {
       "title": "Configurazione proxy",
@@ -644,6 +645,12 @@
     "loadingGroups": "Caricamento gruppi...",
     "noGroupsFound": "Nessun gruppo trovato",
     "selectGroupHint": "Seleziona un gruppo dal tuo WhatsApp",
+    "selectAllGroups": "Seleziona tutti",
+    "selectMatchingGroups": "Seleziona risultati",
+    "clearGroupSelection": "Deseleziona",
+    "groupsSelectedCount": "Selezionati: {{count}}/{{max}}",
+    "noGroupsMatch": "Nessun gruppo corrisponde alla tua ricerca",
+    "forwardUsesFirstGroup": "L'inoltro usa solo il primo gruppo selezionato, come chat di origine.",
     "phoneHint": "Usa il formato internazionale senza spazi",
     "messageType": "Tipo di Messaggio",
     "types": {
@@ -701,17 +708,29 @@
     "bulkRecipientsCount": "Destinatari: {{count}}",
     "bulkDelay": "Ritardo tra i messaggi (ms)",
     "bulkDelayHint": "1000–60000 ms (predefinito: 3000)",
+    "bulkMediaKind": "Invia come",
+    "bulkMediaHint": "Con un allegato, il messaggio diventa la sua didascalia. Un file selezionato viaggia dentro la richiesta, quindi i file grandi per molti destinatari richiedono invece un URL multimediale pubblico.",
+    "bulkMediaTooLarge": "Questo file è troppo grande per inviarlo direttamente a {{count}} destinatari: con questo numero ogni file può essere al massimo di {{size}}. Usa invece un URL multimediale pubblico o invia a meno destinatari.",
+    "bulkMediaUrlInvalid": "Usa un indirizzo completo con http:// o https://, per esempio https://example.com/file.pdf.",
+    "bulkCaptionTooLong": "Con un allegato il messaggio viene inviato come sua didascalia, limitata a {{max}} caratteri (ora {{count}}).",
+    "bulkAudioNoCaption": "L'audio viene inviato senza didascalia, quindi questo testo non verrebbe inviato. Svuota il messaggio o scegli un altro tipo.",
     "send": "Invia Messaggio",
     "sending": "Invio in corso...",
+    "sendingProgress": "Invio in corso {{current}}/{{total}}...",
     "viewOnly": "Sola Visualizzazione",
     "responseEmpty": "Invia un messaggio per vedere la risposta delle API",
     "successLabel": "Successo",
     "failedLabel": "Fallito",
+    "groupsSentSummary": "{{sent}}/{{total}} inviati",
+    "groupSendCancelled": "{{count}}, annullati",
+    "groupSendStopped": "{{count}}, interrotto dopo HTTP {{status}}",
     "response": {
       "timestamp": "Timestamp",
       "messageId": "ID Messaggio",
       "batchId": "ID batch",
-      "error": "Errore"
+      "error": "Errore",
+      "groups": "Gruppi",
+      "notSent": "Non inviati"
     },
     "sendFailed": "Impossibile inviare il messaggio",
     "notOnWhatsApp": "Questo numero non è registrato su WhatsApp",

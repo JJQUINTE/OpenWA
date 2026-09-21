@@ -477,6 +477,14 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/messages/send-text \
 > `image: ghcr.io/rmyndharis/openwa:<tag>` — replace steps 5-6 with editing that tag and running
 > `docker compose pull`.
 
+> On Kubernetes with the chart in `charts/openwa`, back up the persistent volume and take the step 3
+> export first, then replace steps 4-8 with checking out the new release and running
+> `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults to the chart's
+> `appVersion`, so the checkout moves it, unless `image.tag` was set at install: `--reuse-values` keeps
+> that value, so pass `--set image.tag=<new-version>` in that case.
+> Run steps 9-12 through `kubectl port-forward` to the release's Service. `helm rollback` keeps the
+> volume, so read the notes on restoring `sessions/` below before relying on it.
+
 **Verification:**
 
 ```bash

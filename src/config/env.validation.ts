@@ -425,6 +425,8 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     // but an operator whose proxy cannot reach arbitrary media hosts asked for the opposite and
     // would see every send-by-URL on a proxied session fail instead.
     'SESSION_PROXY_URL_FETCH',
+    // `=== 'false'`: a typo leaves the outbound release check on when the operator asked for it off.
+    'UPDATE_CHECK_ENABLED',
     // Engine behaviour flags: a typo leaves full-history sync off, or leaves the account marked
     // online on connect (#871 — it suppresses notifications on the operator's own phone).
     'BAILEYS_SYNC_FULL_HISTORY',

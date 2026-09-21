@@ -270,6 +270,8 @@ services:
       - PLUGIN_CATALOG_URL=${PLUGIN_CATALOG_URL:-}
       - PLUGIN_CAP_TIMEOUT_MS=${PLUGIN_CAP_TIMEOUT_MS:-}
       - PLUGIN_STORAGE_MAX_BYTES=${PLUGIN_STORAGE_MAX_BYTES:-}
+      # The dashboard's update notice asks GitHub for the latest release; false turns that request off.
+      - UPDATE_CHECK_ENABLED=${UPDATE_CHECK_ENABLED:-}
       # Misc application tuning.
       - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-}
       - BULK_MAX_CONCURRENT_BATCHES=${BULK_MAX_CONCURRENT_BATCHES:-}

@@ -176,6 +176,15 @@ export class BaileysEvents {
       // a stored message again. That oracle does NOT gate dispatch on the own-send path, which is
       // why the echo has to be caught here, and why a fromMe message the store already holds is
       // dropped in processInboundMessage before it can be reported a second time.
+      //
+      // Only ids this session SENT are consumed here. Claiming every inbound fromMe id instead, to
+      // close the window where two deliveries of one id arrive before the store write commits, costs
+      // more than it buys: a first delivery that reports nothing (a partial decrypt arrives as
+      // protocol noise and is dropped below) would claim the id, and the decryption-retry delivery
+      // that carries the real body would then be swallowed as a repeat and the message lost. A
+      // repeat inside that narrow window is a duplicate, which the webhook idempotency key and the
+      // insert oracle both absorb; a loss is not recoverable, because Baileys acks the node before
+      // it emits the upsert.
       if (msg.key.fromMe === true && this.host.consumeOwnSend(msg.key.id)) {
         this.host.logger.debug('Skipping the echo of a message this session sent', {
           msgId: msg.key.id ?? 'unknown',
@@ -186,15 +195,18 @@ export class BaileysEvents {
       // Throttle through the limiter so a burst of media messages can't run unbounded parallel
       // downloads (each a full decrypted buffer in heap). Ordering stays correct — the message store
       // keeps the newest by timestamp. The queue is unbounded, so a burst parks rather than shedding
-      // and the message keeps its media either way; on any rejection we still re-process WITHOUT
-      // media, so the body and metadata are emitted rather than lost.
+      // and the message keeps its media either way. The catch below is the teardown path: the
+      // limiter rejects only when it has been closed, since processInboundMessage handles its own
+      // failures (a media download that fails emits the omitted marker rather than throwing).
       void this.host.inboundLimiter
         .run(() => this.processInboundMessage(msg))
         .catch((error: unknown) => {
-          // Two different failures land here and they are not the same event. The limiter closing is
-          // an orderly teardown; anything else is a real download failure, and reporting it as
-          // "saturated" sent operators to look at concurrency settings for a problem that was never
-          // there. Say which one happened.
+          // Only one failure can actually land here today: the limiter closing, an orderly teardown.
+          // Its queue is unbounded so it never sheds, and processInboundMessage swallows its own
+          // errors, so nothing else rejects. The other arm is defence in depth against a rejection
+          // shape that does not exist yet, and it names the error rather than calling it
+          // "saturated", which used to send operators to look at concurrency settings for a problem
+          // that was never there. The retry below cannot reject either, for the same reason.
           const closed = error instanceof Error && error.message.startsWith('ConcurrencyLimiter closed');
           this.host.logger.warn(
             closed
@@ -356,14 +368,22 @@ export class BaileysEvents {
       // a node whose ack was lost on a drop, and the own-send path downstream dispatches message.sent
       // whatever its insert did, so the second copy has to stop here. The store is written by both
       // the inbound path below and the send path, and it survives a restart, which the registry
-      // consulted in handleMessagesUpsert does not.
-      if (msg.key.fromMe === true && msg.key.id && (await this.host.getStoredMessage(msg.key.id))) {
+      // consulted in handleMessagesUpsert does not. The read fails open (see readStoredMessage).
+      const ownMessageId = msg.key.fromMe === true ? (msg.key.id ?? null) : null;
+      if (ownMessageId !== null && (await this.readStoredMessage(ownMessageId))) {
         this.host.logger.debug('Skipping a re-delivered message this session already recorded', {
-          msgId: msg.key.id,
+          msgId: ownMessageId,
         });
         return;
       }
-      const incoming = await this.mapMessage(msg, contentType, { skipMediaDownload: opts?.skipMedia });
+      // The account's own status post reaches the projector and is dropped there: a story is not a
+      // conversation, so no `message.sent` is emitted for it. Downloading its media first is work
+      // nothing consumes, and a story is a full-size photo or video. Everything else about the path
+      // is kept, so the message is still recorded and still guards against a repeat delivery.
+      const ownStatusPost = msg.key.fromMe === true && remoteJid === 'status@broadcast';
+      const incoming = await this.mapMessage(msg, contentType, {
+        skipMediaDownload: opts?.skipMedia || ownStatusPost,
+      });
       if (msg.key.fromMe === true) {
         this.host.getOnMessageCreate()?.(incoming);
       } else {
@@ -380,6 +400,29 @@ export class BaileysEvents {
         `Unhandled error processing inbound message (id=${msg.key?.id ?? 'unknown'}); dropping`,
         err instanceof Error ? err.message : String(err),
       );
+    }
+  }
+
+  /**
+   * The stored copy of a message id, or null when the store cannot answer.
+   *
+   * Deliberately fail-open: a locked database or a row whose JSON no longer parses must not be read
+   * as "this was never sent". The caller's only other outcome is the catch above, which drops the
+   * message outright, and Baileys acks the node before it emits the upsert, so WhatsApp does not
+   * send it again. A repeat is absorbed where it matters: the webhook carries the same idempotency
+   * key and the insert oracle holds the row to one. A WebSocket subscriber does see the frame twice,
+   * which is the price paid here deliberately, because a message nobody ever hears about cannot be
+   * recovered at all. The persist side of the same store is already written this way.
+   */
+  private async readStoredMessage(messageId: string): Promise<WAMessage | null> {
+    try {
+      return (await this.host.getStoredMessage(messageId)) ?? null;
+    } catch (err) {
+      this.host.logger.warn('Could not read the message store while checking for a repeat delivery', {
+        msgId: messageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
   }
 
@@ -448,7 +491,14 @@ export class BaileysEvents {
     const isSelf = (jid: string | undefined): boolean => {
       if (!jid) return false;
       const { kind, userPart: user } = parseWaId(jid);
-      return kind === 'user' ? user === phone : kind === 'lid' && user === lidUser;
+      if (kind === 'user') return user === phone;
+      if (kind !== 'lid') return false;
+      if (lidUser !== undefined) return user === lidUser;
+      // Creds carrying no `user.lid` leave nothing to compare a lid-addressed actor against, and
+      // every such comparison would answer false: a group this session created would then be
+      // reported as a join of itself. Fall back to the session's own lid to phone mapping, which the
+      // store learns from the same traffic.
+      return userPart(this.host.toNeutralJid(jid)) === phone;
     };
     for (const group of Array.isArray(groups) ? groups : []) {
       // Live, whatsapp-web.js emits no group.join when the session created the group, so that entry is

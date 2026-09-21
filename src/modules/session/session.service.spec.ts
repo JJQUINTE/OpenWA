@@ -5262,8 +5262,9 @@ describe('SessionService', () => {
       // Regression guard for the WhatsApp Status feature: posting a status produces an own-send echo
       // that Baileys delivers as `messages.upsert` with `type: 'append'` (NOT 'notify'). The adapter's
       // handleMessagesUpsert recognises the echo by the id the status post recorded and skips it before
-      // processInboundMessage, so it never reaches the engine callbacks. This test pins the engine-neutral last-chance guard —
-      // `isStatusBroadcast` on both onMessageCreate and onMessage — so a future change can't silently
+      // processInboundMessage, so it never reaches the engine callbacks. This test pins the
+      // engine-neutral last-chance guard, `isStatusBroadcast` on both onMessageCreate and
+      // onMessage, so a future change can't silently
       // leak a status echo to websockets, webhooks, or the message table. Asserts the full no-side-effect
       // contract (webhook dispatch + WS emit + DB insert) for completeness, even though the existing
       // isStatusBroadcast tests above already cover the dispatch-only slice.
@@ -6070,9 +6071,12 @@ describe('SessionService', () => {
     });
   });
 
-  // ── stop ──────────────────────────────────────────────────────────
+  // ── stop / logout / forceKill ─────────────────────────────────────
 
-  describe('stop', () => {
+  // Named for all three: the disconnect-announcement cases below cover logout and forceKill as
+  // well, since the three share one teardown guard, and reporting them under 'stop' alone hid
+  // which verb a failure belonged to.
+  describe('stop (and the teardown its siblings share)', () => {
     it('should disconnect engine and set status to DISCONNECTED', async () => {
       const session = createMockSession();
       (repository.findOne as jest.Mock).mockResolvedValue(session);
@@ -6117,6 +6121,35 @@ describe('SessionService', () => {
       const emits = (eventsGateway.emitSessionStatus as jest.Mock).mock.calls as [string, SessionStatus][];
       const disconnectedEmits = emits.filter(c => c[1] === SessionStatus.DISCONNECTED);
       expect(disconnectedEmits).toHaveLength(1);
+      expect(engineStillRegistered).toEqual([false]);
+    });
+
+    // logout() and forceKill() carry the same guard as stop(), and only stop() was covered: either
+    // could have lost it and the suite would have stayed green.
+    it.each([
+      ['logout', (svc: SessionService) => svc.logout('sess-uuid-1'), 'logout' as const],
+      ['forceKill', (svc: SessionService) => svc.forceKill('sess-uuid-1'), 'forceDestroy' as const],
+    ])('announces a %s only after the engine is evicted', async (_label, run, engineMethod) => {
+      const session = createMockSession();
+      (repository.findOne as jest.Mock).mockResolvedValue(session);
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+
+      await service.start('sess-uuid-1');
+      const callbacks = (mockEngine.initialize.mock.calls as [EngineEventCallbacks][])[0][0];
+
+      const engineStillRegistered: boolean[] = [];
+      (eventsGateway.emitSessionStatus as jest.Mock).mockImplementation((id: string) => {
+        engineStillRegistered.push(registry.has(id));
+      });
+      mockEngine[engineMethod].mockImplementation(async () => {
+        callbacks.onStateChanged?.(EngineStatus.DISCONNECTED);
+        await Promise.resolve(); // the real teardown reports before the browser is closed
+      });
+
+      await run(service);
+
+      const emits = (eventsGateway.emitSessionStatus as jest.Mock).mock.calls as [string, SessionStatus][];
+      expect(emits.filter(c => c[1] === SessionStatus.DISCONNECTED)).toHaveLength(1);
       expect(engineStillRegistered).toEqual([false]);
     });
 

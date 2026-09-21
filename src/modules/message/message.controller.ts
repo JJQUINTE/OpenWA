@@ -366,8 +366,9 @@ export class MessageController {
     summary: 'Click a button on a WhatsApp Business prompt (Baileys only)',
     description:
       'Sends a structured button/list reply quoted to a previously received prompt. Not a native UI ' +
-      'tap — WhatsApp may reject or treat it differently. Classic button/template/list prompts are ' +
-      'supported; native-flow interactiveMessage replies are unverified. whatsapp-web.js returns 501. ' +
+      'tap, so WhatsApp may reject it or treat it differently. Classic button/template/list prompts ' +
+      'are supported; native-flow interactiveMessage replies are unverified. whatsapp-web.js ' +
+      'returns 501. ' +
       'URL/call CTA buttons cannot be clicked this way. The prompt must still be in the engine store ' +
       '(a reloaded bubble can render choices from persisted metadata and then 404).',
   })
