@@ -303,6 +303,9 @@ function installFetchStub(): void {
       const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
     }
+    if (method === 'GET' && path.startsWith('/api/search?')) {
+      return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
+    }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/status/send-text`) {
       return Promise.resolve(jsonResponse({ success: true }));
     }
@@ -583,6 +586,29 @@ test('Escape closes the open room, and is left alone while a dialog owns it', as
   await waitFor(() =>
     assert.equal(screen.queryByRole('button', { name: 'Back' }), null, 'Escape did not close the room'),
   );
+});
+
+test('Escape dismisses the message search results instead of the conversation behind them', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+
+  const search = container.querySelector('.global-search-input') as HTMLInputElement;
+  search.focus();
+  fireEvent.change(search, { target: { value: 'invoice' } });
+  await screen.findByRole('listbox');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  // assert.ok, not assert.equal(node, null): formatting a live jsdom node into the failure message spins.
+  assert.ok(!screen.queryByRole('listbox'), 'Escape left the search results open');
+  assert.ok(screen.queryByRole('button', { name: 'Back' }), 'Escape closed the room while the results owned it');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  await waitFor(() => assert.ok(!screen.queryByRole('button', { name: 'Back' }), 'Escape did not close the room'));
 });
 
 // Stage a file in the open room and wait for the preview banner. A non-image type is used on
