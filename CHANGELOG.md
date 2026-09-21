@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The PostgreSQL data connection is pinned to UTC: parameters bind as UTC, naive timestamps read back as UTC, every pooled connection sets its session `TimeZone`, and boot fails when the effective zone is not UTC year round.
 - Credentials on a `socks4://` session proxy are reported at session start as unauthenticatable: SOCKS4 sends the user name as the connect request's user id and drops the password.
 - whatsapp-web.js clicks a `WWEBJS_ONBOARDING_CONTINUE_LABELS` label only on a button inside a visible dialog. It matched any visible button with that exact text anywhere on the page, and every click counts toward the limit that moves a ready session to `action_required` ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
+- The `session:created` plugin hook carries the session in the REST API shape, without `proxyUrl` or `config`, as `session:deleted` already did.
+- `POST /api/plugins/{id}/disable` on the engine `engine.type` selects answers `success: false` instead of reporting a disable that never took effect.
+- whatsapp-web.js sessions with no WA Web version pin no longer read or write `./.wwebjs_cache/`, so they always load WhatsApp's live build.
 
 ### Fixed
 
@@ -64,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stopping, unlinking or force-killing a session announces `session.status: disconnected` after the engine is released, not while it is still tearing down, so a dashboard tab or a webhook consumer no longer learns the session is down in the one moment the API still reports its engine as loaded. On whatsapp-web.js that window lasted as long as Chromium took to close, and left an open QR modal on a dead code with the started actions still offered ([#1649](https://github.com/rmyndharis/OpenWA/issues/1649)).
 - The dashboard blanks a session's displayed QR code as soon as the session disconnects, so a code minted by a connection that is gone is never left on screen to be scanned ([#1649](https://github.com/rmyndharis/OpenWA/issues/1649)).
 - A pairing-code request whose retry budget runs out on a reloading WhatsApp Web page answers `503` instead of `500`, so a client can tell a retryable transport failure from a broken gateway ([#1654](https://github.com/rmyndharis/OpenWA/issues/1654)).
-- A re-delivery of an already-persisted ingress event is answered with the route's declared ack, the same response the first delivery received, instead of a hardcoded `200 duplicate` that bypassed the ack entirely. A provider that validates the ack no longer fails on the retry path dedup exists for ([#1638](https://github.com/rmyndharis/OpenWA/issues/1638)).
+- A re-delivery of an already-persisted ingress event is answered with the route's declared ack, with the same status and headers the first delivery received (a body template renders from the retry), instead of a hardcoded `200 duplicate` that bypassed the ack entirely. A provider that validates the ack no longer fails on the retry path dedup exists for ([#1638](https://github.com/rmyndharis/OpenWA/issues/1638)).
 - The `session-alive` preflight's `503` carries a `Retry-After`, so a provider that retries a 503 only when that header is present comes back instead of failing the call; the rejection writes no dedup row, so the retry is treated as a new delivery ([#1639](https://github.com/rmyndharis/OpenWA/issues/1639)).
 - A `429` from a rate-limit window carries a plain `Retry-After` in seconds alongside the existing `Retry-After-<window>`, which no HTTP client reads. The suffixed names stay, since they are what identify which window shed the request ([#1639](https://github.com/rmyndharis/OpenWA/issues/1639)).
 - An ingress route's declared ack `content-type` of `application/json` or `text/plain` reaches the provider instead of being overwritten with `text/plain`, so a provider that requires `application/json` on a 200 or 202 accepts the ack; any other declared type is still sent as `text/plain` ([#1637](https://github.com/rmyndharis/OpenWA/issues/1637)). Thanks @wesamdev for the report.
@@ -80,6 +83,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - whatsapp-web.js sessions no longer report a call rejection that did not stop the call: the call reject route answers `501` and `autoRejectCalls` logs a failed auto-reject.
 - A Baileys session added to or joining a group emits `group.join`, as whatsapp-web.js already did.
 - A send that fails inside the engine logs a warning carrying the session, chat, message id and the engine's error, where only Nest's generic `[ExceptionsHandler]` line recorded it before ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
+- whatsapp-web.js sessions reach ready in the Docker image, Compose and Helm when no WA Web version is pinned; the library's local HTML cache tried to write to the read-only app directory.
+- A stopped built-in `openwa-postgres` container is started before the data connection dials it, instead of the gateway crash-looping at boot.
+- `POST /api/infra/import-data` on PostgreSQL answers `imported: false` with the rejected row's database error instead of `500`.
+- A fresh Baileys link pulls the saved address book once its initial sync ends, instead of keeping a partial one until the next reconnect.
+- Baileys: a reaction made from the account's phone in a 1:1 chat is attributed to the account instead of overwriting the contact's reaction.
+- Baileys: a re-delivered inbound message no longer reaches the `message:received` plugin hook a second time.
+- Baileys: a refused channel follow or unfollow answers `403`, and an unknown channel or invite code `404`, instead of `500`.
+- Baileys: a write to a group that no longer exists, picture changes included, answers the documented `404` instead of `403`; a group the account left still answers `403`.
+- whatsapp-web.js: reply and forward on a chat the session cannot resolve answer `404` instead of a `500` that counted toward the send breaker.
+- whatsapp-web.js: an unknown label id answers `404` instead of `500`, and adding or removing a label on an unknown chat answers `404` instead of reporting success.
+- whatsapp-web.js: deleting a contact's status answers `403` instead of `500`.
+- whatsapp-web.js: a browser command timeout on group, invite, label, contact and chat operations answers `503` instead of a false `404`, `400` or `success: false`.
+- A media send by URL whose download fails answers `400`, or `413` over the size cap, instead of `500`, and no longer counts toward the send breaker; a failure before any response through a session proxy answers `503`.
+- Media send, status, profile picture and group picture routes and the MCP send tools refuse a media `url` that is not an absolute http(s) URL, instead of sending it as garbled base64; a bulk item's `url` is checked after `variables` are applied.
+- MCP tools refuse an empty `chatId`, `messageId` or `quotedMessageId`, as the REST routes do.
+- `GET /api/stats/messages` counts `byType` within the selected period only.
+- `POST /api/sessions/{sessionId}/templates` for a missing session answers `404` instead of `500`.
+- `GET /api/search` refuses an `offset` above 100000 with `400` instead of returning the wrong page.
+- A bulk batch whose `batchId` is `history` or contains `/`, `?` or `#` can be read and cancelled; `.` and `..` are refused with `400`.
+- Bulk sends persist each item's own media and caption instead of the first media key in its content.
+- Queued webhook deliveries use the webhook's current URL, headers and secret, and are dropped once the webhook is deleted, disabled or unsubscribed from the event.
+- A `webhook:before` hook that returns a payload that is not an object no longer fails the delivery; its result is skipped, keeping any earlier hook's rewrite.
+- A request forwarded to the node that owns the session is labelled `application/json`, so a form-encoded request no longer fails there with `400`.
+- Filtering messages or statuses by phone or by `@lid` finds rows stored under the other form after the lid mapping has left the cache, and accepts an upper-case or `@hosted.lid` id.
+- A human takeover keeps silencing bot plugins after the chat's lid resolves to a phone number.
+- whatsapp-web.js group participant operations accept mixed-case and device-suffixed ids instead of reporting a member as not a member.
+- A sandboxed plugin's send from an ingress handler or a timer no longer skips other plugins' `message:sending` vetoes and `message:sent`/`message:failed` hooks while one of its own hooks is pending.
+- A sandboxed plugin's hooks run at the lowest priority its handlers ask for; a priority that is not a finite number runs at the default 100.
+- A `message:received` or `message:sent` hook that returns `null` or a non-message no longer erases the message; its result is skipped, so the message and any earlier hook's rewrite are kept.
+- An ingress ack `Content-Type` with malformed parameters is sent as its bare media type instead of answering `500` after the delivery was stored.
+- Ingress manifests with an ack header value Node cannot send, a non-final ack status, a non-numeric `toleranceSec`, or a route that cannot travel as one URL path segment are refused at load, and minted ingress URLs percent-encode the route.
+- `GET` and `DELETE /mcp` answer `405` instead of `404`, so Streamable HTTP clients stop reporting an SSE error on connect.
+- A mixed-case or padded `POSTGRES_SCHEMA` is refused at boot, by the init script, by the migration CLI and on the Infrastructure page, instead of splitting the tables across two schemas.
+- `backup.sh` fails before staging anything when `BACKUP_DIR` is not writable, such as the default on the container's read-only root.
+- Dashboard: the multi-group send refuses an empty message or a missing media source and stops on a `409` instead of repeating the failure for every group.
+- Dashboard: the Message Tester follows a selected session that drops out of the ready list instead of sending to it.
+- Dashboard: a bulk send no longer starts polling its progress after the page is left.
+- Dashboard: the Chats search popup keeps Escape to itself, stays open while loading more, closes on a pick, works from the keyboard, and searches the text shown when refocused.
+- Dashboard: read-only keys are no longer offered reply, react, delete, prompt buttons, Post a status or Disconnect, and send no mark-as-read.
+- Dashboard: a failed session stop is reported on the home and Sessions pages instead of only in the console.
+- Dashboard: the Webhooks page says why the list failed to load instead of also claiming none are configured, and every event in Available Events has a description.
+- Dashboard: the API Keys show toggle, which could never reveal a key, is gone.
+- Dashboard: the message chart shows hourly buckets in local time and labels daily buckets as UTC.
 
 ### Documentation
 
@@ -89,6 +135,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The docs, the README, the OpenAPI field descriptions and the dashboard's auto-reject hint mark call rejection, `autoRejectCalls` and the call outcome events as Baileys only, and `call.received` as not reliable on whatsapp-web.js ([#1118](https://github.com/rmyndharis/OpenWA/discussions/1118)). Thanks @etondeengole for the report.
 - The FAQ, `.env.example` and the whatsapp-web.js unrecognised-dialog warning describe the onboarding-modal language correctly: `--lang=en-US` is appended automatically, WhatsApp Web can still render the modal in the account's language, and a label in `WWEBJS_ONBOARDING_CONTINUE_LABELS` plus a restart of OpenWA covers it ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
 - The FAQ and the phone-pairing example say that `BAILEYS_BROWSER_NAME` takes effect after a restart of OpenWA, not of the session, since the name is read at boot ([#1666](https://github.com/rmyndharis/OpenWA/issues/1666)). Thanks @Muhammad-Suban for the report.
+- docs/06: a re-delivered ingress event gets the route's ack with the retry's `{timestamp}`, and every media route lists the URL-fetch `400` and `413`.
+- docs/06 and the OpenAPI text: webhook `retryCount` counts total attempts, `GET /labels` answers `200 []` on a personal account, and the reconnect cap is the per-session `maxReconnectAttempts`.
+- docs/06: a filter condition on a field the event lacks passes the event for `isNot` and for a boolean `false`.
+- A URL fetch through an HTTP or HTTPS session proxy is not DNS-rebind pinned; the docs and `.env.example` say so.
+- docs/17 lists which dashboard components ship no stylesheet.
 
 ### Dependencies
 
@@ -103,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The remaining eighteen `createdAt`/`updatedAt` columns are written by PostgreSQL itself (`DEFAULT now()`) in the **server's** zone, not the gateway's. On a UTC server, which is the image default and what the bundled Compose file starts, they are already correct and must not be converted; convert them only if the server itself ran outside UTC, with the server's old zone.
 - `messages.createdAt` is the exception among those eighteen and must not be converted in bulk. A live message takes the server default, but a row written by the Baileys history backfill carries the message's own time, bound by the gateway, so on a gateway that ran outside UTC that column holds both conventions at once and nothing in the row says which. The residual skew affects only the backfilled rows, and it shows up in chat ordering, the `today` counters and the media retention window for them.
 - A table that has had an archive from a **SQLite** gateway restored into it holds those rows in correct UTC while the app wrote its own in local time. The two are indistinguishable within the column, so a blanket `UPDATE` would move the rows that are already right; correct such a column row by row against a known archive, or leave it as it is.
-- An archive a **PostgreSQL** gateway outside UTC exported before this release carries the columns the app wrote at their true instant but every `DEFAULT now()` column one offset behind: the export read each value back as local time, which undoes the local-time bind only for the columns the app wrote. A restore binds that text as it stands, and each further export and restore before this release took the whole table one more offset back. On a table holding nothing but restored rows, apply the inverse to each timestamp column once per restore of a pre-release archive, `UPDATE sessions SET "createdAt" = ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta';`, then whatever conversion above the column takes anyway. The two cancel once for the twelve app-written columns, so after a single restore those are already correct and take no update, while on a UTC server the `DEFAULT now()` columns take the inverse once per restore. `sessions.claimedAt` on any session a node had claimed when the restore ran, not only the restoring node, is the exception: the restore keeps the live value rather than the archive's, so it takes no inverse, only the treatment above. `messages.createdAt` splits the same way between backfilled and live rows, so it still takes no bulk update. Where the table also holds rows written after the restore, no blanket conversion is safe.
+- An archive a **PostgreSQL** gateway outside UTC exported before this release carries the columns the app wrote at their true instant but every `DEFAULT now()` column one offset behind: the export read each value back as local time, which undoes the local-time bind only for the columns the app wrote. A restore binds that text as it stands, and each further export and restore before this release took the whole table one more offset back. On a table holding nothing but restored rows, apply the inverse to each timestamp column once per restore of a pre-release archive, `UPDATE sessions SET "createdAt" = ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta';`, then whatever conversion above the column takes anyway. The two cancel once for the twelve app-written columns, so after a single restore those are already correct and take no update, while on a UTC server the `DEFAULT now()` columns take the inverse once per restore. The exception is `sessions.claimedAt` and `leaseExpiresAt` on a session any node held when the restore ran: the restore keeps the live values rather than the archive's, so they take no inverse, only the treatment above. `messages.createdAt` splits the same way between backfilled and live rows, so it still takes no bulk update. Where the table also holds rows written after the restore, no blanket conversion is safe.
 - Re-export after upgrading for an archive whose stamps are the instants they claim; a pre-release archive restored after upgrading still carries its shift in, and counts as one restore above.
 - A WebSocket client can now be disconnected with an `UNAUTHORIZED` frame up to a minute after its key changed, where before only the node that processed the change disconnected it; reconnect and resubscribe on that frame. A rename, and the key's usage counters, evict nobody.
 - WebSocket command replies are pushed on the `message` event as well as returned through the ack callback. A client that passes an ack AND listens on `message` therefore sees each reply twice from this release; handle it in one place.
@@ -112,6 +163,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - whatsapp-web.js: `POST /api/sessions/{sessionId}/calls/{callId}/reject` answers `501` instead of a `200` that did not stop the call from ringing.
 - whatsapp-web.js: a `WWEBJS_ONBOARDING_CONTINUE_LABELS` label is clicked only on a button inside a `[role="dialog"]` or `[aria-modal="true"]` container, the same scope the `onboarding_dialog_unrecognized` warning reports labels from.
 - The gateway makes an outbound request to `api.github.com` when an admin opens the dashboard, to find the latest release. The answer is cached for six hours, or fifteen minutes after a failure. Set `UPDATE_CHECK_ENABLED=false` where that egress is not wanted.
+- A plugin that read `proxyUrl`, `config` or other raw entity fields from the `session:created` payload now receives the REST session shape.
+- With `QUEUE_ENABLED=true`, deliveries queued for a webhook that is then deleted, disabled or unsubscribed are dropped; after a URL or secret change they go to the new URL, signed with the new secret.
+- A media `url` that is not an absolute http(s) URL answers `400` on every send route; a bulk item whose rendered `url` is not one fails that item only.
+- Media conversion refuses an input that is not a single-file media container with `400`.
+- An installed plugin whose ingress manifest declares a route that is not one URL path segment, a non-numeric `toleranceSec`, a `1xx` ack status or an ack header value Node cannot send now fails to load at boot and stays in the error state until the manifest is fixed.
+- A mixed-case or padded `POSTGRES_SCHEMA` now fails the boot, naming the rule.
+- A takeover or a resolved conversation left on a chat's lid form before the upgrade also silences bots on its phone form from now on; hand the chat back to the bot through the plugin that holds it to release it.
+- A number WhatsApp recycled keeps its earlier owner's lid mapped to it, so a handover decision on either owner's chat applies to both.
 
 ### Security
 
@@ -119,6 +178,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Baileys sessions with a SOCKS4 proxy fetch through it instead of connecting direct: inbound media, the WhatsApp Web version lookup, the initial-sync payloads and a product card's image URL, which 0.23.5 routed through HTTP, HTTPS and SOCKS5 proxies only ([#1626](https://github.com/rmyndharis/OpenWA/issues/1626)).
 - A media URL passed to a send route or to `POST /api/sessions/{sessionId}/media/convert/voice` or `.../convert/video`, and the link preview of a text send, are fetched through the named session's egress proxy on both engines, instead of leaving from the gateway's own address ([#1626](https://github.com/rmyndharis/OpenWA/issues/1626)).
 - A proxy password no longer reaches the log. A failed SOCKS connect carries the whole proxy config as the error's only property, and `BAILEYS_LOG_LEVEL=debug` wrote it to stdout verbatim. Logs written at that level by an earlier release may hold the password; rotate it.
+- Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
+- The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one unauthenticated request can no longer write an audit row per batch element.
 
 ## [0.23.5] - 2026-09-15
 
