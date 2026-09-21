@@ -10,7 +10,7 @@ import { WebhookJobData, WebhookPayload } from '../../webhook/webhook.service';
 import { Webhook } from '../../webhook/entities/webhook.entity';
 import { WebhookDeliveryFailure } from '../../webhook/entities/webhook-delivery-failure.entity';
 import { recordWebhookDeliveryFailure, statusCodeFromError } from '../../webhook/utils/record-delivery-failure';
-import { postWebhookPayload } from '../../webhook/utils/deliver-once';
+import { buildDeliveryHeaders, postWebhookPayload } from '../../webhook/utils/deliver-once';
 import { HookManager } from '../../../core/hooks';
 import { redactSsrfError } from '../../../common/security/ssrf-guard';
 import { incrementWebhookDeliveryFailures } from '../../../common/metrics/webhook-delivery-metrics';
@@ -63,7 +63,7 @@ export class WebhookProcessor extends WorkerHost {
   }
 
   async process(job: Job<WebhookJobData>): Promise<WebhookJobResult> {
-    const { webhookId, url, event, payload, headers, maxRetries } = job.data;
+    const { webhookId, event, payload, maxRetries } = job.data;
     const startTime = Date.now();
     const sessionId = payload.sessionId;
 
@@ -76,16 +76,49 @@ export class WebhookProcessor extends WorkerHost {
       action: 'webhook_process_start',
     });
 
-    // Update retry count in headers
-    const requestHeaders = {
-      ...headers,
-      'X-OpenWA-Retry-Count': String(job.attemptsMade),
+    const ctx: WebhookDeliveryContext = {
+      job,
+      webhookId,
+      url: job.data.url,
+      event,
+      payload,
+      maxRetries,
+      sessionId,
+      startTime,
     };
 
-    const ctx: WebhookDeliveryContext = { job, webhookId, url, event, payload, maxRetries, sessionId, startTime };
-
     try {
-      const { status, responseTime } = await this.postToReceiver(ctx, requestHeaders);
+      // The job carries a snapshot taken at enqueue time. Re-read the row before every attempt: a
+      // webhook that was deleted, disabled or unsubscribed from this event since then must not
+      // receive it (the reconciler skips only deleted and disabled rows; neither re-applies the
+      // webhook's filters, which need the event data). Completing the job instead of throwing
+      // stops the retries and files no dead-letter row. Otherwise deliver with the CURRENT url,
+      // headers and secret, as the reconciler's replay does, so a receiver move or a rotated
+      // secret or auth header applies to jobs already waiting in the queue.
+      // A read error lands in the catch below and counts as a failed attempt, like a failed POST.
+      const current = await this.loadDeliverableWebhook(webhookId, event);
+      if (!current) {
+        this.logger.warn('Skipping queued webhook delivery: webhook removed, disabled or unsubscribed', {
+          webhookId,
+          event,
+          deliveryId: payload.deliveryId,
+          idempotencyKey: payload.idempotencyKey,
+          action: 'webhook_skipped_stale',
+        });
+        return { statusCode: 0, success: false, error: 'webhook removed, disabled or unsubscribed', responseTime: 0 };
+      }
+      ctx.url = current.url;
+      const body = JSON.stringify(payload);
+      const requestHeaders = buildDeliveryHeaders(
+        current,
+        event,
+        payload.idempotencyKey,
+        payload.deliveryId,
+        body,
+        job.attemptsMade,
+      );
+
+      const { status, responseTime } = await this.postToReceiver(ctx, body, requestHeaders);
       await this.recordSuccessfulDelivery(ctx, status, responseTime);
       return {
         statusCode: status,
@@ -99,18 +132,25 @@ export class WebhookProcessor extends WorkerHost {
     }
   }
 
+  /** The webhook row as it is now, or null when it was deleted, disabled or no longer takes `event`. */
+  private async loadDeliverableWebhook(webhookId: string, event: string): Promise<Webhook | null> {
+    const row = await this.webhookRepository.findOne({ where: { id: webhookId } });
+    return row && row.active && (row.events.includes(event) || row.events.includes('*')) ? row : null;
+  }
+
   /**
    * POST the payload to the receiver through the SSRF-guarded fetch and classify the response:
    * a non-ok status throws into the failure path. Returns the status and measured response time.
    */
   private async postToReceiver(
     ctx: WebhookDeliveryContext,
+    body: string,
     requestHeaders: Record<string, string>,
   ): Promise<{ status: number; responseTime: number }> {
-    const { url, payload, startTime } = ctx;
+    const { url, startTime } = ctx;
     const { status } = await postWebhookPayload(
       url,
-      JSON.stringify(payload),
+      body,
       requestHeaders,
       // Honor WEBHOOK_TIMEOUT on the primary (queued) path too — not just the deprecated direct one.
       this.configService.get<number>('webhook.timeout', 10000),
@@ -247,8 +287,25 @@ export class WebhookProcessor extends WorkerHost {
       return;
     }
 
-    const { webhookId, url, event, payload } = job.data;
+    const { webhookId, event, payload } = job.data;
     const sessionId = payload.sessionId;
+
+    // Same rule as process(): no dead-letter row or webhook:error for a webhook that is gone, disabled
+    // or unsubscribed, and the row records the URL a retry would have used. If the read itself fails,
+    // record against the enqueue-time snapshot rather than lose the failure.
+    let url = job.data.url;
+    try {
+      const current = await this.loadDeliverableWebhook(webhookId, event);
+      if (!current) {
+        return;
+      }
+      url = current.url;
+    } catch (readError) {
+      this.logger.warn('Could not re-read webhook for a stalled job; recording the enqueue-time URL', {
+        webhookId,
+        error: readError instanceof Error ? readError.message : String(readError),
+      });
+    }
 
     this.logger.error('Webhook job failed after stalling beyond the recovery limit', error.message, {
       webhookId,

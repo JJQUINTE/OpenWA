@@ -4,13 +4,18 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import * as crypto from 'crypto';
 import { setTimeout } from 'node:timers/promises';
 import { Webhook } from './entities/webhook.entity';
 import { WebhookOutboxService } from './webhook-outbox.service';
 import { WebhookDeliveryFailure } from './entities/webhook-delivery-failure.entity';
 import { recordWebhookDeliveryFailure } from './utils/record-delivery-failure';
-import { postWebhookPayload, recordTerminalFailure } from './utils/deliver-once';
+import {
+  buildDeliveryHeaders,
+  generateSignature,
+  postWebhookPayload,
+  recordTerminalFailure,
+  sanitizeCustomHeaders,
+} from './utils/deliver-once';
 import { createLogger } from '../../common/services/logger.service';
 import { DEFAULT_WEBHOOK_MEDIA_INLINE_MAX_BYTES, shedInlineMedia } from '../../common/utils/inline-media';
 import { incrementWebhookDeliveryFailures } from '../../common/metrics/webhook-delivery-metrics';
@@ -387,15 +392,7 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
         return null;
       }
 
-      const headers = {
-        ...this.sanitizeCustomHeaders(webhook.headers),
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenWA-Webhook/1.0.0',
-        'X-OpenWA-Event': event,
-        'X-OpenWA-Idempotency-Key': idempotencyKey,
-        'X-OpenWA-Delivery-Id': deliveryId,
-        'X-OpenWA-Retry-Count': '0',
-      };
+      const headers = buildDeliveryHeaders(webhook, event, idempotencyKey, deliveryId, body);
       return { finalPayload, body, headers };
     } catch (error) {
       await this.recordUndelivered(
@@ -455,15 +452,9 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
   ): Promise<WebhookDeliveryOutcome> {
     const { sessionId, event } = ctx;
     try {
-      // Sign the exact pre-serialized body from preflight. The processor re-serializes the same
-      // payload object at delivery time (JSON key order survives the Redis round-trip), so the
-      // signature stays valid over the bytes the receiver sees.
-      const signature = webhook.secret ? this.generateSignature(body, webhook.secret) : '';
-
-      if (webhook.secret) {
-        headers['X-OpenWA-Signature'] = signature;
-      }
-
+      // The job's headers are the enqueue-time snapshot. The processor rebuilds them (and the
+      // signature) from the current webhook row on every attempt, so a secret or header rotated
+      // while the job waits is honoured.
       const jobData: WebhookJobData = {
         webhookId: webhook.id,
         url: webhook.url,
@@ -798,26 +789,12 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Drop operator-supplied custom headers that target reserved names (Content-Type or any
-   * X-OpenWA-* header) so a webhook config cannot forge the signature/event/idempotency
-   * headers. Spread the result BEFORE the system headers so system always wins. Shared with
-   * WebhookService.test(), which must probe with headers identical to a real delivery's.
-   */
+  /** Shared with WebhookService.test(), which must probe with headers identical to a real delivery's. */
   sanitizeCustomHeaders(custom: Record<string, string> | null | undefined): Record<string, string> {
-    const safe: Record<string, string> = {};
-    for (const [key, value] of Object.entries(custom ?? {})) {
-      if (!/^(content-type|x-openwa-)/i.test(key)) {
-        safe[key] = value;
-      }
-    }
-    return safe;
+    return sanitizeCustomHeaders(custom);
   }
 
-  /** HMAC-SHA256 over the exact pre-serialized body, prefixed for receiver-side verification. */
   generateSignature(payload: string, secret: string): string {
-    const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(payload);
-    return `sha256=${hmac.digest('hex')}`;
+    return generateSignature(payload, secret);
   }
 }
