@@ -79,7 +79,10 @@ const POSTGRES_ENABLED = process.env.DATABASE_TYPE === 'postgres';
       {} as EngineRegistry,
       {} as MessageProjector,
       {} as HookManager,
-      { lidsForPhone: () => [], getCached: () => undefined } as unknown as LidMappingStoreService,
+      {
+        findLidsForPhone: () => Promise.resolve([]),
+        findPhoneForLid: () => Promise.resolve(null),
+      } as unknown as LidMappingStoreService,
       {} as SendPacingService,
       {} as MessageSendService,
     );
