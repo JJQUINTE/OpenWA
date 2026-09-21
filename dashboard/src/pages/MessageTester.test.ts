@@ -132,6 +132,111 @@ async function pickRecipientsFile(size: number): Promise<{ container: HTMLElemen
   return { container };
 }
 
+let restoreFetch: (() => void) | null = null;
+
+afterEach(() => {
+  restoreFetch?.();
+  restoreFetch = null;
+  window.localStorage.removeItem('openwa_user_role');
+});
+
+function groupJsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function stubGroupGateway(groups: { id: string; name?: string }[], refuseFirstWith?: number): { textSends: string[] } {
+  const previousFetch = globalThis.fetch;
+  restoreFetch = () => {
+    globalThis.fetch = previousFetch;
+  };
+  const textSends: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(groupJsonResponse([{ id: 's1', name: 'Main', status: 'ready', phone: '15550000000' }]));
+    }
+    if (url.endsWith('/sessions/s1/groups')) return Promise.resolve(groupJsonResponse(groups));
+    if (url.endsWith('/messages/send-text')) {
+      const { chatId } = JSON.parse(String(init?.body)) as { chatId: string };
+      textSends.push(chatId);
+      if (refuseFirstWith && textSends.length === 1) {
+        return Promise.resolve(groupJsonResponse({ message: 'Too many requests' }, refuseFirstWith));
+      }
+      return Promise.resolve(groupJsonResponse({ messageId: `m${textSends.length}`, timestamp: 1 }, 201));
+    }
+    return Promise.resolve(groupJsonResponse([]));
+  }) as typeof fetch;
+  return { textSends };
+}
+
+async function renderGroupsAsWriter(): Promise<void> {
+  window.localStorage.setItem('openwa_user_role', 'admin');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
+  rtl.render(
+    createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
+  );
+  await rtl.screen.findByRole('option', { name: /Main/ });
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Group' }));
+}
+
+function sendMessageButton(): HTMLButtonElement {
+  return rtl.screen.getByRole('button', { name: 'Send Message' }) as HTMLButtonElement;
+}
+
+async function sendTextToAllGroups(): Promise<void> {
+  await rtl.screen.findByRole('checkbox', { name: 'Work' });
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Select all' }));
+  rtl.fireEvent.change(rtl.screen.getByPlaceholderText('Enter your message here...'), { target: { value: 'hi' } });
+  await rtl.waitFor(() => assert.equal(sendMessageButton().disabled, false));
+  rtl.fireEvent.click(sendMessageButton());
+}
+
+test('a group without a name is listed by its id', async () => {
+  stubGroupGateway([{ id: 'nameless@g.us' }, { id: 'g2@g.us', name: 'Work' }]);
+  await renderGroupsAsWriter();
+
+  await rtl.screen.findByRole('checkbox', { name: 'nameless@g.us' });
+  assert.ok(rtl.screen.getByRole('checkbox', { name: 'Work' }));
+});
+
+test('cancelling a group send stops the groups still waiting', async () => {
+  const gateway = stubGroupGateway([
+    { id: 'g1@g.us', name: 'Family' },
+    { id: 'g2@g.us', name: 'Work' },
+  ]);
+  await renderGroupsAsWriter();
+  await sendTextToAllGroups();
+
+  await rtl.waitFor(() => assert.equal(gateway.textSends.length, 1));
+  // The run sends what was on screen when it started, so the composer is locked while it runs.
+  assert.equal(window.document.getElementById('mt-2')?.matches(':disabled'), true);
+  rtl.fireEvent.click(await rtl.screen.findByRole('button', { name: 'Cancel' }));
+
+  await rtl.screen.findByText('1, cancelled');
+  assert.deepEqual(gateway.textSends, ['g1@g.us']);
+  assert.ok(rtl.screen.getByText('1/2 sent'));
+  // One of two groups sent is not a success.
+  assert.ok(rtl.screen.getByText('Failed'));
+  assert.equal(rtl.screen.queryByText('Success'), null);
+  assert.equal(window.document.getElementById('mt-2')?.matches(':disabled'), false);
+});
+
+test('a 429 from the gateway stops the run instead of trying the rest', async () => {
+  const gateway = stubGroupGateway(
+    [
+      { id: 'g1@g.us', name: 'Family' },
+      { id: 'g2@g.us', name: 'Work' },
+    ],
+    429,
+  );
+  await renderGroupsAsWriter();
+  await sendTextToAllGroups();
+
+  await rtl.screen.findByText('1, stopped after HTTP 429');
+  assert.deepEqual(gateway.textSends, ['g1@g.us']);
+  assert.ok(rtl.screen.getByText('Failed'));
+});
+
 test('a recipients file over the cap is refused without being read', async () => {
   const { container } = await pickRecipientsFile(maxBytes + 1);
 
