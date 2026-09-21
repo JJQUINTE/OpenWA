@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { ChatScopeService } from '../chat-scope.service';
+import { BULK_MESSAGES_MAX } from '../../message/dto/bulk-message.dto';
 import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
 import {
   REQUIRED_ROLE_KEY,
@@ -18,6 +19,7 @@ import {
   SESSION_SCOPED_KEY,
   UNSCOPED_KEY,
   CHAT_SCOPED_KEY,
+  CHAT_QUOTED_ALLOWED_KEY,
   ChatScopeKind,
 } from '../decorators/auth.decorators';
 import { resolveClientIp } from '../../../common/utils/ip';
@@ -121,7 +123,7 @@ export class ApiKeyGuard implements CanActivate {
       if (!chatScoped) {
         throw new ForbiddenException('API key is restricted to selected chats');
       }
-      await this.assertChatsAllowed(request, apiKey);
+      await this.assertChatsAllowed(request, apiKey, context);
     }
 
     // Routes marked @RequireUnscopedKey carry no session dimension, so the allowedSessions check
@@ -149,6 +151,8 @@ export class ApiKeyGuard implements CanActivate {
   private static readonly CHAT_ROUTE_PARAMS = ['chatId', 'groupId', 'contactId'] as const;
   /** Body fields that name a chat; bulk send nests the same name inside `messages[]`. */
   private static readonly CHAT_BODY_FIELDS = ['chatId', 'fromChatId', 'toChatId'] as const;
+  /** The bulk cap, shared with the DTO so the two cannot drift; applied BEFORE any per-entry lookup. */
+  private static readonly CHAT_BULK_MAX = BULK_MESSAGES_MAX;
 
   /**
    * Every chat id the guard can see in the request: route params, `?chatId=`, the body fields sends
@@ -167,6 +171,12 @@ export class ApiKeyGuard implements CanActivate {
     const messages = b.messages;
     if (messages === undefined || messages === null) return out;
     if (!Array.isArray(messages)) throw new BadRequestException('messages must be an array');
+    // Reject an oversized batch here, before the per-entry lid lookups below: the pipe's
+    // @ArrayMaxSize(100) only runs after the guard, so without this one request could drive
+    // thousands of sequential table queries.
+    if (messages.length > ApiKeyGuard.CHAT_BULK_MAX) {
+      throw new BadRequestException(`messages must contain at most ${ApiKeyGuard.CHAT_BULK_MAX} entries`);
+    }
     messages.forEach((item, i) => {
       if (item === null || typeof item !== 'object') return;
       out.push([`messages[${i}].chatId`, (item as { chatId?: unknown }).chatId]);
@@ -178,7 +188,7 @@ export class ApiKeyGuard implements CanActivate {
    * Enforce a restricted key's allowlist. Only the chat ids actually present are expanded (at most
    * two lid-table lookups each), so a route that names no chat costs nothing.
    */
-  private async assertChatsAllowed(request: Request, apiKey: ApiKey): Promise<void> {
+  private async assertChatsAllowed(request: Request, apiKey: ApiKey, context: ExecutionContext): Promise<void> {
     for (const [field, value] of this.chatIdsIn(request)) {
       if (value === undefined || value === null) continue;
       if (typeof value !== 'string') {
@@ -192,9 +202,14 @@ export class ApiKeyGuard implements CanActivate {
 
     // `quotedMessageId` is a chat reference the guard does not otherwise read: the quote resolves
     // from the global message store, so a restricted key could quote a message from a chat outside
-    // its allowlist into an allowed one. Refuse it outright rather than resolve the quote's chat.
+    // its allowlist into an allowed one. Refuse it outright, unless the handler is marked
+    // @ChatQuotedAllowed because it binds the quote to the chat it sends into (the reply route).
+    const quotedAllowed = this.reflector.getAllAndOverride<boolean>(CHAT_QUOTED_ALLOWED_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     const body: unknown = request.body;
-    if (body !== null && typeof body === 'object') {
+    if (!quotedAllowed && body !== null && typeof body === 'object') {
       const quoted = (body as { quotedMessageId?: unknown }).quotedMessageId;
       if (quoted !== undefined && quoted !== null && quoted !== '') {
         throw new ForbiddenException('API key is restricted to selected chats');

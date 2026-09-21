@@ -8,7 +8,7 @@ import { ChatScopeService } from '../chat-scope.service';
 import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../audit/entities/audit-log.entity';
-import { CHAT_SCOPED_KEY } from '../decorators/auth.decorators';
+import { CHAT_QUOTED_ALLOWED_KEY, CHAT_SCOPED_KEY } from '../decorators/auth.decorators';
 
 function createMockApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
   return {
@@ -574,6 +574,28 @@ describe('ApiKeyGuard', () => {
 
       const allowed = createMockContext({ 'x-api-key': 'key' }, { contactId: ALLOWED_CONTACT });
       expect(await guard.canActivate(allowed)).toBe(true);
+    });
+
+    it('admits a quotedMessageId on a route marked @ChatQuotedAllowed (the reply route)', async () => {
+      metadata[CHAT_QUOTED_ALLOWED_KEY] = true;
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      // Both engines bind the reply's quote to the named chat, so it cannot reach another one.
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        chatId: ALLOWED_GROUP,
+        quotedMessageId: 'm-in-this-chat',
+      });
+      expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('rejects an oversized bulk body before any per-entry lookup', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const messages = Array.from({ length: 101 }, () => ({ chatId: ALLOWED_GROUP, type: 'text' }));
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', { messages });
+      await expect(guard.canActivate(context)).rejects.toThrow(BadRequestException);
     });
 
     it('refuses a quotedMessageId — a chat reference the guard cannot fence', async () => {

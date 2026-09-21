@@ -39,6 +39,16 @@ export const AGNOSTIC_GRANTS: ReadonlyArray<readonly [string, string]> = [
   ['session.controller.ts', 'findOne'],
 ];
 
+/**
+ * The complete set of handlers granted `@ChatQuotedAllowed()`: routes whose `quotedMessageId` is
+ * bound to the chat they send into, so a quote cannot name a chat outside the allowlist. Every entry
+ * is a deliberate decision; the spec fails if a grant is unused or unlisted.
+ */
+export const QUOTED_ALLOWED_GRANTS: ReadonlyArray<readonly [string, string]> = [
+  // Reply requires a quotedMessageId and both engines resolve it inside the named chat.
+  ['message.controller.ts', 'reply'],
+];
+
 const REQUIRED_GUARD_FIELD = new RegExp(`\\b(?:${GUARD_BODY_CHAT_FIELDS.join('|')})!\\s*:`);
 const REQUIRED_BULK_FIELD = /\bmessages!\s*:/;
 
@@ -80,6 +90,16 @@ function requiredGuardChatDtos(dir: string): Set<string> {
       }
       cursor = parents.get(cursor);
     }
+  }
+  return out;
+}
+
+/** Every handler carrying `@ChatQuotedAllowed()` in `source`. */
+export function quotedAllowedHandlers(source: string): string[] {
+  const out: string[] = [];
+  const handlerRe = /((?:^ {2}@[\s\S]*?)?)^ {2}(?:async\s+)?([a-zA-Z0-9_]+)\s*\(/gm;
+  for (let m = handlerRe.exec(source); m !== null; m = handlerRe.exec(source)) {
+    if (/@ChatQuotedAllowed\(\)/.test(m[1] ?? '')) out.push(m[2]);
   }
   return out;
 }
@@ -232,6 +252,7 @@ describe('a chat-restricted key can only reach a handler fenced to its allowedCh
     expect(files.length).toBeGreaterThan(10);
     const offenders: string[] = [];
     const seenGrants = new Set<string>();
+    const seenQuoted = new Set<string>();
     let marked = 0;
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
@@ -251,6 +272,7 @@ describe('a chat-restricted key can only reach a handler fenced to its allowedCh
       });
       marked += paired.length;
       for (const { name, kind } of paired) if (kind === 'agnostic') seenGrants.add(`${fileName} :: ${name}`);
+      for (const name of quotedAllowedHandlers(source)) seenQuoted.add(`${fileName} :: ${name}`);
       for (const violation of chatScopeViolations(source, fileName, requiredDtos)) {
         offenders.push(`${posixPath} :: ${fileName} :: ${violation}`);
       }
@@ -259,5 +281,6 @@ describe('a chat-restricted key can only reach a handler fenced to its allowedCh
     expect(offenders).toEqual([]);
     // Every declared grant is used, and every used grant is declared.
     expect([...seenGrants].sort()).toEqual(AGNOSTIC_GRANTS.map(([f, h]) => `${f} :: ${h}`).sort());
+    expect([...seenQuoted].sort()).toEqual(QUOTED_ALLOWED_GRANTS.map(([f, h]) => `${f} :: ${h}`).sort());
   });
 });

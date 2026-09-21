@@ -20,6 +20,13 @@ describe('resolveJidCandidates', () => {
     expect(out).not.toContain(`${LID}@c.us`);
   });
 
+  it('normalizes lid and group spellings so the guard and the list filter agree', async () => {
+    // A `:device` suffix and an upper-case domain must still match the stored neutral form.
+    expect(await resolveJidCandidates('777000111:5@lid', directory)).toEqual(['777000111@lid']);
+    expect(await resolveJidCandidates('555000111@LID', directory)).toContain('555000111@lid');
+    expect(await resolveJidCandidates('123@G.US', directory)).toEqual(['123@g.us']);
+  });
+
   it('fails closed on a group, status or channel id (literal only)', async () => {
     expect(await resolveJidCandidates('123@g.us', directory)).toEqual(['123@g.us']);
     expect(await resolveJidCandidates('status@broadcast', directory)).toEqual(['status@broadcast']);

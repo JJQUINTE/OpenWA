@@ -12,6 +12,19 @@ import { resolveNonNegativeIntEnv } from '../../config/configuration';
 export const LID_MAPPING_CACHE_DEFAULT = 5000;
 
 /**
+ * SQLite binds at most 32766 variables in one statement (Postgres 65535), so an `IN (...)` over a
+ * large allowlist is chunked. Small enough to stay well inside both, large enough that a realistic
+ * allowlist is one round trip.
+ */
+const LID_QUERY_CHUNK = 500;
+
+function chunk<T>(items: T[], size = LID_QUERY_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
  * Narrow read/write port over the `lid -> phone` table. The Baileys session store depends on this (sync
  * reads on the resolution hot path + write-through) and the message from-filter depends on the reverse
  * lookup - both on the interface, not the concrete service, so each stays unit-testable with a fake
@@ -156,14 +169,15 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
    */
   async resolveLidPersisted(jid: string): Promise<string | null> {
     const lid = userPart(jid);
-    const cached = this.getCached(lid);
-    if (cached !== undefined) return cached;
+    // The TABLE is authoritative, not the mirror: a node can hold a stale negative for a lid another
+    // node has since mapped, and answering from the cache would refuse a chat the table admits.
     try {
       const row = await this.repo.findOne({ where: { lid } });
-      return row?.phone ?? null;
+      if (row) return row.phone;
     } catch {
-      return null;
+      // The table may not exist yet (migration pending); fall back to the mirror.
     }
+    return this.getCached(lid) ?? null;
   }
 
   /** Deterministic reverse lookup, companion to {@link resolveLidPersisted}: cache ∪ persisted table. */
@@ -179,24 +193,22 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
   }
 
   /**
-   * Batched forward lookup for a list filter: lid user-part -> phone digits. One query for the whole
-   * allowlist instead of one per entry, and the cache is merged in so a mapping the table holds but
-   * the mirror evicted is still answered.
+   * Batched forward lookup for a list filter: lid user-part -> phone digits. Chunked queries for the
+   * whole allowlist instead of one per entry, and the TABLE wins over the mirror so a stale cached
+   * negative cannot shadow a mapping another node persisted.
    */
   async phonesForLidsPersisted(lids: string[]): Promise<Record<string, string | null>> {
     const out: Record<string, string | null> = {};
     if (lids.length === 0) return out;
-    for (const lid of lids) {
-      const cached = this.getCached(lid);
-      if (cached !== undefined) out[lid] = cached;
-    }
+    for (const lid of lids) out[lid] = this.getCached(lid) ?? null;
     try {
-      const rows = await this.repo.find({ where: { lid: In(lids) } });
-      for (const row of rows) {
-        if (!(row.lid in out)) out[row.lid] = row.phone;
+      for (const batch of chunk(lids)) {
+        const rows = await this.repo.find({ where: { lid: In(batch) } });
+        // The table WINS: a stale cached negative must not shadow a mapping another node persisted.
+        for (const row of rows) out[row.lid] = row.phone;
       }
     } catch {
-      // The table may not exist yet (migration pending); the cache is the best available answer.
+      // The table may not exist yet (migration pending); the mirror is the best available answer.
     }
     return out;
   }
@@ -207,12 +219,14 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
     if (phones.length === 0) return out;
     for (const phone of phones) out[phone] = this.lidsForPhone(phone);
     try {
-      const rows = await this.repo.find({ where: { phone: In(phones) } });
-      for (const row of rows) {
-        if (!row.phone) continue;
-        const list = out[row.phone] ?? [];
-        if (!list.includes(row.lid)) list.push(row.lid);
-        out[row.phone] = list;
+      for (const batch of chunk(phones)) {
+        const rows = await this.repo.find({ where: { phone: In(batch) } });
+        for (const row of rows) {
+          if (!row.phone) continue;
+          const list = out[row.phone] ?? [];
+          if (!list.includes(row.lid)) list.push(row.lid);
+          out[row.phone] = list;
+        }
       }
     } catch {
       // The table may not exist yet (migration pending); the cache is the best available answer.

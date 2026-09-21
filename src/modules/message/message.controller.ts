@@ -46,7 +46,7 @@ import {
   ClickButtonDto,
   UnpinMessageDto,
 } from './dto/message-actions.dto';
-import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatQuotedAllowed, ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import {
   CHANNEL_MEDIA_501,
@@ -354,6 +354,7 @@ export class MessageController {
     return this.messageService.sendPoll(sessionId, dto);
   }
 
+  @ChatQuotedAllowed()
   @ChatScoped('fenced')
   @Post('reply')
   @RequireRole(ApiKeyRole.OPERATOR)

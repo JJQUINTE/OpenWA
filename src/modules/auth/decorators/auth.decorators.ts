@@ -8,6 +8,7 @@ export const PUBLIC_KEY = 'isPublic';
 export const SESSION_SCOPED_KEY = 'sessionScoped';
 export const UNSCOPED_KEY = 'requireUnscopedKey';
 export const CHAT_SCOPED_KEY = 'chatScoped';
+export const CHAT_QUOTED_ALLOWED_KEY = 'chatQuotedAllowed';
 
 /**
  * Mark a route as requiring a specific role
@@ -62,6 +63,16 @@ export type ChatScopeKind = 'fenced' | 'filtered' | 'agnostic';
  * @example @ChatScoped('fenced') @Get(':chatId')
  */
 export const ChatScoped = (kind: ChatScopeKind) => SetMetadata(CHAT_SCOPED_KEY, kind);
+
+/**
+ * Exempt a handler from the chat fence's blanket refusal of `quotedMessageId`. Only mark a route
+ * whose quote is bound to the chat it is sent into: `POST .../messages/reply` requires a
+ * `quotedMessageId` and BOTH engines resolve it inside the named chat (Baileys asserts the stored
+ * message belongs to it, whatsapp-web.js fetches it from that chat), so the quote cannot name a
+ * chat outside the allowlist. Every other route refuses a quote outright, because a quote is a chat
+ * reference the guard cannot see.
+ */
+export const ChatQuotedAllowed = () => SetMetadata(CHAT_QUOTED_ALLOWED_KEY, true);
 
 /**
  * Get the current API key from request

@@ -72,6 +72,13 @@ describe('chat-scope', () => {
     expect(await chatIdAllowed(scope, `${LID}@lid`, single)).toBe(true);
   });
 
+  it('a phone entry does not admit the same-digits @lid in the expanded filter scope either', async () => {
+    const scope = await buildExpandedChatScope([`${PHONE}@c.us`], batch);
+    expect(chatScopeAllows(scope, `${PHONE}@lid`)).toBe(false);
+    const rows = [{ id: `${PHONE}@lid` }, { id: `${PHONE}@c.us` }];
+    expect(filterByChatScope(scope, rows, r => r.id)).toEqual([{ id: `${PHONE}@c.us` }]);
+  });
+
   it('never admits status, channels or broadcast lists', () => {
     const scope = buildChatScope(['123@g.us', `${PHONE}@c.us`]);
     expect(chatScopeAllows(scope, 'status@broadcast')).toBe(false);

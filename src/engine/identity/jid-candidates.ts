@@ -23,11 +23,16 @@ export interface ContactDirectory {
 
 export async function resolveJidCandidates(value: string, directory?: ContactDirectory): Promise<string[]> {
   const parsed = parseWaId(value);
+  // Group ids are stored in the neutral `<id>@g.us` form, so normalize rather than echo the input:
+  // an upper-case domain must not make the guard's answer disagree with the list filter's.
+  if (parsed.kind === 'group') return [`${parsed.userPart}@g.us`];
   if (parsed.kind !== 'user' && parsed.kind !== 'lid' && parsed.kind !== 'unknown') {
     return [value];
   }
   if (parsed.kind === 'lid') {
-    const candidates = new Set<string>([value]);
+    // Start from the neutral `<lid>@lid`, not the raw input, for the same reason (an upper-case
+    // domain or a `:device` suffix must still match the stored form).
+    const candidates = new Set<string>([`${parsed.userPart}@lid`]);
     const resolved = await directory?.resolveLid(parsed.userPart);
     if (resolved) {
       candidates.add(`${resolved}@c.us`);

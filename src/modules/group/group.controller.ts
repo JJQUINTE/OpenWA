@@ -211,7 +211,6 @@ export class GroupController {
     return { success: true, message: 'Participants added', results };
   }
 
-  @ChatScoped('fenced')
   @Delete(':groupId/participants')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Remove participants from a group' })
@@ -237,7 +236,6 @@ export class GroupController {
     return { success: true, message: 'Participants removed', results };
   }
 
-  @ChatScoped('fenced')
   @Post(':groupId/participants/promote')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Promote participants to admin' })
@@ -264,7 +262,6 @@ export class GroupController {
     return { success: true, message: 'Participants promoted to admin', results };
   }
 
-  @ChatScoped('fenced')
   @Post(':groupId/participants/demote')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Demote participants from admin' })

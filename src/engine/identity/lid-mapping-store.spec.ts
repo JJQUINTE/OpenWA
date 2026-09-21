@@ -427,6 +427,15 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     }
   });
 
+  it('a stale cached negative never shadows a mapping the table has', async () => {
+    const repo = makeFakeRepo();
+    const store = await newStore(repo);
+    await store.remember('222', null); // this node cached a negative
+    repo.rows[0].phone = '628888'; // another node has since mapped it in the table
+    expect(await store.resolveLidPersisted('222@lid')).toBe('628888');
+    expect(await store.phonesForLidsPersisted(['222'])).toEqual({ 222: '628888' });
+  });
+
   it('resolveLidPersisted returns null for a lid with no persisted row', async () => {
     const repo = makeFakeRepo();
     const store = await newStore(repo);
