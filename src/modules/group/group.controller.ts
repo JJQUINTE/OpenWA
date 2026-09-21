@@ -477,7 +477,9 @@ export class GroupController {
   @ApiResponse({ status: 200, description: 'Group picture updated', type: GroupAckResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'The id does not name a group, or the session is not active, or neither url nor base64 was supplied',
+    description:
+      'The id does not name a group, the session is not active, neither url nor base64 was supplied, or ' +
+      'the url answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({ status: 403, description: 'The engine refused the change — admin rights required' })
   @ApiResponse({

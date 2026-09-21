@@ -147,7 +147,17 @@ export const CHANNEL_MEDIA_501 =
  * came to expect a `400` the code never sends.
  */
 export const MEDIA_TOO_LARGE_413 =
-  'The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by ' +
-  'default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and ' +
+  'The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap ' +
+  '(`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and ' +
   'base64 inflates by about a third, so a large send usually meets that coarser limit first: the ' +
   'body parser rejects the request before this check runs.';
+
+/**
+ * send-bulk's 413: only the base64 of an item is checked while the request is open. A `url` item is
+ * fetched after the 202, and one over the cap fails that item in the batch results instead.
+ */
+export const BULK_MEDIA_TOO_LARGE_413 =
+  "An item's decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by " +
+  'default). A `url` item is fetched after the `202`; one over the cap fails that item in the batch ' +
+  'results (`GET /messages/batch/{batchId}`) instead. The whole request is separately bounded by ' +
+  '`BODY_SIZE_LIMIT` (25 mb by default).';

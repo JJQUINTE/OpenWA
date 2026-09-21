@@ -2521,13 +2521,13 @@
             }
           },
           "400": {
-            "description": "Session not active or invalid request"
+            "description": "Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached"
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
             "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
@@ -2584,13 +2584,13 @@
             }
           },
           "400": {
-            "description": "Session not active or invalid request"
+            "description": "Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached"
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
             "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
@@ -2648,13 +2648,13 @@
             }
           },
           "400": {
-            "description": "Session not active or invalid request"
+            "description": "Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached"
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
             "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
@@ -2712,13 +2712,13 @@
             }
           },
           "400": {
-            "description": "Session not active or invalid request"
+            "description": "Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached"
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
             "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
@@ -2898,7 +2898,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
             "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
@@ -3757,7 +3757,7 @@
             "description": "Session not active or invalid request"
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "An item's decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A `url` item is fetched after the `202`; one over the cap fails that item in the batch results (`GET /messages/batch/{batchId}`) instead. The whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default)."
           }
         },
         "summary": "Send messages to multiple recipients (async batch processing)",
@@ -6028,7 +6028,7 @@
             }
           },
           "400": {
-            "description": "The id does not name a group, or the session is not active, or neither url nor base64 was supplied"
+            "description": "The id does not name a group, the session is not active, neither url nor base64 was supplied, or the url answers non-2xx, times out or cannot be reached"
           },
           "403": {
             "description": "The engine refused the change — admin rights required"
@@ -6040,7 +6040,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "The decoded base64 media exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "503": {
             "description": "WhatsApp did not answer within the request budget. The change may or may not have been applied — the gateway stopped waiting for a confirmation that never came."
@@ -6353,7 +6353,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 provided, base64 without mimetype, or session is not started"
+            "description": "Neither url nor base64 provided, base64 without mimetype, session is not started, or the url answers non-2xx, times out or cannot be reached"
           },
           "403": {
             "description": "The whatsapp-web.js engine refused the picture change. The Baileys engine has no acceptance signal and answers 200 for an upload WhatsApp declined."
@@ -6362,7 +6362,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "Decoded base64 image exceeds the configured media cap"
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "503": {
             "description": "WhatsApp did not answer within the request budget. The change may or may not have been applied — the gateway stopped waiting for a confirmation that never came."
@@ -7931,7 +7931,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 provided, or the post was blocked by a plugin."
+            "description": "Neither url nor base64 provided, the url answers non-2xx, times out or cannot be reached, or the post was blocked by a plugin."
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
@@ -7940,7 +7940,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "Base64 media exceeds MEDIA_DOWNLOAD_MAX_BYTES."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           }
         },
         "summary": "Post an image status",
@@ -7984,7 +7984,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 provided, or the post was blocked by a plugin."
+            "description": "Neither url nor base64 provided, the url answers non-2xx, times out or cannot be reached, or the post was blocked by a plugin."
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
@@ -7993,7 +7993,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "Base64 media exceeds MEDIA_DOWNLOAD_MAX_BYTES."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           }
         },
         "summary": "Post a video status",
@@ -8037,7 +8037,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 provided, or the post was blocked by a plugin."
+            "description": "Neither url nor base64 provided, the url answers non-2xx, times out or cannot be reached, or the post was blocked by a plugin."
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
@@ -8046,7 +8046,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "413": {
-            "description": "Base64 media exceeds MEDIA_DOWNLOAD_MAX_BYTES."
+            "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           }
         },
         "summary": "Post an audio status as a voice note",
@@ -8123,7 +8123,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 given, or ffmpeg refused the input."
+            "description": "Neither url nor base64 given, the url answers non-2xx, times out or cannot be reached, or ffmpeg refused the input."
           },
           "413": {
             "description": "The supplied media is above the media size cap."
@@ -8174,7 +8174,7 @@
             }
           },
           "400": {
-            "description": "Neither url nor base64 given, or ffmpeg refused the input."
+            "description": "Neither url nor base64 given, the url answers non-2xx, times out or cannot be reached, or ffmpeg refused the input."
           },
           "413": {
             "description": "The supplied media is above the media size cap."

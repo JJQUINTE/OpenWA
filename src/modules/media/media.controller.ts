@@ -50,7 +50,12 @@ export class MediaController {
       'mic bubble for Ogg/Opus; other formats arrive as an audio file that will not play.',
     type: ConvertedMediaResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Neither url nor base64 given, or ffmpeg refused the input.' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Neither url nor base64 given, the url answers non-2xx, times out or cannot be reached, or ffmpeg ' +
+      'refused the input.',
+  })
   @ApiResponse({ status: 413, description: 'The supplied media is above the media size cap.' })
   @ApiResponse({
     status: 503,
@@ -72,7 +77,12 @@ export class MediaController {
       'front so the recipient can start playing before the whole file arrives.',
     type: ConvertedMediaResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Neither url nor base64 given, or ffmpeg refused the input.' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Neither url nor base64 given, the url answers non-2xx, times out or cannot be reached, or ffmpeg ' +
+      'refused the input.',
+  })
   @ApiResponse({ status: 413, description: 'The supplied media is above the media size cap.' })
   @ApiResponse({
     status: 503,
