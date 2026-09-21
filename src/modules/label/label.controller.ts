@@ -67,9 +67,9 @@ export class LabelController {
   @ApiResponse({
     status: 503,
     description:
-      'The whatsapp-web.js page connection died mid-read, so nothing could be read. Deliberately not ' +
-      'reported as a missing label — a page that went away says nothing about whether the label exists. ' +
-      'The other engine never answers this: Baileys has no label query at all and answers 501 above.',
+      'WhatsApp Web did not answer (the page died or the command timed out), so nothing could be ' +
+      'read. Deliberately not reported as a missing label: no answer says nothing about whether the label ' +
+      'exists. The other engine never answers this: Baileys has no label query at all and answers 501 above.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: LABEL_NOT_FOUND_404 })

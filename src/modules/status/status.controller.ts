@@ -163,6 +163,10 @@ export class StatusController {
   @ApiOperation({ summary: 'Delete own status' })
   @ApiParam({ name: 'id', description: 'Status ID' })
   @ApiResponse({ status: 200, description: 'Status deleted.', type: StatusDeletedResponseDto })
+  @ApiResponse({
+    status: 403,
+    description: "Key lacks OPERATOR role, or (whatsapp-web.js) the id is not one of the account's own statuses",
+  })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: SESSION_NOT_STARTED_404 })
   @ApiResponse({

@@ -6785,7 +6785,7 @@
             "description": "The active engine cannot list chats by label (Baileys)"
           },
           "503": {
-            "description": "The whatsapp-web.js page connection died mid-read, so nothing could be read. Deliberately not reported as a missing label — a page that went away says nothing about whether the label exists. The other engine never answers this: Baileys has no label query at all and answers 501 above."
+            "description": "WhatsApp Web did not answer (the page died or the command timed out), so nothing could be read. Deliberately not reported as a missing label: no answer says nothing about whether the label exists. The other engine never answers this: Baileys has no label query at all and answers 501 above."
           }
         },
         "summary": "Get every chat carrying a label",
@@ -7774,6 +7774,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Key lacks OPERATOR role, or (whatsapp-web.js) the id is not one of the account's own statuses"
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
