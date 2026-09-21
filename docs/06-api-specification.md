@@ -3941,7 +3941,7 @@ that label** instead of failing, because the protocol has no create-only form.
 
 #### GET /api/sessions/:sessionId/labels
 
-List all labels defined for the session (WhatsApp Business accounts only).
+List all labels defined for the session. Labels exist only on a WhatsApp Business account: on whatsapp-web.js a personal account answers `200` with an empty array, not an error. Baileys has no label read and answers `501` on either account type.
 
 **Auth:** API key
 
@@ -3962,7 +3962,7 @@ List all labels defined for the session (WhatsApp Business accounts only).
 
 Bare array — raw return of `engine.getLabels()`; no envelope.
 
-**Errors:** `400` session is not started (no live engine), or the account is not a WhatsApp Business account · `401` missing/invalid API key · `501` the Baileys engine does not implement label reads (whatsapp-web.js only) · `409` conflict or engine not ready (retryable) · `503` the whatsapp-web.js page died mid-read (retryable)
+**Errors:** `400` session is not started (no live engine) · `401` missing/invalid API key · `501` the Baileys engine does not implement label reads (whatsapp-web.js only) · `409` conflict or engine not ready (retryable) · `503` the whatsapp-web.js page died mid-read (retryable)
 
 #### GET /api/sessions/:sessionId/labels/:labelId
 

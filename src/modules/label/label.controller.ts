@@ -21,8 +21,12 @@ export class LabelController {
   @Get()
   @ApiOperation({ summary: 'Get all labels (WhatsApp Business only)' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiResponse({ status: 200, description: 'List of labels', type: [LabelDto] })
-  @ApiResponse({ status: 400, description: 'Session not ready or not a business account' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of labels (empty on a personal, non-Business account)',
+    type: [LabelDto],
+  })
+  @ApiResponse({ status: 400, description: 'Session not started' })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: ENGINE_NOT_SUPPORTED_501 })
   @ApiResponse({
