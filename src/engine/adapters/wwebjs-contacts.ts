@@ -4,6 +4,7 @@ import { EngineTransportError } from '../../common/errors/engine-transport.error
 import { userPart } from '../identity/wa-id';
 import { readWid, type SerializedWid } from '../types/whatsapp-web-js.types';
 import { type WwebjsEngineHost, withPage } from './wwebjs-host';
+import { isProtocolTimeout } from './wwebjs-lifecycle';
 
 /** The raw whatsapp-web.js contact element type, kept local so the wwebjs `Contact` type never leaks. */
 type RawWwebjsContact = Awaited<ReturnType<Client['getContacts']>>[number];
@@ -152,6 +153,10 @@ export class WwebjsContacts {
       if (this.host.isPageTransportError(error)) {
         this.host.reportIfPageTransportError(error, 'getContactById');
         throw new EngineTransportError(`Transport died while reading contact ${contactId}`);
+      }
+      // A command that outran the protocol budget got no answer either way: a 503, but no death.
+      if (isProtocolTimeout(error)) {
+        throw new EngineTransportError(`WhatsApp Web did not answer the read of contact ${contactId} in time`);
       }
       this.host.logger.warn(`Failed to get contact: ${contactId}`, { error: String(error) });
       return null;

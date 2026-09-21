@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Callback } from 'puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js';
 import { Client } from 'whatsapp-web.js';
 import configuration, { MAX_TIMER_MS } from '../../config/configuration';
@@ -6,6 +7,9 @@ import { WhatsAppWebJsAdapter } from './whatsapp-web-js.adapter';
 import { WwebjsLifecycle } from './wwebjs-lifecycle';
 import { WwebjsGroups } from './wwebjs-groups';
 import { WwebjsLabels } from './wwebjs-labels';
+import { WwebjsChats } from './wwebjs-chats';
+import { WwebjsContacts } from './wwebjs-contacts';
+import { type WwebjsMessaging } from './wwebjs-messaging';
 import { type WwebjsEngineHost } from './wwebjs-host';
 import { createLogger } from '../../common/services/logger.service';
 import { EngineTransportError } from '../../common/errors/engine-transport.error';
@@ -170,9 +174,10 @@ describe('whatsapp-web.js protocol timeout', () => {
 
 /**
  * A timed-out command got no answer at all, so the verdict branches that read a rejection as "no such
- * group" (404), "no such invite" (404), "invalid invite" (400) or "no such label" (404) must not see
- * it. It is the 503 those routes document for a query that never came back, and it is not a death:
- * the session must not be torn down for a slow renderer.
+ * group" (404), "no such invite" (404), "invalid invite" (400), "no such label" (404), "no such
+ * contact" (404), "no such chat" (400) or "declined" (200 `success: false`) must not see it. It is
+ * the 503 those routes document for a query that never came back, and it is not a death: the session
+ * must not be torn down for a slow renderer.
  */
 describe('a protocol timeout is a 503, never a not-found verdict', () => {
   const makeHost = (
@@ -189,11 +194,21 @@ describe('a protocol timeout is a 503, never a not-found verdict', () => {
     return { host, reportIfPageTransportError };
   };
 
+  const CHAT = '628@c.us';
+  const chats = (host: WwebjsEngineHost): WwebjsChats => new WwebjsChats(host, {} as WwebjsMessaging);
+
   const OPS: Record<string, [string, (host: WwebjsEngineHost) => Promise<unknown>]> = {
     getGroupInfo: ['getChatById', host => new WwebjsGroups(host).getGroupInfo('120363@g.us')],
     getGroupJoinInfo: ['getInviteInfo', host => new WwebjsGroups(host).getGroupJoinInfo('AbCdEf')],
     joinGroupViaInviteCode: ['acceptInvite', host => new WwebjsGroups(host).joinGroupViaInviteCode('AbCdEf')],
     getChatsByLabel: ['getChatsByLabelId', host => new WwebjsLabels(host).getChatsByLabel('7')],
+    getContactById: ['getContactById', host => new WwebjsContacts(host).getContactById('628@c.us')],
+    sendSeen: ['getChatById', host => chats(host).sendSeen(CHAT)],
+    clearChatMessages: ['getChatById', host => chats(host).clearChatMessages(CHAT)],
+    archiveChat: ['archiveChat', host => chats(host).archiveChat(CHAT, true)],
+    muteChat: ['getChatById', host => chats(host).muteChat(CHAT, null)],
+    markUnread: ['getChatById', host => chats(host).markUnread(CHAT)],
+    deleteChat: ['getChatById', host => chats(host).deleteChat(CHAT)],
   };
 
   it.each(Object.keys(OPS))('%s answers an expired protocolTimeout with a 503 and reports no death', async op => {
@@ -207,18 +222,25 @@ describe('a protocol timeout is a 503, never a not-found verdict', () => {
 
   // Negative twin: an ordinary page-side refusal keeps its not-found verdict.
   it.each([
-    ['getGroupInfo', undefined],
+    ['getGroupInfo', null],
     ['getGroupJoinInfo', GroupNotFoundError],
     ['joinGroupViaInviteCode', InvalidInviteCodeError],
     ['getChatsByLabel', LabelNotFoundError],
+    ['getContactById', null],
+    ['sendSeen', false],
+    ['clearChatMessages', false],
+    ['archiveChat', false],
+    ['muteChat', BadRequestException],
+    ['markUnread', false],
+    ['deleteChat', false],
   ])('%s keeps its verdict for an ordinary refusal', async (op, verdict) => {
     const [method, call] = OPS[op];
     const { host } = makeHost({ [method]: jest.fn().mockRejectedValue(new Error('Evaluation failed: not found')) });
 
-    if (verdict) {
+    if (typeof verdict === 'function') {
       await expect(call(host)).rejects.toBeInstanceOf(verdict);
     } else {
-      await expect(call(host)).resolves.toBeNull();
+      await expect(call(host)).resolves.toBe(verdict ?? null);
     }
   });
 });
