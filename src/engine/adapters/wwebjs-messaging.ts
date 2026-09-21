@@ -541,6 +541,9 @@ export class WwebjsMessaging {
     try {
       // Find the message to quote
       const chat = await this.client().getChatById(chatId);
+      if (!chat) {
+        throw new MessageNotFoundError(quotedMsgId, chatId);
+      }
       const messages = await chat.fetchMessages({ limit: 100 });
       const quotedMsg = messages.find(m => m.id._serialized === quotedMsgId);
 
@@ -569,6 +572,9 @@ export class WwebjsMessaging {
     this.host.ensureReady();
     try {
       const chat = await this.client().getChatById(fromChatId);
+      if (!chat) {
+        throw new MessageNotFoundError(messageId, fromChatId);
+      }
       const messages = await chat.fetchMessages({ limit: 100 });
       const msgToForward = messages.find(m => m.id._serialized === messageId);
 

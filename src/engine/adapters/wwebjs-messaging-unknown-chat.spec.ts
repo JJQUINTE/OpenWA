@@ -6,7 +6,7 @@ import { MessageNotFoundError } from '../../common/errors/message-not-found.erro
 
 /**
  * getChatById RESOLVES undefined for a chat this account cannot see (whatsapp-web.js does not throw).
- * reactToMessage/getMessageReactions/deleteMessage then dereferenced it (`chat.fetchMessages`) with no
+ * reactToMessage/getMessageReactions/deleteMessage, and replyToMessage/forwardMessage, then dereferenced it (`chat.fetchMessages`) with no
  * guard, so an unknown chatId produced a TypeError that withPage rethrew as an opaque 500, while the
  * sibling editMessage returned the MessageNotFoundError (404) it deliberately throws for the same input.
  * getChatHistory has no message to 404 on, so a chat with no accessible history yields an empty page.
@@ -36,6 +36,15 @@ describe('an unknown chat resolves to 404 (or an empty history), not a 500', () 
   });
   it('deleteMessage throws MessageNotFoundError', async () => {
     await expect(makeMessaging().deleteMessage(CHAT, MESSAGE_ID)).rejects.toBeInstanceOf(MessageNotFoundError);
+  });
+  // A send-path 500 also counted toward the send breaker, which the caller's bad chat id must not trip.
+  it('replyToMessage throws MessageNotFoundError', async () => {
+    await expect(makeMessaging().replyToMessage(CHAT, MESSAGE_ID, 'x')).rejects.toBeInstanceOf(MessageNotFoundError);
+  });
+  it('forwardMessage throws MessageNotFoundError', async () => {
+    await expect(makeMessaging().forwardMessage(CHAT, 'other@c.us', MESSAGE_ID)).rejects.toBeInstanceOf(
+      MessageNotFoundError,
+    );
   });
   it('getChatHistory returns an empty page rather than throwing', async () => {
     await expect(makeMessaging().getChatHistory(CHAT, 10)).resolves.toEqual([]);
