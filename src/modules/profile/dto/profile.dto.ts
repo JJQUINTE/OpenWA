@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, MaxLength, IsOptional, IsUrl, Matches, ValidateIf } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength, IsOptional, Matches, ValidateIf } from 'class-validator';
+import { IsMediaUrl } from '../../../common/media/media-url';
+import { stripBase64DataUri } from '../../message/media-cap.util';
 
 export class SetProfileNameDto {
   @ApiProperty({ description: 'New display name (WhatsApp limit: 25 characters)', maxLength: 25 })
@@ -29,8 +31,9 @@ export class SetProfilePictureDto {
     example: 'https://example.com/avatar.jpg',
   })
   @IsOptional()
-  @IsUrl()
-  @ValidateIf((o: SetProfilePictureDto) => !o.base64)
+  // base64 wins when it holds data; a base64 that is only a data-URI prefix strips to nothing, and then
+  // the url is what gets sent, so it is checked.
+  @IsMediaUrl<SetProfilePictureDto>({ ignoreWhen: o => !!stripBase64DataUri(o.base64) })
   url?: string;
 
   @ApiPropertyOptional({

@@ -19,6 +19,7 @@ import {
   BatchMessageResult,
 } from './entities/message-batch.entity';
 import { SendBulkMessageDto } from './dto/bulk-message.dto';
+import { isMediaUrl } from '../../common/media/media-url';
 import { MessageStatus } from './entities/message.entity';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { MessageService, DEFAULT_TEMPLATE_RENDER_MAX_CHARS } from './message.service';
@@ -215,7 +216,7 @@ export class BulkMessageService implements OnApplicationBootstrap {
     // message:sending gate are applied (see executeBatch).
     for (const { type, content } of messages) {
       this.assertContentMediaWithinCap(content);
-      this.assertItemContent(type, content);
+      this.assertItemContent(type, content, true);
     }
 
     const batchId = dto.batchId || `batch_${randomUUID().split('-')[0]}`;
@@ -644,7 +645,7 @@ export class BulkMessageService implements OnApplicationBootstrap {
    * the matching media key otherwise. The DTO cannot express this per type, so it runs at batch
    * creation (a 400) and again per item after variables and the message:sending gate.
    */
-  private assertItemContent(type: string, content: BulkMessageContent): void {
+  private assertItemContent(type: string, content: BulkMessageContent, beforeRender = false): void {
     if (type === 'text') {
       if (typeof content?.text !== 'string' || !content.text) {
         throw new BadRequestException('A text item requires a non-empty content.text');
@@ -652,8 +653,15 @@ export class BulkMessageService implements OnApplicationBootstrap {
       return;
     }
     const media = content?.[type as 'image' | 'video' | 'audio' | 'document'];
-    if (!stripBase64DataUri(media?.base64) && !media?.url) {
+    if (stripBase64DataUri(media?.base64)) return;
+    if (!media?.url) {
       throw new BadRequestException(`A ${type} item requires content.${type}.url or content.${type}.base64`);
+    }
+    // Checked here rather than on the DTO because `variables` may supply the whole URL: before
+    // rendering, a value holding a placeholder is left to the per-item check, which sees the rendered
+    // (and plugin-rewritten) URL.
+    if (!(beforeRender && typeof media.url === 'string' && media.url.includes('{')) && !isMediaUrl(media.url)) {
+      throw new BadRequestException(`content.${type}.url must be an absolute http(s) URL`);
     }
   }
 
