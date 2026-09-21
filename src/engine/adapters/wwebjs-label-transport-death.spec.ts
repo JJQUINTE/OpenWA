@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import type { Client } from 'whatsapp-web.js';
 import { WwebjsLabels } from './wwebjs-labels';
 import { createLogger } from '../../common/services/logger.service';
@@ -96,8 +97,9 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
   });
 
   // Client.getChatById resolves undefined for a chat the page cannot resolve; dereferencing it was a
-  // TypeError, a 500 on GET and on both chat-label writes that read the current set first.
-  it('treats an unresolved chat as carrying no labels', async () => {
+  // TypeError, a 500 on GET and on both chat-label writes that read the current set first. The read
+  // answers an empty set, but a write must not: upstream resolves it as a silent no-op.
+  it('reads an unresolved chat as unlabelled and refuses to write to it', async () => {
     const client = {
       getChatById: jest.fn().mockResolvedValue(undefined),
       addOrRemoveLabels: jest.fn().mockResolvedValue(undefined),
@@ -112,7 +114,8 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
     const labels = new WwebjsLabels(host);
 
     await expect(labels.getChatLabels('628999@c.us')).resolves.toEqual([]);
-    await expect(labels.addLabelToChat('628999@c.us', '7')).resolves.toBeUndefined();
-    expect(client.addOrRemoveLabels).toHaveBeenCalledWith(['7'], ['628999@c.us']);
+    await expect(labels.addLabelToChat('628999@c.us', '7')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(labels.removeLabelFromChat('628999@c.us', '7')).rejects.toBeInstanceOf(NotFoundException);
+    expect(client.addOrRemoveLabels).not.toHaveBeenCalled();
   });
 });

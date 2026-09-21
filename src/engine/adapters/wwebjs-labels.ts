@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { type Client } from 'whatsapp-web.js';
 import { Label, ChatSummary } from '../interfaces/whatsapp-engine.interface';
 import { GroupChat, BusinessClient } from '../types/whatsapp-web-js.types';
@@ -121,14 +122,18 @@ export class WwebjsLabels {
       // Return empty instead of letting the unguarded call throw a TypeError (HTTP 500).
       return [];
     }
+    // An unknown chat carries no labels, which is an honest answer for a read.
+    return (await this.readChatLabels(chatId)) ?? [];
+  }
+
+  /** The chat's labels, or null when the page cannot resolve the chat (getChatById resolves undefined). */
+  private async readChatLabels(chatId: string): Promise<Label[] | null> {
     const labels = await withPage(this.host, 'getChatLabels', async () => {
       const chat = await this.client().getChatById(chatId);
-      // getChatById resolves undefined for a chat the page cannot resolve; an unknown chat carries no
-      // labels, and the label write then matches no chat page-side, the same no-op upstream makes.
-      return chat ? (chat as unknown as GroupChat).getLabels() : [];
+      return chat ? ((await (chat as unknown as GroupChat).getLabels()) ?? []) : null;
     });
     if (!labels) {
-      return [];
+      return null;
     }
 
     return labels.map(label => ({
@@ -163,7 +168,13 @@ export class WwebjsLabels {
     if (isChannelJid(chatId)) {
       throw new ChatLabelsUnsupportedError('Channels do not support chat labels.');
     }
-    const ids = new Set((await this.getChatLabels(chatId)).map(label => label.id));
+    // Not the read's empty answer: addOrRemoveLabels matches no chat page-side for an unknown id and
+    // resolves without writing anything, which the route would report as success.
+    const current = await this.readChatLabels(chatId);
+    if (!current) {
+      throw new NotFoundException(`Chat ${chatId} does not exist on this session`);
+    }
+    const ids = new Set(current.map(label => label.id));
     if (add) {
       ids.add(labelId);
     } else {

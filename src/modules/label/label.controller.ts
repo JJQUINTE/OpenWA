@@ -176,6 +176,10 @@ export class LabelController {
   })
   @ApiResponse({ status: 200, description: 'Label added to chat', type: LabelAckResponseDto })
   @ApiResponse({
+    status: 404,
+    description: 'The chat does not exist on this session, so nothing was written (whatsapp-web.js)',
+  })
+  @ApiResponse({
     status: 422,
     description: 'Labels require a WhatsApp Business account, or the chat type has no labels',
   })
@@ -202,6 +206,10 @@ export class LabelController {
   @ApiParam({ name: 'chatId', description: 'Chat ID' })
   @ApiParam({ name: 'labelId', description: 'Label ID to remove' })
   @ApiResponse({ status: 200, description: 'Label removed from chat', type: LabelAckResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'The chat does not exist on this session, so nothing was written (whatsapp-web.js)',
+  })
   @ApiResponse({
     status: 422,
     description: 'Labels require a WhatsApp Business account, or the chat type has no labels',
