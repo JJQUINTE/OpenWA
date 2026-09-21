@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
@@ -147,15 +147,15 @@ export class MediaConversionService {
         const { data } = await loadRemoteMediaBuffer(dto.url, proxyUrl);
         return data;
       } catch (error) {
-        // The fetch layer throws plain Errors (bad status, over the byte cap) and SsrfBlockedError,
-        // none of them HttpExceptions — unmapped they leave as a 500 for what is squarely a bad
-        // input, while the send path answers 400 for the very same URL. An SSRF block is reported
-        // generically: its raw message names the resolved internal address.
+        // The fetch layer already answers 400/413 for a bad status, a timeout, a failed connection
+        // or a body over the cap, exactly as on the send path. An SSRF block is reported
+        // generically: its raw message names the resolved internal address. Anything else (a
+        // malformed session proxy, say) is a server fault and stays a 500, as it does on a send,
+        // rather than a 400 carrying a message that can name the proxy.
         if (error instanceof SsrfBlockedError) {
           throw new BadRequestException(SSRF_BLOCKED_CLIENT_MESSAGE);
         }
-        if (error instanceof HttpException) throw error;
-        throw new BadRequestException(error instanceof Error ? error.message : String(error));
+        throw error;
       }
     }
     throw new BadRequestException('Either url or base64 must be provided');

@@ -1,5 +1,9 @@
-import { withSafeFetch } from '../security/ssrf-guard';
+import { BadRequestException, HttpException, PayloadTooLargeException } from '@nestjs/common';
+import { SsrfBlockedError, withSafeFetch } from '../security/ssrf-guard';
 import { urlFetchProxy } from '../security/proxy-dispatcher';
+import { createLogger } from '../services/logger.service';
+
+const logger = createLogger('RemoteMedia');
 
 /** Default cap on a server-side media download: 50 MiB (overridable via MEDIA_DOWNLOAD_MAX_BYTES). */
 const DEFAULT_MEDIA_MAX_BYTES = 50 * 1024 * 1024;
@@ -26,6 +30,12 @@ function positiveIntFromEnv(name: string, fallback: number): number {
  *
  * Engine-neutral: returns raw bytes + the response content-type, so any engine adapter can use it.
  *
+ * A URL that cannot be fetched is the caller's input, not an engine fault: a non-2xx answer, a
+ * missing body, a timeout or a failed connection throw `BadRequestException`, and a body over the
+ * cap throws `PayloadTooLargeException`. As plain Errors they left every send path as a 500 and
+ * counted toward the send-pacing breaker. `SsrfBlockedError` is rethrown unchanged; each caller maps
+ * it to its own generic message.
+ *
  * `sessionProxyUrl` is the egress proxy of the session the fetch is attributed to, or undefined for
  * a direct one. It is required rather than optional so a new call site cannot leave a proxied
  * session's fetch going direct by omission; `urlFetchProxy` applies the operator's opt-out.
@@ -46,17 +56,17 @@ export async function loadRemoteMediaBuffer(
     { signal: AbortSignal.timeout(timeoutMs) },
     async response => {
       if (!response.ok) {
-        throw new Error(`Media fetch failed with status ${response.status}`);
+        throw new BadRequestException(`Media fetch failed with status ${response.status}`);
       }
 
       const declaredLength = Number(response.headers.get('content-length') ?? '');
       if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-        throw new Error(`Media exceeds the ${maxBytes}-byte limit`);
+        throw new PayloadTooLargeException(`Media exceeds the ${maxBytes}-byte limit`);
       }
 
       const reader = response.body?.getReader();
       if (!reader) {
-        throw new Error('Media response has no body');
+        throw new BadRequestException('Media response has no body');
       }
 
       const chunks: Buffer[] = [];
@@ -69,7 +79,7 @@ export async function loadRemoteMediaBuffer(
         total += value.byteLength;
         if (total > maxBytes) {
           await reader.cancel();
-          throw new Error(`Media exceeds the ${maxBytes}-byte limit`);
+          throw new PayloadTooLargeException(`Media exceeds the ${maxBytes}-byte limit`);
         }
         chunks.push(Buffer.from(value));
       }
@@ -78,5 +88,22 @@ export async function loadRemoteMediaBuffer(
       return { data: Buffer.concat(chunks), mimetype };
     },
     { proxyUrl },
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof HttpException || error instanceof SsrfBlockedError) throw error;
+    // Matched by name: the abort reason is a DOMException, which need not share this realm's Error.
+    const name = (error as { name?: unknown } | null)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new BadRequestException(`Media fetch timed out after ${timeoutMs} ms`);
+    }
+    // undici reports a failed connection as TypeError('fetch failed') and a body cut off mid-read
+    // as TypeError('terminated'). Their cause can name the resolved address or the proxy, so it is
+    // logged here and only a fixed message reaches the caller. Any other TypeError (a bad proxy URL,
+    // a fault in this code) is a server fault and passes through.
+    if (error instanceof TypeError && (error.message === 'fetch failed' || error.message === 'terminated')) {
+      const cause: unknown = error.cause;
+      logger.warn('Media fetch failed', { cause: cause instanceof Error ? cause.message : error.message });
+      throw new BadRequestException('Media fetch failed');
+    }
+    throw error;
+  });
 }

@@ -204,6 +204,20 @@ describe('MediaConversionService', () => {
       });
     });
 
+    // A fault in the fetch that is not about the caller's URL is the server's, and its message can
+    // name the session proxy; it must not come back to the client as a 400.
+    it('does not report a server-side fetch fault as a bad URL', async () => {
+      const fault = new Error('Unsupported proxy protocol: gopher://user:pw@proxy.invalid');
+      jest.spyOn(loadRemoteMedia, 'loadRemoteMediaBuffer').mockRejectedValue(fault);
+      const service = makeService(config());
+
+      const failure: unknown = await service
+        .convertToVoice(SESSION, { url: 'https://example.com/note.m4a' })
+        .catch((error: unknown) => error);
+
+      expect(failure).toBe(fault);
+    });
+
     it('decodes base64, stripping a data: prefix', async () => {
       const service = makeService(config());
 
