@@ -12,6 +12,13 @@ export function normalizeHookPriority(priority: unknown): number {
   return typeof priority === 'number' && Number.isFinite(priority) ? priority : 100;
 }
 
+export interface HookExecuteOptions<T> {
+  sessionId?: string;
+  source: string;
+  /** Adopt a handler's `data` only when this returns true; a rejected result is skipped, not applied. */
+  accept?: (data: T) => boolean;
+}
+
 @Injectable()
 export class HookManager {
   private readonly logger = new Logger(HookManager.name);
@@ -108,11 +115,7 @@ export class HookManager {
    * Execute hooks for an event
    * Returns: { continue: boolean, data: T }
    */
-  async execute<T>(
-    event: HookEvent,
-    data: T,
-    options: { sessionId?: string; source: string },
-  ): Promise<{ continue: boolean; data: T }> {
+  async execute<T>(event: HookEvent, data: T, options: HookExecuteOptions<T>): Promise<{ continue: boolean; data: T }> {
     const inFlight = this.inFlightEvents.getStore();
     if (inFlight?.has(event)) {
       this.logger.warn(
@@ -157,7 +160,7 @@ export class HookManager {
   private async runHandlers<T>(
     event: HookEvent,
     data: T,
-    options: { sessionId?: string; source: string },
+    options: HookExecuteOptions<T>,
   ): Promise<{ continue: boolean; data: T }> {
     // A snapshot: a registration added or moved while this chain awaits a handler (a sandboxed plugin
     // re-subscribing at a lower priority) must not make the loop skip or repeat one.
@@ -183,8 +186,16 @@ export class HookManager {
 
         // A handler that reports an error discards its output: do NOT apply its (possibly partial or
         // corrupted) data mutation, even though HookResult allows returning data and error together.
+        // A result the caller cannot use is dropped the same way, so the chain keeps the last usable
+        // value (an earlier handler's redaction included) instead of the caller falling back to the input.
         if (result.error === undefined && result.data !== undefined) {
-          currentData = result.data as T;
+          if (options.accept && !options.accept(result.data as T)) {
+            this.logger.warn(
+              `Hook result from ${registration.pluginId} for ${event} is not usable; keeping the previous data`,
+            );
+          } else {
+            currentData = result.data as T;
+          }
         }
 
         if (!result.continue) {

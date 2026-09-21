@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkerToHostMessage, HostToWorkerMessage } from './protocol';
+import { HOOK_RESULT_ACCEPT } from '../../hooks/hook-results';
+import type { HookEvent } from '../../hooks/hook.interfaces';
 
 /**
  * Carries the per-session-resolved config for the duration of a hook dispatch so ctx.config (a getter
@@ -76,6 +78,9 @@ export class WorkerHookRegistry {
 
   private async dispatch(message: Extract<HostToWorkerMessage, { kind: 'hook' }>): Promise<void> {
     const list = this.handlers.get(message.event) ?? [];
+    // Guard only a chain that starts from a usable value: there is nothing to keep otherwise.
+    const check = HOOK_RESULT_ACCEPT[message.event as HookEvent];
+    const accept = check?.(message.data) ? check : undefined;
     let data = message.data;
     let shouldContinue = true;
     let firstError: string | undefined;
@@ -88,7 +93,9 @@ export class WorkerHookRegistry {
           source: message.source,
           timestamp: new Date(),
         });
-        if (result.data !== undefined) data = result.data;
+        // Same rule as the host chain: a result the event cannot use is skipped, so an earlier handler's
+        // rewrite (a redaction) survives a later handler of this plugin returning null.
+        if (result.data !== undefined && (accept?.(result.data) ?? true)) data = result.data;
         if (!result.continue) {
           shouldContinue = false;
           break;

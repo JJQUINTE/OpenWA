@@ -404,7 +404,11 @@ still has its `data` applied.
 or left, WhatsApp, so the gateway still persists it and still dispatches `message.received` /
 `message.sent` to webhooks and the websocket. This is the flag an auto-reply plugin uses to claim a
 message ("I answered this, don't let another bot answer it too"); it is not a way to hide a message from
-the operator's own history.
+the operator's own history. For the same reason the gateway only keeps a returned `data` on these two
+events while it is still a message (an object with a string `id` and `chatId`): `data: null`, a
+primitive or `{}` is logged and skipped, and the chain carries on with the last message it held, so an
+earlier handler's rewrite (a redaction) still applies. `webhook:before` treats a result without a
+plain-object `payload` the same way.
 
 On a **pre-action** event it is a veto, because the action has not been taken yet: `false` on
 `message:sending` blocks the send (the caller gets a `400`), and on `webhook:before` it cancels that one

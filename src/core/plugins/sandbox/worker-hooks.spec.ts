@@ -78,6 +78,22 @@ describe('WorkerHookRegistry', () => {
     expect(sent.find(m => m.kind === 'hook-result')).toMatchObject({ continue: false, data: { n: 2 } });
   });
 
+  it('skips a later handler result the event cannot use, keeping an earlier rewrite', async () => {
+    const { sent, post } = collect();
+    const reg = new WorkerHookRegistry(post);
+    reg.register(
+      'message:received',
+      ctx => Promise.resolve({ continue: true, data: { ...(ctx.data as object), body: '[redacted]' } }),
+      10,
+    );
+    reg.register('message:received', () => Promise.resolve({ continue: true, data: null }), 100);
+
+    const message = { id: 'm1', chatId: 'c@c.us', body: 'secret' };
+    await reg.handleHook({ kind: 'hook', id: 5, event: 'message:received', data: message, source: 'Engine' });
+
+    expect(sent.find(m => m.kind === 'hook-result')).toMatchObject({ data: { ...message, body: '[redacted]' } });
+  });
+
   it('a throwing handler does not break the chain', async () => {
     const { sent, post } = collect();
     const reg = new WorkerHookRegistry(post);

@@ -125,6 +125,34 @@ describe('HookManager', () => {
     expect(res.data).toBe('original'); // but the errored mutation is not carried out on stop
   });
 
+  it('skips a result the caller cannot use, keeping an earlier handler rewrite', async () => {
+    const isMessage = (d: unknown) => typeof d === 'object' && d !== null && 'id' in d;
+    hm.register(
+      'redact',
+      'message:received',
+      async ctx => ({
+        continue: true,
+        data: { ...(ctx.data as object), body: '[redacted]' },
+      }),
+      10,
+    );
+    hm.register('bot', 'message:received', async () => ({ continue: true, data: null }), 100);
+
+    const guarded = await hm.execute<unknown>(
+      'message:received',
+      { id: 'm1', body: 'secret' },
+      {
+        source: 'test',
+        accept: isMessage,
+      },
+    );
+    expect(guarded.data).toEqual({ id: 'm1', body: '[redacted]' });
+
+    // Without `accept` any defined data is adopted, as before.
+    const unguarded = await hm.execute<unknown>('message:received', { id: 'm1', body: 'secret' }, { source: 'test' });
+    expect(unguarded.data).toBeNull();
+  });
+
   it('register/unregister/hasHooks/getHookCount track registrations', () => {
     expect(hm.hasHooks('session:created')).toBe(false);
     const id = hm.register('p', 'session:created', async ctx => ({ continue: true, data: ctx.data }));

@@ -26,6 +26,7 @@ import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.
 import { redactSsrfError } from '../../common/security/ssrf-guard';
 import { HookManager } from '../../core/hooks';
 import { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
+import { isWebhookBeforeResult } from '../../core/hooks/hook-results';
 
 export interface WebhookPayload {
   event: string;
@@ -86,6 +87,8 @@ interface DispatchEventContext {
  * Records terminally failed deliveries in webhook_delivery_failures. Webhook registration/CRUD
  * lives on WebhookService, which delegates dispatch here.
  */
+const isPlainObject = (value: unknown): boolean => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 @Injectable()
 export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger('WebhookDelivery');
@@ -330,10 +333,16 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
       // place, so reading the canonical timestamp off the hook result afterwards is not safe.
       const payloadTimestamp = payload.timestamp;
 
+      // A handler result without a plain-object payload is skipped, so the chain keeps the last usable
+      // payload (an earlier hook's redaction included) rather than the one it started from.
       const { continue: shouldContinue, data: hookResult } = await this.hookManager.execute(
         'webhook:before',
         { sessionId, event, payload },
-        { sessionId, source: 'WebhookService' },
+        {
+          sessionId,
+          source: 'WebhookService',
+          accept: isWebhookBeforeResult,
+        },
       );
 
       if (!shouldContinue) {
@@ -344,8 +353,20 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
         return 'cancelled';
       }
 
-      // Null/undefined hook results mean "no override", matching an object without payload.
-      const finalPayload = (hookResult as { payload?: WebhookPayload } | null | undefined)?.payload ?? payload;
+      // Null/undefined hook results mean "no override", matching an object without payload. A
+      // payload that is not a plain object (a primitive, which throws on the writes below, or an
+      // array, which drops them from the JSON) is not one either: send the original and say so.
+      const hookPayload = (hookResult as { payload?: unknown } | null | undefined)?.payload ?? payload;
+      const usable = isPlainObject(hookPayload);
+      if (!usable) {
+        this.logger.warn('A webhook:before hook returned a payload that is not an object; sending the original', {
+          webhookId: webhook.id,
+          event,
+          received: Array.isArray(hookPayload) ? 'array' : typeof hookPayload,
+          action: 'hook_payload_discarded',
+        });
+      }
+      const finalPayload = usable ? (hookPayload as WebhookPayload) : payload;
       // Re-assert EVERY identity field after the (untrusted) hook chain. A hook may rewrite data,
       // but event/sessionId/timestamp and the dedupe ids must remain the server's values: the
       // receiver verifies the signature over this body and compares it against the X-OpenWA-*
