@@ -626,6 +626,62 @@ test('a read-only key is offered no status compose trigger', async () => {
   }
 });
 
+test('a writer key opening a chat clears its unread badge', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  const { container } = renderChats();
+  await screen.findByText('Main (15551234567)');
+  assert.ok(await screen.findByLabelText('2 unread messages'), 'the fixture chat shows no unread badge');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  await waitFor(() => assert.ok(!screen.queryByLabelText('2 unread messages'), 'opening the chat kept its badge'));
+});
+
+test('a read-only key opening a chat sends no mark-as-read', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+    // Past the mark-as-read quiet window, so a queued call would have gone out.
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+    assert.ok(!findFetchCall('POST', `/api/sessions/${SESSION.id}/chats/read`), 'a viewer key marked the chat read');
+    // The chat is still unread on the gateway, so the sidebar badge keeps its count.
+    assert.ok(
+      screen.queryByLabelText('2 unread messages'),
+      'the unread badge was cleared for a chat never marked read',
+    );
+    // A message arriving in the open chat is unread on the gateway too, so it counts.
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_002_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION.id,
+        data: {
+          id: 'wamid.live.viewer',
+          chatId: CHAT.id,
+          from: CHAT.id,
+          to: 'me',
+          body: 'second from alice',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_001_500,
+        },
+      },
+    });
+    await waitFor(() =>
+      assert.ok(screen.queryByLabelText('3 unread messages'), 'the open chat did not count the arrival'),
+    );
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
 // Stage a file in the open room and wait for the preview banner. A non-image type is used on
 // purpose: the image branch calls URL.createObjectURL, which JSDOM does not implement.
 //
