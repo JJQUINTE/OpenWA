@@ -72,6 +72,25 @@ describe('validateIngressManifest', () => {
     expect(() => validateIngressManifest(m as never)).toThrow(/toleranceSec/);
   });
 
+  it('rejects a toleranceSec that is not a finite number, which would disable the replay window', () => {
+    for (const tol of ['5m', '300s', '', {}, true, [], null, JSON.parse('1e999') as number]) {
+      for (const scheme of ['hmac-sha256', 'standard-webhooks']) {
+        const m = baseManifest();
+        m.ingress[0].signature.scheme = scheme;
+        (m.ingress[0].signature as { toleranceSec?: unknown }).toleranceSec = tol;
+        expect(() => validateIngressManifest(m as never)).toThrow(/toleranceSec/);
+      }
+    }
+  });
+
+  it('still loads a numeric toleranceSec, quoted or not', () => {
+    for (const tol of [300, '300']) {
+      const m = baseManifest();
+      (m.ingress[0].signature as { toleranceSec?: unknown }).toleranceSec = tol;
+      expect(() => validateIngressManifest(m as never)).not.toThrow();
+    }
+  });
+
   it('rejects a dedupOn value other than header or body', () => {
     const m = baseManifest();
     (m.ingress[0] as { dedupOn?: string }).dedupOn = 'bdy';

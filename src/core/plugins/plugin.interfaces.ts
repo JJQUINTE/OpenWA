@@ -213,7 +213,8 @@ export interface IngressSignatureSpec {
   timestampHeader?: string;
   // Replay window for the declared timestampHeader. When absent, the host default applies
   // (INGRESS_TIMESTAMP_TOLERANCE_SEC, default 300) — freshness is enforced either way; an explicit
-  // value only narrows/widens the window. When present, must be > 0 (see validateIngressManifest).
+  // value only narrows/widens the window. When present, must be a finite number > 0 (see
+  // validateIngressManifest).
   toleranceSec?: number;
   dedupHeader?: string;
 }
@@ -356,10 +357,17 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
           `opt in (and front the route with a network/reverse-proxy ACL).`,
       );
     }
-    if (r.signature.toleranceSec !== undefined && r.signature.toleranceSec <= 0) {
-      throw new Error(
-        `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be > 0 (a replay guard would be a no-op)`,
-      );
+    // A manifest is third-party JSON, so the field is only a number by declaration. The verifier's
+    // `skew > tolerance` compares against NaN for a value like "5m" or {}, which is always false, so the
+    // replay window silently disappeared. A quoted number ("300") coerces correctly there and still loads.
+    const tol: unknown = r.signature.toleranceSec;
+    if (tol !== undefined) {
+      const n = typeof tol === 'number' ? tol : typeof tol === 'string' && tol.trim() !== '' ? Number(tol) : Number.NaN;
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new Error(
+          `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be a positive number of seconds (a replay guard would be a no-op)`,
+        );
+      }
     }
     if (r.dedupOn !== undefined && r.dedupOn !== 'header' && r.dedupOn !== 'body') {
       throw new Error(
