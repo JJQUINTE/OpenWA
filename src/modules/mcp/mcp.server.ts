@@ -159,7 +159,7 @@ export interface MountMcpServerOptions {
  *
  * Tool handlers are built ONCE at mount time (closure over registry/authService/rateLimiter).
  * Per-request: mint a fresh McpServer + StreamableHTTPServerTransport, handle, tear down.
- * Stateless (sessionIdGenerator: undefined) — no session map, no GET/DELETE reconnect.
+ * Stateless (sessionIdGenerator: undefined): no session map; GET/DELETE answer 405.
  * Creating a new McpServer per request is safe and avoids the single-transport constraint;
  * tool registration is O(n) pure function calls with no I/O overhead.
  */
@@ -246,7 +246,8 @@ export function mountMcpServer(
     }
   };
 
-  const adapter = httpAdapter as unknown as { post: (path: string, ...handlers: RequestHandler[]) => unknown };
+  type Mount = (path: string, ...handlers: RequestHandler[]) => unknown;
+  const adapter = httpAdapter as unknown as { post: Mount; get: Mount; delete: Mount };
   // The route throttle gates the auth DB lookup and per-request MCP server/transport construction. The
   // process-wide capped json() in main.ts runs first for all routes; this route-level parser is a
   // defensive fallback and no-ops once the global parser has consumed the body. It sits before the
@@ -258,4 +259,16 @@ export function mountMcpServer(
   // silently leave this mount uncapped.
   const bodyLimit = resolveBodyLimit(process.env.BODY_SIZE_LIMIT);
   adapter.post(basePath, express.json({ limit: bodyLimit, inflate: false }), createIpThrottle(ipRateLimiter), handler);
+  // Stateless transport: no standalone SSE stream and no session to delete. The Streamable HTTP spec
+  // requires a GET to be answered with a stream or 405, and SDK clients treat anything but 405 as an
+  // error on every connect. Routing these to the transport would open a stream (GET) or answer 200
+  // (DELETE), so they are refused here without touching auth or the DB.
+  const methodNotAllowed: RequestHandler = (_req, res) => {
+    res
+      .status(405)
+      .set('Allow', 'POST')
+      .json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
+  };
+  adapter.get(basePath, methodNotAllowed);
+  adapter.delete(basePath, methodNotAllowed);
 }

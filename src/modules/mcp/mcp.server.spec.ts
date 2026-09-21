@@ -241,7 +241,7 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
     tool: AnyToolDescriptor;
     authService: { validateApiKey: jest.Mock; hasPermission: jest.Mock };
     auditService: { logWarn: jest.Mock };
-    adapter: { post: jest.Mock };
+    adapter: { post: jest.Mock; get: jest.Mock; delete: jest.Mock };
   }
 
   const mount = (): Harness => {
@@ -261,6 +261,8 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
       post: jest.fn((_path: string, ...handlers: unknown[]) => {
         routeHandlers = handlers;
       }),
+      get: jest.fn(),
+      delete: jest.fn(),
     };
     mountMcpServer(
       adapter as unknown as Parameters<typeof mountMcpServer>[0],
@@ -307,6 +309,25 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
     expect(mockRegisteredTools).toHaveLength(1);
     return mockRegisteredTools[0].callback;
   };
+
+  it('answers GET and DELETE with a JSON-RPC 405 carrying Allow: POST (stateless, no SSE stream)', () => {
+    const h = mount();
+    for (const verb of ['get', 'delete'] as const) {
+      expect(h.adapter[verb]).toHaveBeenCalledWith('/mcp', expect.any(Function));
+      const refuse = (h.adapter[verb].mock.calls[0] as unknown[])[1] as (req: Request, res: Response) => void;
+      const res = { status: jest.fn(), set: jest.fn(), json: jest.fn() };
+      res.status.mockReturnValue(res);
+      res.set.mockReturnValue(res);
+      refuse({} as Request, res as unknown as Response);
+      expect(res.status).toHaveBeenCalledWith(405);
+      expect(res.set).toHaveBeenCalledWith('Allow', 'POST');
+      expect(res.json).toHaveBeenCalledWith({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed.' },
+        id: null,
+      });
+    }
+  });
 
   it('parses the body before the per-IP throttle so a batch is charged per message', () => {
     const h = mount();

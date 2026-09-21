@@ -39,8 +39,10 @@ group management — so an agent can drive WhatsApp through the same business lo
 REST API uses.
 
 Set `MCP_ENABLED=true` to mount a stateless Streamable-HTTP transport at **`POST /mcp`**
-on the existing server (same port, no extra process). When `MCP_ENABLED` is unset, the
-MCP module and the `@modelcontextprotocol/sdk` package are never loaded.
+on the existing server (same port, no extra process). The transport offers no SSE stream
+and no sessions, so `GET /mcp` and `DELETE /mcp` answer `405` with `Allow: POST`. When
+`MCP_ENABLED` is unset, the MCP module and the `@modelcontextprotocol/sdk` package are
+never loaded.
 
 ## 24.2 Design Goals
 
