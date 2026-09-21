@@ -39,11 +39,18 @@ export class WorkerHookRegistry {
 
   constructor(private readonly post: (message: WorkerToHostMessage) => void) {}
 
-  register(event: string, handler: WorkerHookHandler, priority = 100): void {
+  register(event: string, handler: WorkerHookHandler, rawPriority: unknown = 100): void {
+    // The host runs a non-finite or non-numeric priority at 100; compare and sort on that same value,
+    // or a junk first priority would stop a later lower one from moving the shim up.
+    const priority = typeof rawPriority === 'number' && Number.isFinite(rawPriority) ? rawPriority : 100;
     const list = this.handlers.get(event);
     if (list) {
+      const lowest = list[0].priority;
       list.push({ handler, priority });
       list.sort((a, b) => a.priority - b.priority);
+      // The host runs this event's whole worker chain from one shim; move it up to the new lowest
+      // priority so this handler still runs ahead of other plugins' handlers it asked to precede.
+      if (priority < lowest) this.post({ kind: 'hook-subscribe', event, priority });
       return;
     }
     this.handlers.set(event, [{ handler, priority }]);

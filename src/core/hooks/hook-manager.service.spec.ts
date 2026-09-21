@@ -186,6 +186,59 @@ describe('HookManager re-entrancy guard', () => {
   });
 });
 
+describe('HookManager priority', () => {
+  it('runs a non-numeric or non-finite priority at the default, keeping every other handler in order', async () => {
+    const hm = new HookManager();
+    const order: string[] = [];
+    const push = (name: string) => () => {
+      order.push(name);
+      return Promise.resolve({ continue: true });
+    };
+    hm.register('rewrite', 'message:sending', push('rewrite@50'), 50);
+    hm.register('junk', 'message:sending', push('junk'), 'high' as unknown as number);
+    hm.register('nan', 'message:sending', push('nan'), NaN);
+    hm.register('veto', 'message:sending', push('veto@10'), 10);
+
+    await hm.execute('message:sending', {}, { source: 't' });
+
+    expect(order).toEqual(['veto@10', 'rewrite@50', 'junk', 'nan']);
+  });
+
+  it('setPriority moves an existing registration and re-sorts its chain', async () => {
+    const hm = new HookManager();
+    const order: string[] = [];
+    hm.register('a', 'message:sent', () => (order.push('a'), Promise.resolve({ continue: true })), 100);
+    const id = hm.register('b', 'message:sent', () => (order.push('b'), Promise.resolve({ continue: true })), 200);
+
+    hm.setPriority(id, 1);
+    await hm.execute('message:sent', {}, { source: 't' });
+
+    expect(order).toEqual(['b', 'a']);
+  });
+
+  it('runs every handler once when one moves a later registration ahead of itself mid-chain', async () => {
+    const hm = new HookManager();
+    const order: string[] = [];
+    let cId = '';
+    hm.register('a', 'message:sent', () => (order.push('a'), Promise.resolve({ continue: true })), 10);
+    hm.register(
+      'b',
+      'message:sent',
+      () => {
+        order.push('b');
+        hm.setPriority(cId, 1);
+        return Promise.resolve({ continue: true });
+      },
+      20,
+    );
+    cId = hm.register('c', 'message:sent', () => (order.push('c'), Promise.resolve({ continue: true })), 30);
+
+    await hm.execute('message:sent', {}, { source: 't' });
+
+    expect(order).toEqual(['a', 'b', 'c']);
+  });
+});
+
 describe('HookManager.isInFlight + selective re-entrancy guard (conversation.send pattern)', () => {
   const SENDING: HookEvent[] = ['message:sending'];
 

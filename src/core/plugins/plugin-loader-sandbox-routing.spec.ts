@@ -163,6 +163,35 @@ describe('PluginLoaderService — sandbox tier routing', () => {
     expect(registerSpy.mock.calls.filter(c => c[1] === 'message:received')).toHaveLength(1);
   });
 
+  it('runs the shim at the lowest priority the worker asked for, and ignores a non-numeric one', async () => {
+    const loader = makeLoader();
+    seed(loader, { builtIn: false, instance: null });
+    const hookManager = (loader as unknown as { hookManager: HookManager }).hookManager;
+    const order: string[] = [];
+    hookManager.register('other', 'message:sending', () => {
+      order.push('other@100');
+      return Promise.resolve({ continue: true });
+    });
+    await loader.enablePlugin('p1');
+    loader.hosts[0].dispatchHook.mockImplementation(() => {
+      order.push('p1');
+      return Promise.resolve({ continue: true });
+    });
+
+    // The worker's first handler asks for 200; a later one for 1 (it re-subscribes); junk is ignored.
+    loader.capturedOnHookSubscribe!('message:sending', 200);
+    loader.capturedOnHookSubscribe!('message:sending', 1);
+    loader.capturedOnHookSubscribe!('message:sending', 'high' as unknown as number);
+    loader.capturedOnHookSubscribe!('message:sending', NaN);
+    await hookManager.execute('message:sending', {}, { source: 't' });
+
+    expect(order).toEqual(['p1', 'other@100']);
+    expect(hookManager.getRegisteredHooks()['message:sending']).toEqual([
+      { pluginId: 'p1', priority: 1 },
+      { pluginId: 'other', priority: 100 },
+    ]);
+  });
+
   it('forwards the host in-flight chain to the worker with each dispatch', async () => {
     const loader = makeLoader();
     seed(loader, { builtIn: false, instance: null });

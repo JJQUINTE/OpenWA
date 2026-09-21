@@ -27,6 +27,33 @@ describe('WorkerHookRegistry', () => {
     expect(sent.filter(m => m.kind === 'hook-subscribe')).toHaveLength(1);
   });
 
+  it('re-subscribes when a later handler lowers the event priority, and only then', () => {
+    const { sent, post } = collect();
+    const reg = new WorkerHookRegistry(post);
+
+    reg.register('message:sending', () => Promise.resolve({ continue: true }), 200);
+    reg.register('message:sending', () => Promise.resolve({ continue: true }), 1);
+    reg.register('message:sending', () => Promise.resolve({ continue: true }), 300);
+
+    expect(sent.filter(m => m.kind === 'hook-subscribe')).toEqual([
+      { kind: 'hook-subscribe', event: 'message:sending', priority: 200 },
+      { kind: 'hook-subscribe', event: 'message:sending', priority: 1 },
+    ]);
+  });
+
+  it('compares a later priority against the default when the first one is not a finite number', () => {
+    const { sent, post } = collect();
+    const reg = new WorkerHookRegistry(post);
+
+    reg.register('message:sending', () => Promise.resolve({ continue: true }), 'abc');
+    reg.register('message:sending', () => Promise.resolve({ continue: true }), 1);
+
+    expect(sent.filter(m => m.kind === 'hook-subscribe')).toEqual([
+      { kind: 'hook-subscribe', event: 'message:sending', priority: 100 },
+      { kind: 'hook-subscribe', event: 'message:sending', priority: 1 },
+    ]);
+  });
+
   it('runs the handler on a hook and replies with continue + modified data', async () => {
     const { sent, post } = collect();
     const reg = new WorkerHookRegistry(post);

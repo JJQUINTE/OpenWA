@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { createLogger } from '../../common/services/logger.service';
-import { HookManager, HookEvent, KNOWN_HOOK_EVENTS, isKnownHookEvent } from '../hooks';
+import { HookManager, HookEvent, KNOWN_HOOK_EVENTS, isKnownHookEvent, normalizeHookPriority } from '../hooks';
 import { PluginCapabilityPermission, PluginContext, PluginInstance, PluginStatus } from './plugin.interfaces';
 import { PluginStorageService } from './plugin-storage.service';
 import { PluginHostServices } from './plugin-host-services';
@@ -399,13 +399,18 @@ export class PluginSandboxBridge {
   // growth + an O(n log n) re-sort). Three guards, all local to this enableSandboxed call (dropped on
   // disable): reject unknown events (bounds growth to the finite known set + drops events that can
   // never fire), dedup per event, and a belt-and-suspenders size cap.
+  //
+  // One shim per event runs the worker's whole chain for it, so it sits at the LOWEST priority any of
+  // the worker's handlers asked for: the worker re-subscribes when a later handler lowers it, and the
+  // shim moves up. Pinning it to the first handler's priority let another plugin's handler run before
+  // a sandboxed handler that asked to go first (a redaction ahead of a mirror, say).
   private buildHookSubscribeHandler(
     pluginId: string,
     plugin: PluginInstance,
   ): (event: string, priority?: number) => void {
-    const subscribedEvents = new Set<HookEvent>();
+    const subscribedEvents = new Map<HookEvent, { hookId: string; priority: number }>();
     let unknownEventWarned = false;
-    return (event: string, priority?: number): void => {
+    return (event: string, rawPriority?: number): void => {
       if (!isKnownHookEvent(event)) {
         if (!unknownEventWarned) {
           unknownEventWarned = true; // warn at most once per plugin so a flood isn't a log-flood vector
@@ -417,13 +422,20 @@ export class PluginSandboxBridge {
         }
         return;
       }
-      if (subscribedEvents.has(event)) return;
+      const priority = normalizeHookPriority(rawPriority);
+      const existing = subscribedEvents.get(event);
+      if (existing) {
+        if (priority < existing.priority) {
+          this.hookManager.setPriority(existing.hookId, priority);
+          existing.priority = priority;
+        }
+        return;
+      }
       if (subscribedEvents.size >= KNOWN_HOOK_EVENTS.size) return; // can't exceed the known set
-      subscribedEvents.add(event);
       // Per-event rate-limit state for the hook-error log; local to this enable call so it is dropped
       // on disable exactly like subscribedEvents.
       const hookErrorLogState = new Map<string, { lastAt: number; suppressed: number }>();
-      this.hookManager.register(
+      const hookId = this.hookManager.register(
         pluginId,
         event,
         async hookCtx => {
@@ -495,6 +507,7 @@ export class PluginSandboxBridge {
         },
         priority,
       );
+      subscribedEvents.set(event, { hookId, priority });
     };
   }
 

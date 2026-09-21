@@ -479,7 +479,10 @@ export type HookHandler<T = unknown> = (ctx: HookContext<T>) => Promise<HookResu
 ### Hook Manager behavior
 
 `HookManager` (`src/core/hooks/hook-manager.service.ts`) is a NestJS provider. Handlers are stored per
-event and run in **priority order** (lower `priority` first; default `100`). On `execute(event, data,
+event and run in **priority order** (lower `priority` first; default `100`; a priority that is not a
+finite number runs at `100`). A sandboxed plugin's handlers for one event share a single host-side
+registration at the lowest priority among them, so relative to other plugins they all run at that point,
+and among themselves in their own order. On `execute(event, data,
 { sessionId, source })` it walks the chain, threading each handler's returned `data` into the next; a
 handler that returns `{ continue: false }` stops the chain. A handler that **throws** is logged and the
 chain continues with the previous data (one bad plugin can't break the chain). Same-event re-entrancy

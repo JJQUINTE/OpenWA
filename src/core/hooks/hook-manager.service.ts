@@ -2,6 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { HookEvent, HookHandler, HookContext, HookRegistration } from './hook.interfaces';
 
+/**
+ * The priority a registration actually runs at: a finite number as given, anything else the default
+ * 100. The chain is sorted by `a.priority - b.priority`; one NaN or string in it makes the comparator
+ * return NaN and the order of EVERY handler for that event implementation-defined (a veto can land
+ * after a rewrite). Sandboxed plugins send their priority over IPC, so no type can be assumed.
+ */
+export function normalizeHookPriority(priority: unknown): number {
+  return typeof priority === 'number' && Number.isFinite(priority) ? priority : 100;
+}
+
 @Injectable()
 export class HookManager {
   private readonly logger = new Logger(HookManager.name);
@@ -23,7 +33,7 @@ export class HookManager {
       pluginId,
       event,
       handler,
-      priority,
+      priority: normalizeHookPriority(priority),
     };
 
     // Add to event handlers
@@ -41,7 +51,7 @@ export class HookManager {
     }
     this.pluginHooks.get(pluginId)!.add(id);
 
-    this.logger.debug(`Hook registered: ${event} by ${pluginId} (priority: ${priority})`);
+    this.logger.debug(`Hook registered: ${event} by ${pluginId} (priority: ${registration.priority})`);
     return id;
   }
 
@@ -64,6 +74,17 @@ export class HookManager {
         this.logger.debug(`Hook unregistered: ${hookId}`);
         return;
       }
+    }
+  }
+
+  /** Move an existing registration to `priority` (normalized like {@link register}) and re-sort its chain. */
+  setPriority(hookId: string, priority: number): void {
+    for (const registrations of this.hooks.values()) {
+      const registration = registrations.find(r => r.id === hookId);
+      if (!registration) continue;
+      registration.priority = normalizeHookPriority(priority);
+      registrations.sort((a, b) => a.priority - b.priority);
+      return;
     }
   }
 
@@ -138,7 +159,9 @@ export class HookManager {
     data: T,
     options: { sessionId?: string; source: string },
   ): Promise<{ continue: boolean; data: T }> {
-    const registrations = this.hooks.get(event) || [];
+    // A snapshot: a registration added or moved while this chain awaits a handler (a sandboxed plugin
+    // re-subscribing at a lower priority) must not make the loop skip or repeat one.
+    const registrations = [...(this.hooks.get(event) ?? [])];
 
     if (registrations.length === 0) {
       return { continue: true, data };
