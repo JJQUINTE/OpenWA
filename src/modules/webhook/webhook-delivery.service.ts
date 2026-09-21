@@ -237,8 +237,9 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
     // A subscribed webhook that a filter drops leaves no trace otherwise: dispatch() awaits an empty
     // array and returns, and the delivery-failure table only records deliveries that were ATTEMPTED.
     // That is fine when the filter is doing its job, and indistinguishable from it when it is not —
-    // a condition on a field the event's payload does not carry resolves to undefined and fails,
-    // which is how a `sender` filter silently swallows every message.ack. Debug rather than warn:
+    // an `is`/`contains`/`equals` condition on a field the event's payload does not carry resolves to
+    // undefined and fails, which is how a `sender is` filter silently swallows every message.ack
+    // (an `isNot` condition, or a boolean compared with false, passes instead). Debug rather than warn:
     // suppression is the normal outcome of a working filter, so this is a trace to switch on while
     // investigating, not an alarm.
     if (matching.length < subscribed.length) {
