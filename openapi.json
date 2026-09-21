@@ -3892,6 +3892,9 @@
               }
             }
           },
+          "404": {
+            "description": "Session not found"
+          },
           "409": {
             "description": "A template with that name already exists for the session"
           }

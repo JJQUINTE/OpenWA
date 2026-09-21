@@ -16,6 +16,7 @@ export class TemplateController {
   @ApiOperation({ summary: 'Create a message template for the session' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
   @ApiResponse({ status: 201, description: 'Template created', type: TemplateResponseDto })
+  @ApiResponse({ status: 404, description: 'Session not found' })
   @ApiResponse({ status: 409, description: 'A template with that name already exists for the session' })
   async create(@Param('sessionId') sessionId: string, @Body() dto: CreateTemplateDto): Promise<Template> {
     return this.templateService.create(sessionId, dto);

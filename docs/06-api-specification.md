@@ -3303,7 +3303,7 @@ Reject pending join requests. Same body, response shape, batch-guard contract an
 
 ### 6.4.5 Message Templates
 
-Reusable message templates scoped to a session, with `{{variable}}` placeholders rendered at send time. All routes are nested under `/api/sessions/:sessionId/templates` and require an **OPERATOR** key. The `sessionId` is stored on the template but is **not** validated against an existing session in these handlers.
+Reusable message templates scoped to a session, with `{{variable}}` placeholders rendered at send time. All routes are nested under `/api/sessions/:sessionId/templates` and require an **OPERATOR** key. The `sessionId` is stored on the template; only `POST` checks that the session exists, the other handlers do not validate it.
 
 #### GET /api/sessions/:sessionId/templates
 
@@ -3378,9 +3378,9 @@ Create a message template for the session (with `{{variable}}` placeholders in t
 
 **Path parameters**
 
-| Name      | Type   | Description                                                                                            |
-| --------- | ------ | ------------------------------------------------------------------------------------------------------ |
-| sessionId | string | Session ID; stored as `template.sessionId`. Not validated against an existing session in this handler. |
+| Name      | Type   | Description                                                                                 |
+| --------- | ------ | ------------------------------------------------------------------------------------------- |
+| sessionId | string | Session ID; stored as `template.sessionId`. Must name an existing session, otherwise `404`. |
 
 **Request body** — `CreateTemplateDto`
 
@@ -3417,7 +3417,7 @@ Returns the saved `Template` entity raw (no envelope). The lazy `session` relati
 }
 ```
 
-**Errors:** `400` validation failure (missing/empty `name`/`body`, over-length, or any extra field rejected by `forbidNonWhitelisted`) · `401` missing/invalid `X-API-Key` · `403` key below OPERATOR role · `409` duplicate `name` for the session
+**Errors:** `400` validation failure (missing/empty `name`/`body`, over-length, or any extra field rejected by `forbidNonWhitelisted`) · `401` missing/invalid `X-API-Key` · `403` key below OPERATOR role · `404` no session with that id (`{ "statusCode": 404, "message": "Session with id '<id>' not found", "error": "Not Found" }`) · `409` duplicate `name` for the session
 
 #### PUT /api/sessions/:sessionId/templates/:id
 
