@@ -466,7 +466,10 @@
     },
     "empty": {
       "title": "尚未設定 Webhook",
-      "description": "新增 Webhook 以接收即時事件通知"
+      "description": "新增 Webhook 以接收即時事件通知",
+      "loadErrorTitle": "無法載入 Webhook",
+      "forbiddenTitle": "無權存取 Webhook",
+      "forbiddenDesc": "Webhook 需要具有操作員或管理員角色的 API 金鑰。"
     },
     "toasts": {
       "created": "Webhook 建立成功",

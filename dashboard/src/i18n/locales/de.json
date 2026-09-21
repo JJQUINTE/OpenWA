@@ -466,7 +466,10 @@
     },
     "empty": {
       "title": "Keine Webhooks konfiguriert",
-      "description": "Füge einen Webhook hinzu, um Ereignisbenachrichtigungen in Echtzeit zu erhalten"
+      "description": "Füge einen Webhook hinzu, um Ereignisbenachrichtigungen in Echtzeit zu erhalten",
+      "loadErrorTitle": "Webhooks konnten nicht geladen werden",
+      "forbiddenTitle": "Kein Zugriff auf Webhooks",
+      "forbiddenDesc": "Webhooks erfordern einen API-Schlüssel mit der Rolle Operator oder Admin."
     },
     "toasts": {
       "created": "Webhook wurde erfolgreich erstellt",

@@ -466,7 +466,10 @@
     },
     "empty": {
       "title": "Aucun webhook configuré",
-      "description": "Ajoutez un webhook pour recevoir des notifications d'événements en temps réel"
+      "description": "Ajoutez un webhook pour recevoir des notifications d'événements en temps réel",
+      "loadErrorTitle": "Impossible de charger les webhooks",
+      "forbiddenTitle": "Aucun accès aux webhooks",
+      "forbiddenDesc": "Les webhooks nécessitent une clé API avec le rôle opérateur ou administrateur."
     },
     "toasts": {
       "created": "Webhook créé avec succès",

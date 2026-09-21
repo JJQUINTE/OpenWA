@@ -466,7 +466,10 @@
     },
     "empty": {
       "title": "Yapılandırılmış webhook yok",
-      "description": "Gerçek zamanlı olay bildirimleri almak için bir webhook ekleyin"
+      "description": "Gerçek zamanlı olay bildirimleri almak için bir webhook ekleyin",
+      "loadErrorTitle": "Webhook'lar yüklenemedi",
+      "forbiddenTitle": "Webhook'lara erişim yok",
+      "forbiddenDesc": "Webhook'lar, operatör veya yönetici rolüne sahip bir API anahtarı gerektirir."
     },
     "toasts": {
       "created": "Webhook başarıyla oluşturuldu",

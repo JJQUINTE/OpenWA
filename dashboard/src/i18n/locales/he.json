@@ -475,7 +475,10 @@
     },
     "empty": {
       "title": "לא הוגדרו Webhooks",
-      "description": "יש להוסיף Webhook כדי לקבל התראות בזמן אמת"
+      "description": "יש להוסיף Webhook כדי לקבל התראות בזמן אמת",
+      "loadErrorTitle": "לא ניתן לטעון את ה-Webhooks",
+      "forbiddenTitle": "אין גישה ל-Webhooks",
+      "forbiddenDesc": "Webhooks דורשים מפתח API עם תפקיד מפעיל או מנהל."
     },
     "toasts": {
       "created": "ה-Webhook נוצר בהצלחה",

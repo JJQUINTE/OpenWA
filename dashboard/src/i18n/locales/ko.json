@@ -466,7 +466,10 @@
     },
     "empty": {
       "title": "설정된 웹훅이 없습니다",
-      "description": "실시간 이벤트 알림을 받으려면 웹훅을 추가하세요"
+      "description": "실시간 이벤트 알림을 받으려면 웹훅을 추가하세요",
+      "loadErrorTitle": "웹훅을 불러올 수 없습니다",
+      "forbiddenTitle": "웹훅에 접근할 수 없습니다",
+      "forbiddenDesc": "웹훅을 사용하려면 운영자 또는 관리자 역할의 API 키가 필요합니다."
     },
     "toasts": {
       "created": "웹훅이 생성되었습니다",
