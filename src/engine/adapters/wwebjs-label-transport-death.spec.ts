@@ -20,8 +20,11 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
       op === name ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue([]);
     const chat = { getLabels: rejects('getChatLabels') };
     const client = {
-      getLabels: rejects('getLabels'),
-      getLabelById: op === 'getLabelById' ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue(null),
+      // getLabelById reads the full list: Client.getLabelById throws page-side for an unknown id.
+      getLabels:
+        op === 'getLabels' || op === 'getLabelById'
+          ? jest.fn().mockRejectedValue(reject)
+          : jest.fn().mockResolvedValue([]),
       getChatById: jest.fn().mockResolvedValue(chat),
       addOrRemoveLabels:
         op === 'changeChatLabel' ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue(undefined),
@@ -71,5 +74,24 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
     const { labels } = makeLabels('changeChatLabel', new Error('[LT01] Only Whatsapp business'));
 
     await expect(labels.addLabelToChat('628123@c.us', '7')).rejects.toThrow(/business/i);
+  });
+
+  // Client.getLabelById never resolves null for an unknown id (its page code serializes undefined),
+  // so the adapter picks from the list; a missing id, or any id on a personal account, is null (404).
+  it('getLabelById resolves a listed label and null for an unknown one', async () => {
+    const client = { getLabels: jest.fn().mockResolvedValue([{ id: '5', name: 'Paid', hexColor: '#25D366' }]) };
+    const host = {
+      ensureReady: jest.fn(),
+      getClient: () => client as unknown as Client,
+      isPageTransportError: () => false,
+      reportIfPageTransportError: jest.fn(),
+      logger,
+    } as unknown as WwebjsEngineHost;
+    const labels = new WwebjsLabels(host);
+
+    await expect(labels.getLabelById('5')).resolves.toEqual({ id: '5', name: 'Paid', hexColor: '#25D366' });
+    await expect(labels.getLabelById('999')).resolves.toBeNull();
+    client.getLabels.mockResolvedValue([]);
+    await expect(labels.getLabelById('5')).resolves.toBeNull();
   });
 });

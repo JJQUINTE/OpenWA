@@ -722,8 +722,8 @@ with zero OpenWA surface. Baileys-only; whatsapp-web.js has no community API at 
 | `addOrRemoveLabels` | ✅ `addLabelToChat`, `removeLabelFromChat`                                                          |
 | `getChatLabels`     | ❌ **not exposed** — the adapter reads the chat and calls `Chat.getLabels()`, not the Client method |
 | `getChatsByLabelId` | ✅ `getChatsByLabel`                                                                                |
-| `getLabelById`      | ✅ `getLabelById`                                                                                   |
-| `getLabels`         | ✅ `getLabels`                                                                                      |
+| `getLabelById`      | ❌ **not exposed**: it throws page-side for an unknown id, so the adapter picks from `getLabels`    |
+| `getLabels`         | ✅ `getLabels`, `getLabelById`                                                                      |
 
 **Status & broadcasts** (3)
 
@@ -984,8 +984,8 @@ adapter sources — re-derive the same way when anything changes:
   **9** wwjs-only; `sendCatalog` (unavailable on both engines) is not exposed.
 - Full engine inventory (29.5), split by the exposure legend rather than lumped: Baileys **152**
   socket methods — 48 wired into interface methods, 5 internal wiring, 29 plumbing, **70 ❌ not
-  exposed** (incl. the whole 23-method community cluster); wwjs **81** Client methods — 43 wired,
-  3 internal wiring, 1 class plumbing, **34 ❌ not exposed** (26 real capabilities + 8
+  exposed** (incl. the whole 23-method community cluster); wwjs **81** Client methods — 42 wired,
+  3 internal wiring, 1 class plumbing, **35 ❌ not exposed** (27 real capabilities + 8
   session/transport settings that are not WhatsApp capabilities). The backlog is the ❌ rows minus
   those 8 settings; 🔩 plumbing is correctly never exposed.
 - Events: Baileys **34** (16 consumed / 18 dropped), wwjs **31** (16 consumed / 15 dropped).

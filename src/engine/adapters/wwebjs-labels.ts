@@ -92,9 +92,13 @@ export class WwebjsLabels {
 
   async getLabelById(labelId: string): Promise<Label | null> {
     this.host.ensureReady();
-    const label = await withPage(this.host, 'getLabelById', () =>
-      (this.client() as unknown as BusinessClient).getLabelById(labelId),
+    // Client.getLabelById never resolves null: its page code serializes the looked-up label without
+    // checking it exists, so an unknown id (every id on a personal account) throws a TypeError that
+    // surfaced as a 500. Picking from the full list makes a missing label the documented 404.
+    const labels = await withPage(this.host, 'getLabelById', () =>
+      (this.client() as unknown as BusinessClient).getLabels(),
     );
+    const label = labels?.find(candidate => String(candidate.id) === labelId);
     if (!label) {
       return null;
     }
