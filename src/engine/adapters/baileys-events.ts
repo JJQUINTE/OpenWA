@@ -333,7 +333,12 @@ export class BaileysEvents {
           messageId: rm?.key?.id ?? '',
           chatId: this.host.toNeutralJid(remoteJid),
           reaction: rm?.text ?? '',
-          senderId: this.host.toNeutralJid(msg.key.participant ?? remoteJid),
+          // A 1:1 key names the chat partner, not the author: for a reaction the account made from
+          // its phone (fromMe) the reactor is the account itself. Group and status keys carry the
+          // author as `participant`, own reactions included, which the edit branch reads the same way.
+          senderId: this.host.toNeutralJid(
+            msg.key.participant ?? (msg.key.fromMe === true ? this.host.normalizedSelfJid() : remoteJid),
+          ),
         };
         this.host.getOnMessageReaction()?.(event);
         return;

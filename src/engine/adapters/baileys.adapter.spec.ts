@@ -3128,6 +3128,56 @@ describe('BaileysAdapter inbound fan-out', () => {
     expect(event.senderId).toBe('628111@c.us'); // canonicalized to the neutral dialect
   });
 
+  it.each(['notify', 'append'])(
+    'reactionMessage: attributes a 1:1 reaction made from the phone to the account (%s)',
+    async type => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      const baileys = jest.requireMock('@whiskeysockets/baileys') as { getContentType: jest.Mock };
+      baileys.getContentType.mockReturnValue('reactionMessage');
+      const onMessageReaction = jest.fn();
+      const adapter = newAdapter();
+      await adapter.initialize({ onMessageReaction });
+      fakeSock.user = { id: '628999:1@s.whatsapp.net', name: 'Me' };
+      // A 1:1 key from another device of the account names the partner and carries no participant.
+      fakeSock.fire('messages.upsert', {
+        type,
+        messages: [
+          {
+            key: { remoteJid: '628111@s.whatsapp.net', fromMe: true, id: 'REACT_SELF' },
+            message: { reactionMessage: { key: { id: 'TARGET_MSG_ID' }, text: '👍' } },
+            messageTimestamp: 1700000024,
+          },
+        ],
+      });
+      await new Promise(r => setImmediate(r));
+      expect(onMessageReaction).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: '628111@c.us', senderId: '628999@c.us', reaction: '👍' }),
+      );
+    },
+  );
+
+  it('reactionMessage: keeps the participant as the reactor of an own group reaction', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const baileys = jest.requireMock('@whiskeysockets/baileys') as { getContentType: jest.Mock };
+    baileys.getContentType.mockReturnValue('reactionMessage');
+    const onMessageReaction = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessageReaction });
+    fakeSock.user = { id: '628999:1@s.whatsapp.net', name: 'Me' };
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: '120363@g.us', fromMe: true, id: 'REACT_GRP', participant: '628777@s.whatsapp.net' },
+          message: { reactionMessage: { key: { id: 'TARGET_MSG_ID' }, text: '👍' } },
+          messageTimestamp: 1700000024,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    expect(onMessageReaction).toHaveBeenCalledWith(expect.objectContaining({ senderId: '628777@c.us' }));
+  });
+
   describe('contentless protocol traffic on the live path (#1568)', () => {
     /** Push one group message through the live upsert handler with Baileys' real content-type resolution. */
     const fireLive = async (
