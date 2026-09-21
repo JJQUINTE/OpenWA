@@ -2419,6 +2419,48 @@ describe('BaileysAdapter inbound fan-out', () => {
     expect(onMessageCreate).toHaveBeenCalledTimes(1);
   });
 
+  // The inbound insert oracle dedupes the webhook and WS fan-out, but the message:received plugin
+  // hook runs before it, so a re-delivered inbound message has to stop here too.
+  it('does not dispatch a received message twice when WhatsApp re-delivers it', async () => {
+    const received = {
+      key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'INBOUND_REDELIVERED' },
+      message: { conversation: 'hello' },
+      messageTimestamp: Math.floor(Date.now() / 1000) - 60,
+    };
+    fakeStore.getMessage.mockResolvedValueOnce(null).mockResolvedValueOnce(received);
+    const onMessage = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessage });
+    fakeSock.fire('connection.update', { connection: 'open' });
+
+    fakeSock.fire('messages.upsert', { type: 'notify', messages: [received] });
+    await new Promise(r => setImmediate(r));
+    fakeSock.fire('messages.upsert', { type: 'append', messages: [received] }); // the unacked re-delivery
+    await new Promise(r => setImmediate(r));
+    expect(onMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('still dispatches a received message when the store cannot be read', async () => {
+    fakeStore.getMessage.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    const onMessage = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessage });
+    fakeSock.fire('connection.update', { connection: 'open' });
+
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'INBOUND_STORE_DOWN' },
+          message: { conversation: 'hello' },
+          messageTimestamp: Math.floor(Date.now() / 1000),
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    expect(onMessage).toHaveBeenCalledTimes(1);
+  });
+
   // A story is not a conversation: the projector drops an own status post rather than reporting it,
   // so downloading its media first is work nothing consumes, and a story is a full-size photo.
   it('does not download the media of a status the account posted from its phone', async () => {
