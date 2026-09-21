@@ -4359,8 +4359,7 @@ describe('BaileysAdapter group management', () => {
     // non-admin with an error node, which reached the caller as a bare 500.
     ['getGroupInviteCode', (a: BaileysAdapter) => a.getGroupInviteCode('123-456@g.us'), 'groupInviteCode'],
     ['revokeGroupInviteCode', (a: BaileysAdapter) => a.revokeGroupInviteCode('123-456@g.us'), 'groupRevokeInvite'],
-    // Was the one group write with no refusal mapping: an unknown or already-left group answered
-    // an opaque 500 while whatsapp-web.js resolves the chat first and answers 404.
+    // Was the one group write with no refusal mapping: a refused leave answered an opaque 500.
     ['leaveGroup', (a: BaileysAdapter) => a.leaveGroup('123-456@g.us'), 'groupLeave'],
   ])('%s maps an admin-refused operation to EngineRefusedError (403)', async (_name, call, sockMethod) => {
     (fakeSock as unknown as Record<string, jest.Mock>)[sockMethod].mockRejectedValueOnce(
@@ -4368,6 +4367,53 @@ describe('BaileysAdapter group management', () => {
     );
     const adapter = await ready();
     await expect(call(adapter)).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
+  // WhatsApp's item-not-found on a request addressed to the group means the group is gone: the read
+  // path already answers 404 for it, and whatsapp-web.js answers 404 for an unknown group id.
+  it.each([
+    ['setGroupSubject', (a: BaileysAdapter) => a.setGroupSubject('123-456@g.us', 'X'), 'groupUpdateSubject'],
+    [
+      'setGroupDescription',
+      (a: BaileysAdapter) => a.setGroupDescription('123-456@g.us', 'X'),
+      'groupUpdateDescription',
+    ],
+    [
+      'setGroupMessagesAdminsOnly',
+      (a: BaileysAdapter) => a.setGroupMessagesAdminsOnly('123-456@g.us', true),
+      'groupSettingUpdate',
+    ],
+    [
+      'setGroupInfoAdminsOnly',
+      (a: BaileysAdapter) => a.setGroupInfoAdminsOnly('123-456@g.us', true),
+      'groupSettingUpdate',
+    ],
+    [
+      'setGroupMemberAddMode',
+      (a: BaileysAdapter) => a.setGroupMemberAddMode('123-456@g.us', 'admins'),
+      'groupMemberAddMode',
+    ],
+    ['setGroupEphemeral', (a: BaileysAdapter) => a.setGroupEphemeral('123-456@g.us', 86400), 'groupToggleEphemeral'],
+    ['getGroupInviteCode', (a: BaileysAdapter) => a.getGroupInviteCode('123-456@g.us'), 'groupInviteCode'],
+    ['revokeGroupInviteCode', (a: BaileysAdapter) => a.revokeGroupInviteCode('123-456@g.us'), 'groupRevokeInvite'],
+    ['leaveGroup', (a: BaileysAdapter) => a.leaveGroup('123-456@g.us'), 'groupLeave'],
+    [
+      'addParticipants',
+      (a: BaileysAdapter) => a.addParticipants('123-456@g.us', ['628111@c.us']),
+      'groupParticipantsUpdate',
+    ],
+  ])('%s maps an unknown group to GroupNotFoundError (404)', async (_name, call, sockMethod) => {
+    (fakeSock as unknown as Record<string, jest.Mock>)[sockMethod].mockRejectedValueOnce(
+      Object.assign(new Error('item-not-found'), { data: 404 }),
+    );
+    const adapter = await ready();
+    await expect(call(adapter)).rejects.toBeInstanceOf(GroupNotFoundError);
+  });
+
+  it('deleteGroupPicture keeps a 404 as a refusal: that IQ is not addressed to the group', async () => {
+    fakeSock.removeProfilePicture.mockRejectedValueOnce(Object.assign(new Error('item-not-found'), { data: 404 }));
+    const adapter = await ready();
+    await expect(adapter.deleteGroupPicture('123-456@g.us')).rejects.toBeInstanceOf(EngineRefusedError);
   });
 
   // The channel writes map WhatsApp's refusal; these two did not, so unfollowing a channel the

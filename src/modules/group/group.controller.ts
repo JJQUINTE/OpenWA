@@ -202,6 +202,7 @@ export class GroupController {
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
   @ApiResponse({ status: 400, description: PARTICIPANT_ID_400 })
   @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async addParticipants(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -227,6 +228,7 @@ export class GroupController {
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
   @ApiResponse({ status: 400, description: PARTICIPANT_ID_400 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async removeParticipants(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -253,6 +255,7 @@ export class GroupController {
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
   @HttpCode(HttpStatus.OK)
   @ApiResponse({ status: 400, description: PARTICIPANT_ID_400 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async promoteParticipants(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -279,6 +282,7 @@ export class GroupController {
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
   @HttpCode(HttpStatus.OK)
   @ApiResponse({ status: 400, description: PARTICIPANT_ID_400 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async demoteParticipants(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -302,6 +306,7 @@ export class GroupController {
   @ApiResponse({ status: 503, description: 'WhatsApp did not answer within the request budget — retry shortly' })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async getMembershipRequests(@Param('sessionId') sessionId: string, @Param('groupId') groupId: string) {
     return this.groupService.getGroupMembershipRequests(sessionId, groupId);
   }
@@ -329,6 +334,7 @@ export class GroupController {
   @ApiResponse({ status: 503, description: PARTICIPANTS_503 })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async approveMembershipRequests(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -361,6 +367,7 @@ export class GroupController {
   @ApiResponse({ status: 503, description: PARTICIPANTS_503 })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async rejectMembershipRequests(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -385,6 +392,7 @@ export class GroupController {
       'the gateway stopped waiting for a confirmation that never came.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async setSubject(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -409,6 +417,7 @@ export class GroupController {
       'the gateway stopped waiting for a confirmation that never came.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async setDescription(
     @Param('sessionId') sessionId: string,
     @Param('groupId') groupId: string,
@@ -432,6 +441,7 @@ export class GroupController {
       'the gateway stopped waiting for a confirmation that never came.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async leave(@Param('sessionId') sessionId: string, @Param('groupId') groupId: string) {
     await this.groupService.leaveGroup(sessionId, groupId);
     return { success: true, message: 'Left the group' };
@@ -521,6 +531,7 @@ export class GroupController {
   @ApiResponse({ status: 403, description: INVITE_CODE_403 })
   @ApiResponse({ status: 503, description: INVITE_CODE_503 })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async getInviteCode(@Param('sessionId') sessionId: string, @Param('groupId') groupId: string) {
     const inviteCode = await this.groupService.getGroupInviteCode(sessionId, groupId);
     return {
@@ -539,6 +550,7 @@ export class GroupController {
   @ApiResponse({ status: 403, description: INVITE_CODE_403 })
   @ApiResponse({ status: 503, description: INVITE_CODE_503 })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
+  @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
   async revokeInviteCode(@Param('sessionId') sessionId: string, @Param('groupId') groupId: string) {
     const newCode = await this.groupService.revokeGroupInviteCode(sessionId, groupId);
     return {
