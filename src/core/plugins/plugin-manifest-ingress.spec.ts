@@ -105,6 +105,18 @@ describe('validateIngressManifest', () => {
     }
   });
 
+  it('rejects a route holding a lone UTF-16 surrogate (no URL can encode or decode to it)', () => {
+    for (const route of ['\ud800', 'a\udc00b', 'x\ud83d']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).toThrow(/single URL path segment/);
+    }
+    // A well-formed surrogate pair is an ordinary astral character.
+    const m = baseManifest();
+    m.ingress[0].route = 'hook-\ud83d\ude80';
+    expect(() => validateIngressManifest(m as never)).not.toThrow();
+  });
+
   it('rejects a dedupOn value other than header or body', () => {
     const m = baseManifest();
     (m.ingress[0] as { dedupOn?: string }).dedupOn = 'bdy';

@@ -317,14 +317,14 @@ export const SUPPORTED_SDK_MAJOR = 1;
 // validated once at load.
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const HTTP_HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
-// An ingress route must survive as one URL path segment. The minted ingress URL appends it verbatim
-// and the controller matches the first decoded segment after the instance id, so '/' (and '\\', which a
-// WHATWG URL parser turns into '/') splits it, '?' and '#' end the path, a bare '%' is a malformed
-// escape, and a URL parser strips tab and newline (so control characters are refused outright).
-// Anything else, a space or a non-ASCII letter included, is percent-encoded by the client and
-// decoded back before the match.
+// An ingress route must survive as one URL path segment. The controller matches the first decoded
+// segment after the instance id, so '/' (and '\\', which a WHATWG URL parser turns into '/') splits
+// it, '?' and '#' end the path, a bare '%' is a malformed escape, and a URL parser strips tab and
+// newline (so control characters are refused outright). Anything else, a space or a non-ASCII letter
+// included, is percent-encoded in the minted ingress URL and decoded back before the match. A lone
+// UTF-16 surrogate has no UTF-8 form: encodeURIComponent throws on it and no URL decodes to it.
 // eslint-disable-next-line no-control-regex
-const INGRESS_ROUTE_SEGMENT = /^[^/\\?#%\x00-\x1f\x7f]+$/;
+const INGRESS_ROUTE_SEGMENT = /^[^/\\?#%\x00-\x1f\x7f\p{Cs}]+$/u;
 
 /**
  * Validates a manifest's `ingress` declarations: SDK major compatibility, the `webhook:ingress`
@@ -363,7 +363,7 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
     if (typeof r.route !== 'string' || !INGRESS_ROUTE_SEGMENT.test(r.route) || r.route === '.' || r.route === '..') {
       throw new Error(
         `Plugin ${manifest.id}: ingress route '${String(r.route)}' must be a single URL path segment ` +
-          `(no '/', '\\', '?', '#', '%' or control character, and not '.' or '..')`,
+          `(no '/', '\\', '?', '#', '%', control character or lone surrogate, and not '.' or '..')`,
       );
     }
     if (r.signature.scheme === 'none' && !allowUnsignedIngress) {
