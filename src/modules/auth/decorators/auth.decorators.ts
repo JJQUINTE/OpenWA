@@ -40,16 +40,22 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 export const RequireUnscopedKey = () => SetMetadata(UNSCOPED_KEY, true);
 
 /**
- * Mark a handler (or controller) a chat-restricted key — one carrying `allowedChats` — may reach,
- * when the handler's target chat is one the ApiKeyGuard can see: a `:chatId` / `:groupId` /
- * `:contactId` path param, a `chatId` / `fromChatId` / `toChatId` body field, or a `messages[]`
- * entry's `chatId`.
+ * Mark a handler (or controller) a chat-restricted key — one carrying `allowedChats` — may reach.
  *
  * This is an ALLOWLIST, not a restriction: a chat-restricted key is refused with 403 on every route
  * that is NOT marked, so surfaces with no chat dimension (webhooks, automation rules, status, key
  * management, channels) — and every route added later — stay closed without having to enumerate
- * them. A marked handler that lists chats instead of naming one must filter its result through
- * ChatScopeService; the structural coverage spec enforces both halves.
+ * them. A handler is safe to mark in one of three ways:
+ *
+ * - **fenced by path, body or query** — it names a chat the ApiKeyGuard inspects (`:chatId` /
+ *   `:groupId` / `:contactId`, `?chatId=`, or the `chatId` / `fromChatId` / `toChatId` /
+ *   `messages[].chatId` body fields);
+ * - **filtered** — it lists chats instead of naming one, and filters the result through
+ *   ChatScopeService;
+ * - **chat-agnostic** — it names no chat at all, so the mark itself is the assertion that it cannot
+ *   reach one. This is the one category the structural coverage spec cannot derive (a webhook with
+ *   `events: ['*']` also names no chat), so the mark is a deliberate operator decision.
+ *
  * @example @ChatScoped() @Get(':chatId')
  */
 export const ChatScoped = () => SetMetadata(CHAT_SCOPED_KEY, true);
