@@ -8905,9 +8905,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -8966,9 +8966,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -9027,9 +9027,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -9088,9 +9088,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -9149,9 +9149,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -9210,9 +9210,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }
@@ -9271,9 +9271,9 @@
             "name": "path",
             "required": true,
             "in": "path",
-            "description": "Provider-defined trailing path the plugin claims (may contain slashes).",
+            "description": "The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.",
             "schema": {
-              "example": "events/message",
+              "example": "chatwoot",
               "type": "string"
             }
           }

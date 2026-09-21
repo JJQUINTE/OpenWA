@@ -45,8 +45,9 @@ export class IngressController {
   @ApiParam({
     name: 'path',
     type: String,
-    description: 'Provider-defined trailing path the plugin claims (may contain slashes).',
-    example: 'events/message',
+    description:
+      'The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.',
+    example: 'chatwoot',
   })
   @ApiOkResponse({
     description:

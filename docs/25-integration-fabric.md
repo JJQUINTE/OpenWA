@@ -240,8 +240,8 @@ dedup rows and re-admit their replays, which is worse than the bounded growth it
 ## 25.8 The Integration SDK (v1)
 
 The stable surface untrusted adapters consume. A plugin declares `sdkVersion: "1"` and an `ingress`
-descriptor (the route, its signature scheme, replay tolerance, dedup header, and an optional verification
-handshake) in its manifest, and requests the `webhook:ingress` and `conversation:send` permissions. The
+descriptor (the route, which is a single URL path segment such as `chatwoot` and never contains a `/`, its
+signature scheme, replay tolerance, dedup header, and an optional verification handshake) in its manifest, and requests the `webhook:ingress` and `conversation:send` permissions. The
 host refuses to load an ingress-declaring plugin whose declared **major** differs from the host's
 supported major, and the surface is **additive-only** within a major. The worker-facing API centres on
 `ctx.registerWebhook(...)` (claim an inbound route), `ctx.conversations.send(...)` (normalized reply), and

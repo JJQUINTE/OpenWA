@@ -6649,7 +6649,7 @@ Create an instance of an ingress-capable plugin.
   "createdAt": "2026-08-01T10:00:00.000Z",
   "updatedAt": "2026-08-01T10:00:00.000Z",
   "ingressUrls": [
-    { "route": "events/message", "url": "https://wa.example.com/api/ingress/chatwoot/chatwoot-prod-1/events/message" }
+    { "route": "chatwoot", "url": "https://wa.example.com/api/ingress/chatwoot/chatwoot-prod-1/chatwoot" }
   ]
 }
 ```
@@ -6743,8 +6743,10 @@ response only; the `verifyToken` is also shown (unchanged).
 #### DELETE /api/ingress/:pluginId/:instanceId/:path
 
 One route, any HTTP method: the inbound webhook endpoint an external provider delivers to. The
-trailing `:path` segment is the plugin-declared route (it may contain slashes, e.g.
-`events/message`); a delivery to a route the plugin did not claim is a `404`.
+trailing `:path` is the plugin-declared route, a single path segment (e.g. `chatwoot`): only the
+first segment selects the route and any further segments are ignored. A plugin whose manifest
+declares a route with a `/` is refused at install and at boot. A delivery to a route the plugin did
+not claim is a `404`.
 
 **Auth:** **none** — `@Public` by design, because a provider cannot present an API key. What
 authenticates a delivery is the per-instance HMAC signature over the exact raw body bytes (the body

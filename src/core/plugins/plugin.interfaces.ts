@@ -251,7 +251,7 @@ export interface IngressResponseContract {
 
 /** One inbound webhook route a plugin claims. Requires the `webhook:ingress` permission. */
 export interface PluginIngressRoute {
-  route: string; // host prefixes it; the plugin never binds a port
+  route: string; // one URL path segment (no '/'); host prefixes it; the plugin never binds a port
   /**
    * @deprecated 'sync-reply' is inert dead code since the P0 substrate (#568) and is NOT wired to the
    * HTTP response — the pipeline is always async + fast-ack. Declare synchronous response behavior via
@@ -317,13 +317,23 @@ export const SUPPORTED_SDK_MAJOR = 1;
 // validated once at load.
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const HTTP_HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
+// An ingress route must survive as one URL path segment. The minted ingress URL appends it verbatim
+// and the controller matches the first decoded segment after the instance id, so '/' (and '\\', which a
+// WHATWG URL parser turns into '/') splits it, '?' and '#' end the path, a bare '%' is a malformed
+// escape, and a URL parser strips tab and newline (so control characters are refused outright).
+// Anything else, a space or a non-ASCII letter included, is percent-encoded by the client and
+// decoded back before the match.
+// eslint-disable-next-line no-control-regex
+const INGRESS_ROUTE_SEGMENT = /^[^/\\?#%\x00-\x1f\x7f]+$/;
 
 /**
  * Validates a manifest's `ingress` declarations: SDK major compatibility, the `webhook:ingress`
- * permission, route uniqueness, that a declared `toleranceSec` is usable (> 0 — a replay window
- * of zero or less would make the tolerance check a no-op), and that no route declares
- * `signature.scheme: 'none'` unless the operator has explicitly opted in via
- * `ALLOW_UNSIGNED_INGRESS=true`. A `none`-scheme route is a fully-unauthenticated `@Public()`
+ * permission, route uniqueness, that each route is a single URL path segment the controller can
+ * match, that a declared `toleranceSec` is a finite number > 0 (a replay window of zero or less, or
+ * NaN, would make the tolerance check a no-op), that `dedupOn` is 'header' or 'body', that a
+ * declared ack is a final status (200-599) with a string body and header names and values Node can
+ * write, and that no route declares `signature.scheme: 'none'` unless the operator has explicitly
+ * opted in via `ALLOW_UNSIGNED_INGRESS=true`. A `none`-scheme route is a fully-unauthenticated `@Public()`
  * endpoint — once an instance is provisioned, anyone who can reach the host can POST a forged
  * payload that triggers outbound WhatsApp sends. Rejecting it at load (rather than only warning)
  * keeps that surface from lighting up silently. A manifest with no `ingress` entries is a no-op.
@@ -350,6 +360,12 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
       throw new Error(`Plugin ${manifest.id}: duplicate or empty ingress route '${r.route}'`);
     }
     seen.add(r.route);
+    if (typeof r.route !== 'string' || !INGRESS_ROUTE_SEGMENT.test(r.route) || r.route === '.' || r.route === '..') {
+      throw new Error(
+        `Plugin ${manifest.id}: ingress route '${String(r.route)}' must be a single URL path segment ` +
+          `(no '/', '\\', '?', '#', '%' or control character, and not '.' or '..')`,
+      );
+    }
     if (r.signature.scheme === 'none' && !allowUnsignedIngress) {
       throw new Error(
         `Plugin ${manifest.id}: ingress route '${r.route}' declares signature.scheme 'none', which is an ` +
@@ -365,7 +381,8 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
       const n = typeof tol === 'number' ? tol : typeof tol === 'string' && tol.trim() !== '' ? Number(tol) : Number.NaN;
       if (!Number.isFinite(n) || n <= 0) {
         throw new Error(
-          `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be a positive number of seconds (a replay guard would be a no-op)`,
+          `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be a positive number of seconds ` +
+            `(a replay guard would be a no-op)`,
         );
       }
     }

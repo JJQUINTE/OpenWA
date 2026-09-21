@@ -91,6 +91,20 @@ describe('validateIngressManifest', () => {
     }
   });
 
+  it('rejects a route that is not a single URL path segment', () => {
+    for (const route of ['events/message', '/hook', 'a\\b', 'a?b', 'a#b', 'a%2Fb', 'a\nb', '.', '..']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).toThrow(/single URL path segment/);
+    }
+    // A space or a non-ASCII letter is percent-encoded by the client and decoded before the match.
+    for (const route of ['send-sms', 'chatwoot', 'v1.events', 'a_b~c', 'a b', 'café', '...']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).not.toThrow();
+    }
+  });
+
   it('rejects a dedupOn value other than header or body', () => {
     const m = baseManifest();
     (m.ingress[0] as { dedupOn?: string }).dedupOn = 'bdy';
