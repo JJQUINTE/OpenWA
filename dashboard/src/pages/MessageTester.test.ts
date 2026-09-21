@@ -237,6 +237,40 @@ test('a 429 from the gateway stops the run instead of trying the rest', async ()
   assert.ok(rtl.screen.getByText('Failed'));
 });
 
+test('a 409 (engine not ready) stops the run, since every group would fail alike', async () => {
+  const gateway = stubGroupGateway(
+    [
+      { id: 'g1@g.us', name: 'Family' },
+      { id: 'g2@g.us', name: 'Work' },
+    ],
+    409,
+  );
+  await renderGroupsAsWriter();
+  await sendTextToAllGroups();
+
+  await rtl.screen.findByText('1, stopped after HTTP 409');
+  assert.deepEqual(gateway.textSends, ['g1@g.us']);
+});
+
+test('an empty message or a media type with no file or URL keeps Send disabled', async () => {
+  stubGroupGateway([
+    { id: 'g1@g.us', name: 'Family' },
+    { id: 'g2@g.us', name: 'Work' },
+  ]);
+  await renderGroupsAsWriter();
+  await rtl.screen.findByRole('checkbox', { name: 'Work' });
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Select all' }));
+
+  const message = rtl.screen.getByPlaceholderText('Enter your message here...');
+  rtl.fireEvent.change(message, { target: { value: '   ' } });
+  assert.equal(sendMessageButton().disabled, true);
+  rtl.fireEvent.change(message, { target: { value: 'hi' } });
+  await rtl.waitFor(() => assert.equal(sendMessageButton().disabled, false));
+
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Image' }));
+  assert.equal(sendMessageButton().disabled, true);
+});
+
 test('a recipients file over the cap is refused without being read', async () => {
   const { container } = await pickRecipientsFile(maxBytes + 1);
 

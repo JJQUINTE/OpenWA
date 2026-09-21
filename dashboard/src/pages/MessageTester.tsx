@@ -311,15 +311,17 @@ export function MessageTester() {
   const bulkCaptionTooLong =
     bulkAttachment !== null && bulkAttachment.kind !== 'audio' && captionLength(content) > BULK_CAPTION_MAX_LENGTH;
 
-  // Per-type required-field validation for the newer types; text/media keep their original behavior
-  // (the backend stays the authoritative validator either way).
+  // Per-type required-field validation (the backend stays the authoritative validator). A multi-group
+  // send repeats the request per group, so a body the backend would refuse must not start the run.
   let formValid = true;
-  if (messageType === 'location') {
+  if (messageType === 'text') {
+    formValid = content.trim().length > 0;
+  } else if (isMediaMessageType) {
+    formValid = !!mediaFile || mediaUrl.trim().length > 0;
+  } else if (messageType === 'location') {
     formValid = !Number.isNaN(lat) && !Number.isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
   } else if (messageType === 'contact') {
     formValid = contactName.trim().length > 0 && contactNumber.trim().length > 0;
-  } else if (messageType === 'sticker') {
-    formValid = !!mediaFile || mediaUrl.trim().length > 0;
   } else if (messageType === 'poll') {
     formValid = pollQuestion.trim().length > 0 && pollOptionsFilled.length >= 2;
   } else if (messageType === 'forward') {

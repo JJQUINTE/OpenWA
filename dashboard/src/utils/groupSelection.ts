@@ -10,7 +10,8 @@ export interface GroupPickerRow {
 
 export type GroupSendPlan = { mode: 'single'; chatId: string } | { mode: 'sequential'; chatIds: string[] };
 
-const GATEWAY_REFUSAL_STATUSES: readonly number[] = [429, 503];
+// 409 on a send route means the session's engine is not ready, which fails every group alike.
+const GATEWAY_REFUSAL_STATUSES: readonly number[] = [409, 429, 503];
 
 export function groupLabel(group: SelectableGroup): string {
   return group.name?.trim() || group.id;
