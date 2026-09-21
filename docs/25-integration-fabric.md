@@ -269,8 +269,10 @@ Within major 1 the surface grows additively. A route's optional `response` contr
 `headers`, rendered host-side with `{rawBody}`/`{timestamp}`/`{id}` templates from the verified request),
 and an advisory `deadlineMs` — lets an adapter shape the synchronous HTTP response the provider sees; the
 plugin still always runs async, and a route with no `response` is byte-identical to today's default
-fast-ack. `ack.body` and every `ack.headers` value must be strings, and a manifest that declares otherwise
-is refused at install and at boot, which leaves that plugin in error until the manifest is fixed. A
+fast-ack. `ack.body` and every `ack.headers` value must be strings, `ack.status` must be a final status
+(200-599), and a header value may hold no control character (other than HTAB) and nothing above U+00FF,
+since Node cannot write one; a manifest that declares otherwise is refused at install and at boot, which
+leaves that plugin in error until the manifest is fixed. A
 declared header is dropped rather than written when it is one of these thirteen names: `content-type`
 (decided by the allowlist in §25.8); `content-length`, `transfer-encoding`, `content-encoding` and
 `trailer`, since the host frames the response itself and never compresses it; `set-cookie`,

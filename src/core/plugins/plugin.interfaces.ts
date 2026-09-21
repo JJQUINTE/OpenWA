@@ -243,7 +243,7 @@ export interface IngressResponseContract {
   ack?: {
     status?: number; // default 202
     body?: string; // literal, or a '{rawBody}'/'{timestamp}'/'{id}' template rendered host-side
-    headers?: Record<string, string>; // static; validated at load (HTTP-token name, no CR/LF value)
+    headers?: Record<string, string>; // static; validated at load (HTTP-token name, a value Node can write)
   };
   deadlineMs?: number; // documented provider ack budget (advisory; not enforced)
 }
@@ -309,10 +309,13 @@ export interface ConversationSendEnvelope {
 /** Integration SDK major version this host supports. A plugin whose `sdkVersion` major differs is refused. */
 export const SUPPORTED_SDK_MAJOR = 1;
 
-// ack header guards: name must be an RFC 7230 token (no spaces/separators), value must contain no
-// CR/LF (header-injection guard). The header source is the static manifest, validated once at load.
+// ack header guards: name must be an RFC 7230 token (no spaces/separators), value must be one Node's
+// setHeader accepts (HTAB, visible ASCII, space, and 0x80-0xFF; so no CR/LF and no other control
+// character or anything above U+00FF). A value Node refuses throws at write time, after the delivery
+// was persisted, and answers every attempt with a 500. The header source is the static manifest,
+// validated once at load.
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const HTTP_HEADER_VALUE_NO_CRLF = /^[^\r\n]*$/;
+const HTTP_HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
 
 /**
  * Validates a manifest's `ingress` declarations: SDK major compatibility, the `webhook:ingress`
@@ -365,9 +368,11 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
     }
     if (r.response) {
       const ackStatus = r.response.ack?.status;
-      if (ackStatus !== undefined && (!Number.isInteger(ackStatus) || ackStatus < 100 || ackStatus > 599)) {
+      // A 1xx is an informational response: Node writes it with no final response after it, so the
+      // provider waits until it times out.
+      if (ackStatus !== undefined && (!Number.isInteger(ackStatus) || ackStatus < 200 || ackStatus > 599)) {
         throw new Error(
-          `Plugin ${manifest.id}: route '${r.route}' response.ack.status must be a valid HTTP status (100-599)`,
+          `Plugin ${manifest.id}: route '${r.route}' response.ack.status must be a final HTTP status (200-599)`,
         );
       }
       const ackBody = r.response.ack?.body;
@@ -381,14 +386,15 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
               `Plugin ${manifest.id}: route '${r.route}' response.ack header name '${name}' is not a valid HTTP token`,
             );
           }
-          // Before the CR/LF guard: RegExp.test coerces its argument, so a number would pass it and
+          // Before the character guard: RegExp.test coerces its argument, so a number would pass it and
           // then be dropped at render time, leaving the header silently absent from every ack.
           if (typeof value !== 'string') {
             throw new Error(`Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' must be a string`);
           }
-          if (!HTTP_HEADER_VALUE_NO_CRLF.test(value)) {
+          if (!HTTP_HEADER_VALUE.test(value)) {
             throw new Error(
-              `Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' has invalid characters (CR/LF forbidden)`,
+              `Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' has invalid characters ` +
+                `(control characters and characters above U+00FF cannot be written in a header)`,
             );
           }
         }

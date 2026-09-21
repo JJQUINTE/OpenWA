@@ -287,6 +287,28 @@ describe('validateIngressManifest: response contract', () => {
     ).toThrow(/invalid characters/);
   });
 
+  it('rejects a 1xx ack.status, which Node sends with no final response after it', () => {
+    for (const status of [100, 103, 199]) {
+      expect(() => validateIngressManifest(manifestWithRoute({ response: { ack: { status } } }))).toThrow(
+        /ack\.status/,
+      );
+    }
+    expect(() => validateIngressManifest(manifestWithRoute({ response: { ack: { status: 200 } } }))).not.toThrow();
+  });
+
+  it('rejects an ack header value Node cannot write, and keeps Latin-1 and HTAB', () => {
+    for (const value of ['ok \u2713', 'a\u0000b', 'a\u007fb', 'a\u001bb']) {
+      expect(() =>
+        validateIngressManifest(manifestWithRoute({ response: { ack: { headers: { 'x-note': value } } } })),
+      ).toThrow(/invalid characters/);
+    }
+    for (const value of ['caf\u00e9', 'a\tb']) {
+      expect(() =>
+        validateIngressManifest(manifestWithRoute({ response: { ack: { headers: { 'x-note': value } } } })),
+      ).not.toThrow();
+    }
+  });
+
   it('rejects a non-string ack body', () => {
     // A manifest is third-party JSON. Left unchecked, a number or object here reached the renderer,
     // which drops anything that is not a string, so the route answered every delivery with an EMPTY
@@ -297,7 +319,7 @@ describe('validateIngressManifest: response contract', () => {
   });
 
   it('rejects a non-string ack header value', () => {
-    // Same silent drop, and the CR/LF guard below does not catch it: RegExp.test coerces its
+    // Same silent drop, and the character guard does not catch it: RegExp.test coerces its
     // argument, so a number passes the injection check and is then filtered out at render time.
     expect(() =>
       validateIngressManifest(
