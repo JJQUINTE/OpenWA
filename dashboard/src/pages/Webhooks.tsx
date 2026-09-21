@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { webhookApi, type Webhook, type WebhookFilters, type WebhookFilterCondition } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { availableEventNames } from '../utils/webhookEvents';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import {
@@ -85,35 +86,6 @@ function FilterBadge({ filters }: { filters: WebhookFilters }) {
     </span>
   );
 }
-
-// Must stay aligned with the backend WEBHOOK_EVENTS: the API now rejects unknown
-// event names, so offering e.g. the never-emitted 'session.connected' would 400 on save.
-const availableEventNames = [
-  'message.received',
-  'message.sent',
-  'message.ack',
-  'message.failed',
-  'message.revoked',
-  'message.reaction',
-  'message.edited',
-  'session.status',
-  'session.qr',
-  'session.authenticated',
-  'session.disconnected',
-  'session.reconnect_loop',
-  'session.restriction',
-  'presence.update',
-  'group.join',
-  'group.leave',
-  'group.update',
-  'group.join_request',
-  'call.received',
-  'call.accepted',
-  'call.rejected',
-  'call.missed',
-  'status.received',
-  '*',
-] as const;
 
 export function Webhooks() {
   const { t } = useTranslation();
