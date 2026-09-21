@@ -762,14 +762,17 @@ export class BulkMessageService implements OnApplicationBootstrap {
     content: BulkMessageContent,
     result: MessageResult,
   ): Promise<void> {
-    const media = content.image ?? content.video ?? content.audio ?? content.document;
+    // Store what sendMessage sent: the media under the item's own type key, and the caption for a
+    // media item (audio carries none). Other keys on the item were never delivered.
+    const media = type === 'text' ? undefined : content[type as 'image' | 'video' | 'audio' | 'document'];
+    const body = type === 'text' ? content.text : type === 'audio' ? undefined : content.caption;
     // A bulk audio item flagged ptt is a voice note; store it in the 'voice' bucket like inbound PTT.
     const persistType = type === 'audio' && content.audio?.ptt ? 'voice' : type;
     try {
       await this.messageService.saveOutgoingMessage(sessionId, {
         waMessageId: result.id,
         chatId,
-        body: content.text ?? content.caption ?? '',
+        body: body ?? '',
         type: persistType,
         timestamp: result.timestamp,
         status: MessageStatus.SENT,

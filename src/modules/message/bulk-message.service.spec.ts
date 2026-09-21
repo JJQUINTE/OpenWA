@@ -575,6 +575,40 @@ describe('BulkMessageService.processBatch', () => {
     );
   });
 
+  it('persists the media and caption the item type sent, not a stray key on the same item', async () => {
+    engine.sendVideoMessage = jest.fn().mockResolvedValue({ id: 'wa1', timestamp: 111 });
+    const batch = makeBatch(2);
+    batch.messages = [
+      {
+        chatId: 'c0@c.us',
+        type: 'video',
+        content: {
+          text: 'not sent',
+          caption: 'clip',
+          image: { url: 'https://x/y.jpg', mimetype: 'image/jpeg' },
+          video: { base64: 'AAAA', mimetype: 'video/mp4' },
+        },
+      },
+      { chatId: 'c1@c.us', type: 'text', content: { text: 'hi', image: { url: 'https://x/y.jpg' } } },
+    ];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        chatId: 'c0@c.us',
+        body: 'clip',
+        metadata: { media: { mimetype: 'video/mp4', data: 'AAAA', filename: undefined } },
+      }),
+    );
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ chatId: 'c1@c.us', body: 'hi', metadata: undefined }),
+    );
+  });
+
   it('runs the message:sending gate for each bulk message (bulk no longer bypasses moderation)', async () => {
     repo.findOne.mockResolvedValue(makeBatch(1));
 
