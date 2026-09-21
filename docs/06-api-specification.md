@@ -568,8 +568,11 @@ from the gateway's own address instead, for a proxy that only routes to WhatsApp
 either way: the scheme and the destination are checked before any socket is opened, and the checked addresses
 are what a SOCKS proxy is asked to connect to, in resolver order, so a proxy that routes only one address
 family still reaches a dual-stack host (a `socks4` proxy is always given an IPv4 one, the only family that
-protocol carries). Behind an HTTP or HTTPS proxy the destination is named in the `CONNECT` line and resolved
-by the proxy, so the connection there cannot be pinned to the address that was vetted.
+protocol carries). Behind an HTTP or HTTPS proxy the destination is named to the proxy (in the `CONNECT` line
+for an https URL, in the request line for an http one) and resolved by the proxy, so the connection there
+cannot be pinned to the address that was vetted: a name that passes the check and then re-resolves to an
+internal address reaches it, if the proxy can. Use a SOCKS proxy, or `SESSION_PROXY_URL_FETCH=false`, to keep
+that DNS-rebinding protection.
 
 **Response** `201`
 
@@ -1630,7 +1633,9 @@ internal loopback attacks", no patched release). Since the URL comes from messag
 influences what this server fetches, so the gateway supplies its own generator instead: it fetches
 through the same SSRF guard used elsewhere, which validates the destination **and pins the
 connection to the vetted address**, closing the DNS-rebinding window a validate-then-delegate
-approach would leave open. `WEBHOOK_SSRF_PROTECT` and `SSRF_ALLOWED_HOSTS` apply, so a deployment
+approach would leave open. The pin holds on a direct fetch and through a SOCKS session proxy; behind
+an HTTP or HTTPS session proxy the proxy resolves the name, so that window stays open there (see
+"Per-session egress proxy" above). `WEBHOOK_SSRF_PROTECT` and `SSRF_ALLOWED_HOSTS` apply, so a deployment
 that intentionally allows an internal host keeps that behaviour. A refused, slow or broken site
 yields no preview — never a failed send.
 

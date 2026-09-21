@@ -83,8 +83,9 @@ export function isHttpUrl(value: string): boolean {
  * existing MIME-detection behavior.
  */
 export async function loadRemoteMedia(url: string, sessionProxyUrl: string | undefined): Promise<MessageMedia> {
-  // Fetch through the SSRF-pinned path: it validates the host, pins the connection to the vetted IP
-  // (so a DNS rebind can't redirect it to an internal target between check and connect), caps bytes,
+  // Fetch through the SSRF-guarded path: it validates the host, pins a direct or SOCKS connection to
+  // the vetted IP (so a DNS rebind can't redirect it to an internal target between check and connect;
+  // an HTTP/HTTPS session proxy resolves the name itself, so nothing is pinned there), caps bytes,
   // and refuses redirects. We then build the MessageMedia from the returned bytes — NOT via
   // MessageMedia.fromUrl, whose bundled node-fetch performs its own unpinned DNS re-resolution.
   // `sessionProxyUrl` routes the fetch through this session's egress proxy (#1626); the browser's

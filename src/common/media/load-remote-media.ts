@@ -23,8 +23,9 @@ function positiveIntFromEnv(name: string, fallback: number): number {
 /**
  * Fetch remote media as a Buffer for sending, with an SSRF host guard, a byte cap, and a timeout.
  * The guard runs BEFORE any network call, so an internal/reserved URL throws `SsrfBlockedError`
- * and no outbound socket is opened. It goes through `withSafeFetch`, which pins the connection to
- * the vetted IP and refuses redirects (the guard only validated the original host — a followed 3xx
+ * and no outbound socket is opened. It goes through `withSafeFetch`, which pins a direct or SOCKS
+ * connection to the vetted IP (an HTTP/HTTPS session proxy resolves the name itself, so nothing is
+ * pinned there) and refuses redirects (the guard only validated the original host — a followed 3xx
  * could reach an internal target). The cap is enforced while streaming (Content-Length may be absent
  * or wrong) to bound memory use.
  *
@@ -48,7 +49,7 @@ export async function loadRemoteMediaBuffer(
   const timeoutMs = positiveIntFromEnv('MEDIA_DOWNLOAD_TIMEOUT_MS', DEFAULT_MEDIA_TIMEOUT_MS);
 
   // Always guarded (media SSRF is independent of the webhook opt-out); withSafeFetch validates the
-  // host, pins the connection to the vetted IP, and refuses redirects. The streaming cap runs inside
+  // host, pins a direct or SOCKS connection to the vetted IP, and refuses redirects. The streaming cap runs inside
   // the callback so the connection stays open for the body read and is torn down right after.
   const proxyUrl = urlFetchProxy(sessionProxyUrl);
   return withSafeFetch(
