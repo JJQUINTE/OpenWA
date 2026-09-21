@@ -5,7 +5,11 @@ import { ProfileService } from './profile.service';
 import { SetProfileNameDto, SetProfileStatusDto, SetProfilePictureDto } from './dto/profile.dto';
 import { RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
-import { ENGINE_NOT_READY_409, MEDIA_TOO_LARGE_413 } from '../../common/openapi/engine-status-responses';
+import {
+  ENGINE_NOT_READY_409,
+  MEDIA_TOO_LARGE_413,
+  MEDIA_URL_PROXY_503,
+} from '../../common/openapi/engine-status-responses';
 
 @ApiTags('profile')
 @Controller('sessions/:sessionId/profile')
@@ -79,7 +83,8 @@ export class ProfileController {
     status: 503,
     description:
       'WhatsApp did not answer within the request budget. The change may or may not have been applied — ' +
-      'the gateway stopped waiting for a confirmation that never came.',
+      'the gateway stopped waiting for a confirmation that never came. ' +
+      MEDIA_URL_PROXY_503,
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   async setPicture(@Param('sessionId') sessionId: string, @Body() dto: SetProfilePictureDto) {

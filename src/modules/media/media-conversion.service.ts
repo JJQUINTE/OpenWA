@@ -148,7 +148,8 @@ export class MediaConversionService {
         return data;
       } catch (error) {
         // The fetch layer already answers 400/413 for a bad status, a timeout, a failed connection
-        // or a body over the cap, exactly as on the send path. An SSRF block is reported
+        // or a body over the cap (503 when the session proxy fails before any response), exactly
+        // as on the send path. An SSRF block is reported
         // generically: its raw message names the resolved internal address. Anything else (a
         // malformed session proxy, say) is a server fault and stays a 500, as it does on a send,
         // rather than a 400 carrying a message that can name the proxy.

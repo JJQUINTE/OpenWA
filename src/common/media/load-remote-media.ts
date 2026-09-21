@@ -1,4 +1,9 @@
-import { BadRequestException, HttpException, PayloadTooLargeException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SsrfBlockedError, withSafeFetch } from '../security/ssrf-guard';
 import { urlFetchProxy } from '../security/proxy-dispatcher';
 import { createLogger } from '../services/logger.service';
@@ -37,6 +42,12 @@ function positiveIntFromEnv(name: string, fallback: number): number {
  * counted toward the send-pacing breaker. `SsrfBlockedError` is rethrown unchanged; each caller maps
  * it to its own generic message.
  *
+ * Behind a session proxy a failed connection or a timeout before any response is answered 503
+ * instead: undici reports a proxy that refuses, cannot be resolved or fails its handshake with the
+ * same `fetch failed` as an unreachable target, so the two cannot be told apart, and blaming the
+ * caller's URL for an operator's proxy outage would send the client to fix a link that works. Once a
+ * response has arrived the target was reached, and its failures stay 400/413.
+ *
  * `sessionProxyUrl` is the egress proxy of the session the fetch is attributed to, or undefined for
  * a direct one. It is required rather than optional so a new call site cannot leave a proxied
  * session's fetch going direct by omission; `urlFetchProxy` applies the operator's opt-out.
@@ -52,10 +63,12 @@ export async function loadRemoteMediaBuffer(
   // host, pins a direct or SOCKS connection to the vetted IP, and refuses redirects. The streaming cap runs inside
   // the callback so the connection stays open for the body read and is torn down right after.
   const proxyUrl = urlFetchProxy(sessionProxyUrl);
+  let responded = false;
   return withSafeFetch(
     url,
     { signal: AbortSignal.timeout(timeoutMs) },
     async response => {
+      responded = true;
       if (!response.ok) {
         throw new BadRequestException(`Media fetch failed with status ${response.status}`);
       }
@@ -93,7 +106,11 @@ export async function loadRemoteMediaBuffer(
     if (error instanceof HttpException || error instanceof SsrfBlockedError) throw error;
     // Matched by name: the abort reason is a DOMException, which need not share this realm's Error.
     const name = (error as { name?: unknown } | null)?.name;
+    const proxyHop = proxyUrl !== undefined && !responded;
     if (name === 'TimeoutError' || name === 'AbortError') {
+      if (proxyHop) {
+        throw new ServiceUnavailableException(`Media fetch through the session proxy timed out after ${timeoutMs} ms`);
+      }
       throw new BadRequestException(`Media fetch timed out after ${timeoutMs} ms`);
     }
     // undici reports a failed connection as TypeError('fetch failed') and a body cut off mid-read
@@ -103,6 +120,7 @@ export async function loadRemoteMediaBuffer(
     if (error instanceof TypeError && (error.message === 'fetch failed' || error.message === 'terminated')) {
       const cause: unknown = error.cause;
       logger.warn('Media fetch failed', { cause: cause instanceof Error ? cause.message : error.message });
+      if (proxyHop) throw new ServiceUnavailableException('Media fetch through the session proxy failed');
       throw new BadRequestException('Media fetch failed');
     }
     throw error;

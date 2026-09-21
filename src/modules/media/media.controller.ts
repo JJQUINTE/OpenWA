@@ -5,6 +5,7 @@ import { MediaConversionService } from './media-conversion.service';
 import { ConvertMediaDto } from './dto/convert-media.dto';
 import { RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
+import { MEDIA_URL_PROXY_503 } from '../../common/openapi/engine-status-responses';
 
 /**
  * Server-side transcoding, scoped to a session.
@@ -60,7 +61,8 @@ export class MediaController {
   @ApiResponse({
     status: 503,
     description:
-      'Conversion is disabled, the ffmpeg binary is not runnable, or the conversion queue is saturated — retry shortly.',
+      'Conversion is disabled, the ffmpeg binary is not runnable, or the conversion queue is saturated — retry shortly. ' +
+      MEDIA_URL_PROXY_503,
   })
   async convertVoice(@Param('sessionId') sessionId: string, @Body() dto: ConvertMediaDto) {
     return this.mediaConversion.convertToVoice(sessionId, dto);
@@ -87,7 +89,8 @@ export class MediaController {
   @ApiResponse({
     status: 503,
     description:
-      'Conversion is disabled, the ffmpeg binary is not runnable, or the conversion queue is saturated — retry shortly.',
+      'Conversion is disabled, the ffmpeg binary is not runnable, or the conversion queue is saturated — retry shortly. ' +
+      MEDIA_URL_PROXY_503,
   })
   async convertVideo(@Param('sessionId') sessionId: string, @Body() dto: ConvertMediaDto) {
     return this.mediaConversion.convertToVideo(sessionId, dto);

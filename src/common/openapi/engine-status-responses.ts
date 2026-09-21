@@ -161,3 +161,14 @@ export const BULK_MEDIA_TOO_LARGE_413 =
   'default). A `url` item is fetched after the `202`; one over the cap fails that item in the batch ' +
   'results (`GET /messages/batch/{batchId}`) instead. The whole request is separately bounded by ' +
   '`BODY_SIZE_LIMIT` (25 mb by default).';
+
+/**
+ * `ServiceUnavailableException` (503), thrown by `loadRemoteMediaBuffer` when a `url` fetched through
+ * the session's egress proxy fails before any response arrives. undici cannot tell a dead proxy from
+ * an unreachable target there, so the text names both rather than blaming either one.
+ */
+export const MEDIA_URL_PROXY_503 =
+  'The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out ' +
+  'before any response arrived, so the request was not carried out. The proxy or the target behind it ' +
+  'may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy ' +
+  'works points at the `url`. Without a session proxy the same failure answers `400`.';

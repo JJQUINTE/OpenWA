@@ -31,6 +31,7 @@ import {
   ENGINE_REFUSED_403,
   GROUP_NOT_FOUND_404,
   MEDIA_TOO_LARGE_413,
+  MEDIA_URL_PROXY_503,
 } from '../../common/openapi/engine-status-responses';
 
 // Reading an invite code is admin-only, but the groups list returns every group the account
@@ -486,7 +487,8 @@ export class GroupController {
     status: 503,
     description:
       'WhatsApp did not answer within the request budget. The change may or may not have been applied — ' +
-      'the gateway stopped waiting for a confirmation that never came.',
+      'the gateway stopped waiting for a confirmation that never came. ' +
+      MEDIA_URL_PROXY_503,
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: GROUP_NOT_FOUND_404 })
