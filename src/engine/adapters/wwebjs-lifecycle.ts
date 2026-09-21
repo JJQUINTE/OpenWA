@@ -49,6 +49,25 @@ function isNavigationShapedInitRejection(reason: string): boolean {
 }
 
 /**
+ * A per-command CDP timeout is NOT a death: the renderer is merely slower than the budget, and
+ * the next command may succeed. On Puppeteer 24.38.0 this message carries none of the dead-page
+ * signatures, so isPageTransportError's carve-out changes no current behaviour: it pins the intent.
+ * It is still no answer from WhatsApp, so a caller must not read it as "no such resource" either.
+ *
+ * Matched on the FULL puppeteer phrase, not a bare `timed out`: a broad exclusion would also
+ * swallow a genuine death whose message happens to mention a timeout.
+ */
+const PROTOCOL_TIMEOUT_PATTERN = /timed out\. increase the 'protocoltimeout'/i;
+
+/** Whether the error is Puppeteer's per-command protocolTimeout expiring (never an HttpException). */
+export function isProtocolTimeout(error: unknown): boolean {
+  if (error instanceof HttpException) {
+    return false;
+  }
+  return PROTOCOL_TIMEOUT_PATTERN.test(error instanceof Error ? error.message : String(error));
+}
+
+/**
  * requestPairingCode retry budget. WhatsApp Web reloads the QR page while UNPAIRED, so a pairing
  * request can land mid-navigation and either reject fast ("Execution context was destroyed") or hang
  * until Puppeteer's protocol timeout. Each attempt is bounded, and only the navigation/timeout shapes
@@ -694,16 +713,6 @@ export class WwebjsLifecycle {
   private static readonly PAGE_TRANSPORT_ERROR_PATTERN =
     /protocol error|target closed|targetclosederror|detached frame|session closed|connection closed/i;
 
-  /**
-   * A per-command CDP timeout is NOT a death: the renderer is merely slower than the budget, and
-   * the next command may succeed. On Puppeteer 24.38.0 this message carries none of the signatures
-   * above, so the guard changes no current behaviour — it pins the intent.
-   *
-   * Matched on the FULL puppeteer phrase, not a bare `timed out`: a broad exclusion would also
-   * swallow a genuine death whose message happens to mention a timeout.
-   */
-  private static readonly PROTOCOL_TIMEOUT_PATTERN = /timed out\. increase the 'protocoltimeout'/i;
-
   /** Whether the error carries a dead page/transport signature (see PAGE_TRANSPORT_ERROR_PATTERN). */
   isPageTransportError(error: unknown): boolean {
     // An HttpException is never a dead page. It is an error THIS application constructed, and its
@@ -723,10 +732,10 @@ export class WwebjsLifecycle {
     if (error instanceof HttpException) {
       return false;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    if (WwebjsLifecycle.PROTOCOL_TIMEOUT_PATTERN.test(message)) {
+    if (isProtocolTimeout(error)) {
       return false;
     }
+    const message = error instanceof Error ? error.message : String(error);
     return WwebjsLifecycle.PAGE_TRANSPORT_ERROR_PATTERN.test(message);
   }
 

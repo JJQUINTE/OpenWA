@@ -6,6 +6,7 @@ import { ChatLabelsUnsupportedError } from '../../common/errors/chat-labels-unsu
 import { LabelNotFoundError } from '../../common/errors/label-not-found.error';
 import { EngineTransportError } from '../../common/errors/engine-transport.error';
 import { type WwebjsEngineHost, withPage } from './wwebjs-host';
+import { isProtocolTimeout } from './wwebjs-lifecycle';
 
 /**
  * Chat-label operations (WhatsApp Business only) extracted from WhatsAppWebJsAdapter. The adapter
@@ -55,6 +56,10 @@ export class WwebjsLabels {
       if (this.host.isPageTransportError(error)) {
         this.host.reportIfPageTransportError(error, 'getChatsByLabel');
         throw new EngineTransportError(`Transport died while listing chats for label ${labelId}`);
+      }
+      // Nor is a command that outran the protocol budget: no answer is not "no such label".
+      if (isProtocolTimeout(error)) {
+        throw new EngineTransportError(`WhatsApp Web did not answer the chat list for label ${labelId} in time`);
       }
       this.host.logger.debug('getChatsByLabelId rejected; treating the label as not found', {
         labelId,
