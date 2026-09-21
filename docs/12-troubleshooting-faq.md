@@ -901,8 +901,8 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/webhooks \
   }'
 ```
 
-`retryCount` (0–5, default 3) is per webhook. The delivery timings are process-wide environment
-variables:
+`retryCount` (0–5, default 3) is per webhook and counts total delivery attempts, including the first, so `1`
+retries nothing. The delivery timings are process-wide environment variables:
 
 ```bash
 WEBHOOK_TIMEOUT=10000      # per-attempt HTTP timeout in ms (default 10000)
