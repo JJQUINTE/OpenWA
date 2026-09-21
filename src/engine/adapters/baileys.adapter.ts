@@ -94,7 +94,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
   private set sock(value: WASocket | null) {
     this.lifecycle.sock = value;
   }
-  /** Live-call cache handle — the map is owned by the events delegate (call events + rejectCall);
+  /** Live-call cache handle: the map is owned by the events delegate (call events + rejectCall);
    *  lifecycle teardown clears it so a late rejectCall() reports not-found on a dead socket. The
    *  adapter keeps this alias for the unmodified spec, which reads `adapter.liveCalls` via a cast. */
   private get liveCalls(): Map<string, { callFrom: string; expiresAt: number }> {

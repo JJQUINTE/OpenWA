@@ -312,7 +312,7 @@
       "created": "Oluşturuldu",
       "lastActive": "Son Görülme",
       "autoRejectCalls": "Aramaları otomatik reddet",
-      "autoRejectCallsHint": "Gelen aramalar çaldığı anda reddedilir. call.received webhook'u yine de ilk olarak tetiklenir. Bir sonraki arama için geçerlidir — yeniden başlatma gerekmez. Yalnızca Baileys motorunda: whatsapp-web.js aramaları reddedemez."
+      "autoRejectCallsHint": "Gelen aramalar çaldığı anda reddedilir. call.received webhook'u yine de ilk olarak tetiklenir. Bir sonraki arama için geçerlidir, yeniden başlatma gerekmez. Yalnızca Baileys motorunda: whatsapp-web.js aramaları reddedemez."
     },
     "proxy": {
       "title": "Proxy Configuration",

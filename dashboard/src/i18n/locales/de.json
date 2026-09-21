@@ -307,7 +307,7 @@
       "created": "Erstellt",
       "lastActive": "Zuletzt aktiv",
       "autoRejectCalls": "Anrufe automatisch ablehnen",
-      "autoRejectCallsHint": "Eingehende Anrufe werden abgelehnt, sobald sie klingeln. Der Webhook call.received wird trotzdem zuerst ausgelöst. Gilt ab dem nächsten Anruf — kein Neustart nötig. Nur mit der Baileys-Engine: whatsapp-web.js kann keine Anrufe ablehnen."
+      "autoRejectCallsHint": "Eingehende Anrufe werden abgelehnt, sobald sie klingeln. Der Webhook call.received wird trotzdem zuerst ausgelöst. Gilt ab dem nächsten Anruf, kein Neustart nötig. Nur mit der Baileys-Engine: whatsapp-web.js kann keine Anrufe ablehnen."
     },
     "proxy": {
       "title": "Proxy Configuration",

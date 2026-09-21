@@ -312,7 +312,7 @@
       "created": "Created",
       "lastActive": "Last Active",
       "autoRejectCalls": "Auto-reject calls",
-      "autoRejectCallsHint": "Incoming calls are declined as soon as they ring. The call.received webhook still fires first. Applies to the next call — no restart needed. Baileys engine only: whatsapp-web.js cannot reject calls."
+      "autoRejectCallsHint": "Incoming calls are declined as soon as they ring. The call.received webhook still fires first. Applies to the next call, no restart needed. Baileys engine only: whatsapp-web.js cannot reject calls."
     },
     "proxy": {
       "title": "Proxy Configuration",

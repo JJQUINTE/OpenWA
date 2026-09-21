@@ -166,8 +166,14 @@ export class IngressService {
     const dedupHeader = (route.dedupHeader ?? route.signature.dedupHeader ?? defaultDedupHeader).toLowerCase();
     // A route that declares dedupOn: 'body' keys retries on the raw body: its provider mints a fresh
     // delivery id per attempt, so trusting the header would let every retry through as new.
-    const deliveryId =
-      route.dedupOn === 'body' ? deriveDeliveryId(req) : (req.headers[dedupHeader] ?? deriveDeliveryId(req));
+    //
+    // A header that is present but blank is no id at all, and it used to be taken as one: every
+    // delivery then shared the empty key, so the dedup row admitted the first and dropped the rest
+    // while answering each provider with the route's success ack. Nothing was enqueued, nothing was
+    // dead-lettered, and the deliveries were simply gone. Fall through to the body hash, which is
+    // exactly the "provider supplied no id" case it already exists for.
+    const headerId = req.headers[dedupHeader]?.trim();
+    const deliveryId = route.dedupOn === 'body' || !headerId ? deriveDeliveryId(req) : headerId;
     // Provider request headers persist with the event (redrive/debugging); credentials must not.
     // Signature headers are re-derivable, auth material is not — redact before the first write.
     // A shared-secret route carries the instance secret itself in its declared header.

@@ -1,7 +1,7 @@
 package com.rmyndharis.openwa.model;
 
 /**
- * Request body for tapping a choice on a WhatsApp Business prompt. Baileys only —
+ * Request body for tapping a choice on a WhatsApp Business prompt. Baileys only:
  * whatsapp-web.js answers 501.
  */
 public record ClickButtonRequest(String chatId, String messageId, String buttonId, String text) {

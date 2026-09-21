@@ -307,7 +307,7 @@
       "created": "Creata",
       "lastActive": "Ultima Attività",
       "autoRejectCalls": "Rifiuta automaticamente le chiamate",
-      "autoRejectCallsHint": "Le chiamate in arrivo vengono rifiutate appena squillano. Il webhook call.received viene comunque inviato prima. Si applica alla prossima chiamata — nessun riavvio necessario. Solo con il motore Baileys: whatsapp-web.js non può rifiutare le chiamate."
+      "autoRejectCallsHint": "Le chiamate in arrivo vengono rifiutate appena squillano. Il webhook call.received viene comunque inviato prima. Si applica alla prossima chiamata, nessun riavvio necessario. Solo con il motore Baileys: whatsapp-web.js non può rifiutare le chiamate."
     },
     "proxy": {
       "title": "Configurazione proxy",

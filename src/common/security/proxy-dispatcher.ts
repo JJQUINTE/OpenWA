@@ -84,7 +84,9 @@ function socksConnector(proxyUrl: URL, pinnedAddresses?: string[]): buildConnect
   // SOCKS4 has no authentication: `socks` sends the user id in the connect request and drops the
   // password. Credentials are decoded here because URL keeps them percent-encoded.
   const proxy: SocksProxy = {
-    host: proxyUrl.hostname,
+    // `URL` keeps an IPv6 literal bracketed; the SOCKS request carries the address itself, so the
+    // brackets would go on the wire as part of a hostname and fail as a DNS lookup of "[::1]".
+    host: proxyUrl.hostname.replace(/^\[|\]$/g, ''),
     port: Number(proxyUrl.port) || DEFAULT_SOCKS_PORT,
     type,
     userId: decodeURIComponent(proxyUrl.username) || undefined,

@@ -307,7 +307,7 @@
       "created": "Criado em",
       "lastActive": "Última atividade",
       "autoRejectCalls": "Rejeitar chamadas automaticamente",
-      "autoRejectCallsHint": "As chamadas recebidas são recusadas assim que tocam. O webhook call.received continua sendo enviado antes. Vale a partir da próxima chamada — sem reiniciar. Somente no mecanismo Baileys: o whatsapp-web.js não consegue recusar chamadas."
+      "autoRejectCallsHint": "As chamadas recebidas são recusadas assim que tocam. O webhook call.received continua sendo enviado antes. Vale a partir da próxima chamada, sem reiniciar. Somente no mecanismo Baileys: o whatsapp-web.js não consegue recusar chamadas."
     },
     "proxy": {
       "title": "Proxy Configuration",

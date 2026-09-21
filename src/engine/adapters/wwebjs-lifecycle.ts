@@ -788,17 +788,26 @@ export class WwebjsLifecycle {
     // gets the companion unlinked (~5m later → disconnected: LOGOUT, #982). Dismiss it best-effort
     // and fall back to ACTION_REQUIRED. Started after READY so a non-ready session never arms it.
     this.host.startOnboardingWatcher();
-    // whatsapp-web.js installs its incoming-call hook as the LAST statement of the same page
-    // evaluate that registers the message listeners, and that evaluate has no try/catch: a module
-    // that stops resolving earlier in it leaves the message bridge live and the call hook absent.
-    // The session then looks healthy, keeps delivering messages, and reports no call at all. Warn
-    // once per ready rather than leaving that silent; nothing else changes, since only detection is
-    // lost. Fire-and-forget: a diagnostic must never delay or fail the promotion to READY.
-    void reportMissingCallHook(
-      (this.client as unknown as { pupPage?: { evaluate: <T>(fn: () => T) => Promise<T> } } | null)?.pupPage,
-      this.host.logger,
-      this.host.config.sessionId,
-    );
+    // whatsapp-web.js patches the call collection only when the page's module for it exposes an
+    // `.on` function. A WhatsApp Web build that keeps the module but drops that method skips the
+    // hook while the rest of the evaluate completes, so the session looks healthy, keeps delivering
+    // messages, and reports no call at all. That quiet case is the one worth a line in the log; a
+    // build that removes the module instead makes the library's own require throw, aborting the
+    // evaluate and taking the inbound message bridge with it, which is loud on its own. Warn once
+    // per ready; nothing else changes, since only detection is lost. Fire-and-forget: a diagnostic
+    // must never delay or fail the promotion to READY.
+    //
+    // Skipped on a tree missing the ready-sync patch: without it the session can reach READY while
+    // that same evaluate is still running, so the probe would read a page whose hook simply has not
+    // been installed YET and warn about a problem that does not exist. An unpatched tree already
+    // reports itself at startup, which is the honest signal there.
+    if (!unappliedPatches('wwebjs').includes('patch-wwebjs-ready-sync')) {
+      void reportMissingCallHook(
+        (this.client as unknown as { pupPage?: { evaluate: <T>(fn: () => T) => Promise<T> } } | null)?.pupPage,
+        this.host.logger,
+        this.host.config.sessionId,
+      );
+    }
   }
 
   /** The single status-transition funnel: latches disconnectReported, fires the callback, re-emits
@@ -1071,6 +1080,16 @@ export class WwebjsLifecycle {
           throw error;
         }
         if (attempt < PAIRING_CODE_MAX_ATTEMPTS) {
+          // Nothing cancels the abandoned attempt, and nothing needs to. The library's own
+          // requestPairingCode clears the in-page re-request interval as the first act of its
+          // evaluate, so the next attempt stops the previous flow itself. Its `cancelPairingCode`
+          // would on top of that return the page to QR mode, which is the opposite of what a retry
+          // wants, and it is an unbounded page evaluate against the page that is already unwell, so
+          // awaiting it would add a full Puppeteer protocol timeout to each gap. The abandoned flow
+          // is not inert: each tick of its interval asks WhatsApp for a fresh code and notifies the
+          // phone, and its CODE_RECEIVED event reaches nothing here. What bounds it is the page, not
+          // us: the interval dies with the next WhatsApp Web reload, which happens every few seconds
+          // while the session is UNPAIRED, and with the session itself.
           await new Promise<void>(resolve => {
             const t = setTimeout(resolve, PAIRING_CODE_RETRY_DELAY_MS);
             t.unref?.();

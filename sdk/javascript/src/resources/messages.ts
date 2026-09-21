@@ -132,7 +132,7 @@ export class MessagesResource {
 
   /**
    * Click a button on a WhatsApp Business prompt. Baileys only (whatsapp-web.js returns 501).
-   * Sends a structured reply proto quoted to the prompt — not a native UI tap.
+   * Sends a structured reply proto quoted to the prompt, not a native UI tap.
    */
   clickButton(sessionId: string, body: ClickButtonRequest): Promise<MessageResponse> {
     return this.client.request<MessageResponse>({

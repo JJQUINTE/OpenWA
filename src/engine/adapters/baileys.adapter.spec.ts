@@ -2419,6 +2419,64 @@ describe('BaileysAdapter inbound fan-out', () => {
     expect(onMessageCreate).toHaveBeenCalledTimes(1);
   });
 
+  // A story is not a conversation: the projector drops an own status post rather than reporting it,
+  // so downloading its media first is work nothing consumes, and a story is a full-size photo.
+  it('does not download the media of a status the account posted from its phone', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const baileys = jest.requireMock('@whiskeysockets/baileys') as {
+      getContentType: jest.Mock;
+      downloadMediaMessage: jest.Mock;
+    };
+    baileys.getContentType.mockReturnValue('imageMessage');
+    baileys.downloadMediaMessage.mockClear();
+
+    const onMessageCreate = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessageCreate });
+    fakeSock.fire('connection.update', { connection: 'open' });
+
+    fakeSock.fire('messages.upsert', {
+      type: 'append',
+      messages: [
+        {
+          key: { remoteJid: 'status@broadcast', fromMe: true, id: 'OWN_STATUS_1' },
+          message: { imageMessage: { mimetype: 'image/jpeg', caption: 'from the phone' } },
+          messageTimestamp: Math.floor(Date.now() / 1000) - 60,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+
+    expect(baileys.downloadMediaMessage).not.toHaveBeenCalled();
+    // Still reported, so nothing downstream changes: only the download is skipped.
+    expect(onMessageCreate).toHaveBeenCalledTimes(1);
+  });
+
+  // A store that cannot answer must not be read as "this was never sent": the only other outcome is
+  // the handler's catch, which drops the message, and Baileys acks the node before emitting it, so
+  // WhatsApp never sends it again. Fail open, and take the duplicate risk instead of the loss.
+  it('still delivers a phone-sent message when the message store read fails', async () => {
+    fakeStore.getMessage.mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+    const onMessageCreate = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessageCreate });
+    fakeSock.fire('connection.update', { connection: 'open' });
+
+    fakeSock.fire('messages.upsert', {
+      type: 'append',
+      messages: [
+        {
+          key: { remoteJid: '628111@s.whatsapp.net', fromMe: true, id: 'TYPED_WHILE_DB_BUSY' },
+          message: { conversation: 'sent from the phone while the database was locked' },
+          messageTimestamp: Math.floor(Date.now() / 1000) - 60,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+
+    expect(onMessageCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('emits onMessageAck from messages.update with a neutral status', async () => {
     const onMessageAck = jest.fn();
     const adapter = newAdapter();
@@ -3461,6 +3519,11 @@ describe('BaileysAdapter store-backed ops', () => {
   const ownStored = {
     key: { id: 'TARGET', remoteJid: '628111@s.whatsapp.net', fromMe: true },
     message: { conversation: 'hi' },
+    // A STRING, which is what the store gives back: Baileys decodes `messageTimestamp` as a Long, and
+    // a Long serializes to its decimal string, so the JSON round trip through `baileys_messages` never
+    // returns the number the proto type advertises. Also distinct from the edit envelope's send time
+    // below, so a spec cannot pass on either one.
+    messageTimestamp: '1700000000',
   };
 
   it('replyToMessage quotes the stored message', async () => {
@@ -3653,7 +3716,8 @@ describe('BaileysAdapter store-backed ops', () => {
   });
 
   it('deleteMessage for-me (forEveryone=false) deletes via chatModify({ deleteForMe })', async () => {
-    fakeStore.getMessage.mockResolvedValue({ ...stored, messageTimestamp: 1700000007 });
+    // The stored timestamp is a STRING, which is the only shape the store returns: see toUnixSeconds.
+    fakeStore.getMessage.mockResolvedValue({ ...stored, messageTimestamp: '1700000007' });
     const adapter = await ready();
     await adapter.deleteMessage('628111@s.whatsapp.net', 'TARGET', false);
     expect(fakeSock.chatModify).toHaveBeenCalledWith(
@@ -3662,6 +3726,21 @@ describe('BaileysAdapter store-backed ops', () => {
     );
     expect(fakeSock.sendMessage).not.toHaveBeenCalled();
   });
+
+  it.each([['not-a-number'], [Number.NaN], [Number.POSITIVE_INFINITY]])(
+    'deleteMessage for-me sends a usable timestamp when the stored one is %p',
+    async unusable => {
+      // A row written by an older build, or hand-edited. Anything non-finite would be built into
+      // the chatModify payload; Baileys encodes that timestamp into the app-state patch, so it is
+      // the request itself that is malformed, and nothing downstream can do arithmetic on it.
+      fakeStore.getMessage.mockResolvedValue({ ...stored, messageTimestamp: unusable });
+      const adapter = await ready();
+      await adapter.deleteMessage('628111@s.whatsapp.net', 'TARGET', false);
+      const [payload] = fakeSock.chatModify.mock.calls[0] as [{ deleteForMe: { timestamp: number } }];
+      expect(Number.isFinite(payload.deleteForMe.timestamp)).toBe(true);
+      expect(payload.deleteForMe.timestamp).toBeGreaterThan(1_600_000_000);
+    },
+  );
 
   it('editMessage re-applies participant tags to the new body', async () => {
     // An edit REPLACES the content, so a body that still reads "@62811" needs the tag list resent or
@@ -3684,7 +3763,13 @@ describe('BaileysAdapter store-backed ops', () => {
 
   it('editMessage edits via the stored key and returns the (unchanged) message id', async () => {
     fakeStore.getMessage.mockResolvedValue(ownStored);
-    fakeSock.sendMessage.mockResolvedValue({ key: { ...ownStored.key }, messageTimestamp: 1700000010 });
+    // The library answers with the protocol envelope that carried the edit, which has an id AND a
+    // send time of its own; the edited message keeps both of the caller's. A mock echoing the
+    // target's values back would pass whichever of the two the adapter returned.
+    fakeSock.sendMessage.mockResolvedValue({
+      key: { ...ownStored.key, id: '3EB0FRESHENVELOPE' },
+      messageTimestamp: 1700000010,
+    });
     const adapter = await ready();
     const res = await adapter.editMessage('628111@s.whatsapp.net', 'TARGET', 'edited body');
     expect(fakeSock.sendMessage).toHaveBeenCalledWith(
@@ -3696,15 +3781,15 @@ describe('BaileysAdapter store-backed ops', () => {
       },
       expect.objectContaining({ getUrlInfo: expect.any(Function) as unknown }) as unknown,
     );
-    expect(res).toEqual({ id: 'TARGET', timestamp: 1700000010 });
+    expect(res).toEqual({ id: 'TARGET', timestamp: 1700000000 });
   });
 
-  it('editMessage falls back to the requested id when the send echoes nothing back', async () => {
+  it('editMessage answers from the stored message even when the send echoes nothing back', async () => {
     fakeStore.getMessage.mockResolvedValue(ownStored);
     fakeSock.sendMessage.mockResolvedValue(undefined);
     const adapter = await ready();
     const res = await adapter.editMessage('628111@s.whatsapp.net', 'TARGET', 'edited body');
-    expect(res.id).toBe('TARGET');
+    expect(res).toEqual({ id: 'TARGET', timestamp: 1700000000 });
   });
 
   it('editMessage throws MessageNotFoundError when the message is not in the store', async () => {
@@ -4679,6 +4764,19 @@ describe('BaileysAdapter group events (group-participants.update / groups.update
 
     expect(onGroupEvent).toHaveBeenCalledTimes(1);
     expect(firstEvent(onGroupEvent).groupId).toBe('789-000@g.us');
+  });
+
+  it('skips a self-created group addressed by lid when the creds carry no own lid', async () => {
+    // Without `user.lid` every lid comparison answered false, so the group this session had just
+    // created was reported as a join of itself. The store's own lid mapping settles it instead.
+    fakeSock.user = { id: '628999:1@s.whatsapp.net', name: 'Me' }; // no lid on the creds
+    const { onGroupEvent } = await readyWithGroupEvents();
+    // The session learns its own lid from ordinary traffic, the same way every other mapping arrives.
+    fakeSock.fire('lid-mapping.update', { lid: '999000@lid', pn: '628999@s.whatsapp.net' });
+
+    fakeSock.fire('groups.upsert', [createdGroup({ author: '999000@lid', owner: '999000@lid', authorPn: undefined })]);
+
+    expect(onGroupEvent).not.toHaveBeenCalled();
   });
 
   it('reports a groups.upsert entry the session authored for a group another account owns', async () => {

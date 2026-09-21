@@ -20,11 +20,42 @@ export const SESSION_STORE_MAP_CAP_DEFAULT = 5000;
  * Insertion-ordered Map with an LRU cap, the same discipline as LidMappingStoreService: a read or
  * write re-inserts the key at the most-recent end, and a set evicts the least-recently-used entry
  * while over `max`. `max = 0` means unbounded.
+ *
+ * `pinned` marks entries eviction may never take. It exists for the contacts map, where two
+ * populations share one structure: the account's own address book, which the operator curated and
+ * which the API reports, and a much larger stream of peers seen once in a group or a broadcast.
+ * Without it the second evicts the first.
+ *
+ * The cap then governs the UNPINNED population alone, which is the one that grows from peer traffic.
+ * Counting the whole map instead would make a full address book evict each new peer in the same call
+ * that inserted it, so peers would stop being cached at all once the saved set reached the cap. The
+ * pinned side is bounded by the account's own contact list rather than by this number.
  */
 class LruMap<K, V> {
   private readonly map = new Map<K, V>();
 
-  constructor(private readonly max: number) {}
+  /** Entries the predicate does not protect. The cap is measured against exactly these. */
+  private unpinned = 0;
+
+  constructor(
+    private readonly max: number,
+    private readonly pinned?: (value: V) => boolean,
+  ) {}
+
+  private isPinned(value: V): boolean {
+    return this.pinned ? this.pinned(value) : false;
+  }
+
+  /** Remove a key while keeping {@link unpinned} honest. No-op for a key that is not held. */
+  private drop(key: K): void {
+    if (!this.map.has(key)) {
+      return;
+    }
+    if (!this.isPinned(this.map.get(key) as V)) {
+      this.unpinned--;
+    }
+    this.map.delete(key);
+  }
 
   has(key: K): boolean {
     return this.map.has(key);
@@ -41,23 +72,86 @@ class LruMap<K, V> {
   }
 
   set(key: K, value: V): void {
-    this.map.delete(key);
+    this.drop(key);
     this.map.set(key, value);
+    if (!this.isPinned(value)) {
+      this.unpinned++;
+    }
     if (!this.max) {
       return;
     }
-    while (this.map.size > this.max) {
-      const oldest = this.map.keys().next().value;
-      if (oldest === undefined) {
-        break;
+    while (this.unpinned > this.max) {
+      const victim = this.oldestEvictable();
+      if (victim === undefined) {
+        break; // unreachable while unpinned > 0, and a safe stop if it ever is not
       }
-      this.map.delete(oldest);
+      this.drop(victim);
     }
   }
 
+  /**
+   * The least-recently-used entry an eviction may take, or undefined when every entry is pinned.
+   * Without a `pinned` predicate this is the map head, as before.
+   */
+  private oldestEvictable(): K | undefined {
+    if (!this.pinned) {
+      const oldest = this.map.keys().next().value;
+      return oldest;
+    }
+    for (const [key, value] of this.map) {
+      if (!this.pinned(value)) {
+        return key;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * LIVE iterator, not a snapshot. {@link get} re-inserts a hit to keep recency order, so a loop
+   * whose body reads this map through any path is handed the same entry forever. Copy first
+   * (`[...map.values()]`) whenever the body can reach back into the map.
+   */
   values(): IterableIterator<V> {
     return this.map.values();
   }
+}
+
+/** A projected contact with the raw store key it came from, so twins can be folded deterministically. */
+interface ContactTwin {
+  contact: Contact;
+  rawId: string;
+}
+
+/** True for a store key in the phone dialect, i.e. the twin that carries a phone number of its own. */
+function isPhoneKeyed(rawId: string): boolean {
+  return rawId.endsWith('@s.whatsapp.net') || rawId.endsWith('@c.us');
+}
+
+/**
+ * Fold two store entries that project to the same person into one row.
+ *
+ * Neither side is more correct by position: the store is LRU-ordered, so iteration order tracks
+ * traffic, and letting it decide meant `GET /contacts` answered with whichever twin had been quiet
+ * and dropped a pushname the other had just learned, flipping back later. So a field absent on one
+ * side is filled from the other, and for a field both carry the phone-dialect twin wins, which is
+ * the entry {@link BaileysSessionStore.findContact} already answers with for the same id. When
+ * neither or both are phone-keyed, the lower raw key wins: arbitrary, but stable across calls.
+ */
+function mergeContactTwins(a: ContactTwin, b: ContactTwin): ContactTwin {
+  const aWins = isPhoneKeyed(a.rawId) !== isPhoneKeyed(b.rawId) ? isPhoneKeyed(a.rawId) : a.rawId <= b.rawId;
+  const [primary, secondary] = aWins ? [a, b] : [b, a];
+  return {
+    rawId: primary.rawId,
+    contact: {
+      id: primary.contact.id,
+      name: primary.contact.name ?? secondary.contact.name,
+      pushName: primary.contact.pushName ?? secondary.contact.pushName,
+      number: primary.contact.number || secondary.contact.number,
+      isMyContact: primary.contact.isMyContact || secondary.contact.isMyContact,
+      isBlocked: primary.contact.isBlocked || secondary.contact.isBlocked,
+      profilePicUrl: primary.contact.profilePicUrl ?? secondary.contact.profilePicUrl,
+    },
+  };
 }
 
 /**
@@ -67,7 +161,10 @@ class LruMap<K, V> {
  *
  * Every map is LRU-bounded (`BAILEYS_SESSION_STORE_MAX_ENTRIES`, default 5000 per map, 0 = unbounded)
  * because contacts/chats/lastMessages/lidToPn all grow from peer-controlled traffic — without a cap a
- * chatty account leaks one entry per distinct peer ever seen. Miss paths after an eviction:
+ * chatty account leaks one entry per distinct peer ever seen. On the contacts map that cap governs the
+ * peers ALONE: a contact carrying a saved name is pinned and never evicted, because it comes from the
+ * account's own address book rather than from traffic, and that side is bounded by the address book
+ * instead (see LruMap's `pinned`). Miss paths after an eviction:
  * `lidToPn` falls back to the contacts map and then the persisted cross-session lid->phone table (all
  * writes are written through), `lastMessage` reads null (callers treat it as "nothing known"),
  * `getEphemeralExpiration` falls back to `Chat.ephemeralExpiration` then undefined (never forces a
@@ -108,7 +205,10 @@ export class BaileysSessionStore {
       process.env.BAILEYS_SESSION_STORE_MAX_ENTRIES,
       SESSION_STORE_MAP_CAP_DEFAULT,
     );
-    this.contacts = new LruMap(maxEntries);
+    // A saved name only ever arrives from the account's own app-state address book, never from peer
+    // traffic, so pinning on it keeps the curated set out of reach of the peers this session happens
+    // to observe. The pinned population is bounded by the account's own contact list.
+    this.contacts = new LruMap(maxEntries, contact => Boolean(contact.name));
     this.chats = new LruMap(maxEntries);
     this.lastMessages = new LruMap(maxEntries);
     this.lidToPn = new LruMap(maxEntries);
@@ -149,6 +249,15 @@ export class BaileysSessionStore {
    * Copy own enumerable fields whose value is not `undefined`. History-sync contacts always include
    * `name: displayName || name || username || undefined`, and a later `{ ...existing, ...partial }`
    * spread would wipe a saved address-book name that arrived first via `contacts.upsert`.
+   *
+   * KNOWN LIMIT: a saved name therefore cannot be cleared, so a contact deleted or renamed blank on
+   * the phone keeps its old name here, stays in `GET /contacts`, and (being named) is pinned against
+   * eviction. Making an absent name authoritative is NOT a safe fix on its own: the same method
+   * serves `contacts.update`, which Baileys emits as `{ id, notify }` for the pushname on every
+   * inbound message, so absent-means-clear there would wipe the address book message by message.
+   * Only an app-state `contactAction` could carry that meaning, and whether WhatsApp expresses a
+   * deletion as a contactAction with empty fields is unverified here; settling it needs a live
+   * account, not a guess on this path.
    */
   private assignDefined(target: BaileysContact, source: Partial<BaileysContact>): void {
     for (const key of Object.keys(source) as (keyof BaileysContact)[]) {
@@ -302,7 +411,23 @@ export class BaileysSessionStore {
   listContacts(): Contact[] {
     // GET /contacts is the address book, not "everyone this session has ever seen". Baileys
     // documents `name` as the one YOU saved; `notify` is only the pushname they set themselves.
-    return [...this.contacts.values()].filter(c => c.name).map(c => this.toNeutralContact(c));
+    //
+    // Deduplicated by neutral id: one person can occupy two entries, one keyed by `@lid` and one by
+    // the phone dialect, and when both carry a saved name they project to the SAME id once the lid
+    // resolves. Listing both put two rows sharing one id into the answer.
+    //
+    // The iteration is over a SNAPSHOT, and must stay that way: `toNeutralContact` resolves a lid
+    // through `resolvePhone`, which reads this very map, and a read moves the entry to the
+    // most-recent end. Iterating the live map therefore hands the same entry back forever, a
+    // synchronous loop that wedges the process rather than answering the request.
+    const byId = new Map<string, ContactTwin>();
+    for (const c of [...this.contacts.values()]) {
+      if (!c.name) continue;
+      const twin: ContactTwin = { contact: this.toNeutralContact(c), rawId: c.id };
+      const existing = byId.get(twin.contact.id);
+      byId.set(twin.contact.id, existing ? mergeContactTwins(existing, twin) : twin);
+    }
+    return [...byId.values()].map(t => t.contact);
   }
 
   findContact(id: string): Contact | null {
@@ -314,15 +439,22 @@ export class BaileysSessionStore {
     if (parsed.kind === 'user') {
       keys.push(`${parsed.userPart}@s.whatsapp.net`, `${parsed.userPart}@c.us`);
     }
+    // One person can occupy two entries, one keyed by `@lid` and one by the phone dialect, and only
+    // one of them carries the saved name. Prefer the named one: the nameless twin answers
+    // `isMyContact: false` and no display name for somebody the account has saved.
+    let unnamed: BaileysContact | undefined;
     for (const key of keys) {
       const direct = this.contacts.get(key);
-      if (direct) {
-        return this.toNeutralContact(direct);
-      }
+      if (!direct) continue;
+      if (direct.name) return this.toNeutralContact(direct);
+      unnamed ??= direct;
     }
     if (parsed.kind !== 'user' && parsed.kind !== 'lid') {
-      return null;
+      return unnamed ? this.toNeutralContact(unnamed) : null;
     }
+    // The twin is keyed under the OTHER dialect, so a direct hit cannot reach it; the scan below
+    // can, through `lid`/`phoneNumber`. Run it even when a direct hit was found, as long as that hit
+    // was nameless, and keep the nameless one only if the scan turns up nothing better.
     const want = parsed.userPart;
     for (const c of this.contacts.values()) {
       const phone = c.phoneNumber
@@ -331,11 +463,11 @@ export class BaileysSessionStore {
           ? userPart(c.id)
           : '';
       const lid = c.lid ? userPart(c.lid) : c.id.endsWith('@lid') ? userPart(c.id) : '';
-      if (phone === want || lid === want) {
-        return this.toNeutralContact(c);
-      }
+      if (phone !== want && lid !== want) continue;
+      if (c.name) return this.toNeutralContact(c);
+      unnamed ??= c;
     }
-    return null;
+    return unnamed ? this.toNeutralContact(unnamed) : null;
   }
 
   listChats(): ChatSummary[] {
@@ -418,9 +550,14 @@ export class BaileysSessionStore {
   }
 
   private toNeutralContact(c: BaileysContact): Contact {
-    const number = c.phoneNumber ? userPart(c.phoneNumber) : c.id.endsWith('@s.whatsapp.net') ? userPart(c.id) : '';
+    // The number is read off the NEUTRAL id, which has already done the lid resolution: a lid-keyed
+    // entry whose mapping is known projects to `<phone>@c.us` and carries its number, where reading
+    // the raw `@lid` key answered an empty string for somebody the account has saved. An unresolved
+    // lid still answers '', which is the honest answer there.
+    const id = this.toNeutralJid(c.id);
+    const number = c.phoneNumber ? userPart(c.phoneNumber) : id.endsWith('@c.us') ? userPart(id) : '';
     return {
-      id: this.toNeutralJid(c.id),
+      id,
       name: c.name ?? c.verifiedName,
       pushName: c.notify,
       number,

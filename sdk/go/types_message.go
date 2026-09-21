@@ -327,8 +327,9 @@ type MessageCall struct {
 	Missed bool `json:"missed"`
 }
 
-// MessageContact is the sender contact block on a live history message. History carries PushName
-// only; the richer fields arrive on message.received when WEBHOOK_CONTACT_DETAILS is enabled.
+// MessageContact is the sender contact block on a live history message. History carries Name and
+// PushName; the richer fields are added when WEBHOOK_CONTACT_DETAILS is enabled, as on
+// message.received.
 type MessageContact struct {
 	ID           string `json:"id,omitempty"`
 	Number       string `json:"number,omitempty"`

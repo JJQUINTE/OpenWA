@@ -44,7 +44,7 @@ export interface BaileysMessagingHost {
   /** The chat's cached disappearing-messages timer (#473), or undefined when none is known. */
   getEphemeralExpiration(chatId: string): number | undefined;
   /** Baileys timestamps are `number | Long`; normalize to unix seconds. */
-  toUnixSeconds(ts: number | { toNumber(): number } | null | undefined): number;
+  toUnixSeconds(ts: number | string | { toNumber(): number } | null | undefined): number;
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
   loadLib(): Promise<typeof BaileysLib>;
   /** Persist a just-sent message to the store; undefined when no store is configured. */
@@ -576,8 +576,13 @@ export class BaileysMessaging {
     // protocolMessage edit envelope, so an edit can re-tag participants. An edit REPLACES the
     // content, so omitting mentions drops whatever tags the original carried.
     const editContent = { text: body, ...this.withMentions(mentions), edit: target.key };
-    const sent = await this.send(jid, this.previewSafe(editContent), this.previewSafeOptions(editContent));
-    return { id: sent?.key?.id ?? messageId, timestamp: this.host.toUnixSeconds(sent?.messageTimestamp) };
+    await this.send(jid, this.previewSafe(editContent), this.previewSafeOptions(editContent));
+    // Both fields describe the EDITED MESSAGE, not the protocol envelope that carried the edit.
+    // That envelope has an id and a send time of its own; answering with either would name something
+    // no route can address and no stored row is keyed by, and would disagree with the
+    // whatsapp-web.js engine, which re-reads the message and reports the original of both. An edit
+    // does not move a message in the chat, so its timestamp is still the one it was sent at.
+    return { id: messageId, timestamp: this.host.toUnixSeconds(target.messageTimestamp) };
   }
 
   /**
@@ -683,8 +688,8 @@ export class BaileysMessaging {
       // wwjs fires `message_create` for its own API sends, which SessionService turns into `message.sent`.
       // Baileys' own socket-sends echo back only as a `type:'append'` upsert, which handleMessagesUpsert
       // skips by the id send() recorded, so that event never fired for API sends. Emit the outbound
-      // "created" callback here for parity —
-      // best-effort and off the response path. No media re-download: the API caller already holds the
+      // "created" callback here for parity: best-effort,
+      // and off the response path. No media re-download: the API caller already holds the
       // payload and the REST send path persists it (wwjs, by contrast, does download it on its echo).
       void this.emitOwnSendEcho(sent);
     }

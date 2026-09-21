@@ -370,12 +370,21 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
           `Plugin ${manifest.id}: route '${r.route}' response.ack.status must be a valid HTTP status (100-599)`,
         );
       }
+      const ackBody = r.response.ack?.body;
+      if (ackBody !== undefined && typeof ackBody !== 'string') {
+        throw new Error(`Plugin ${manifest.id}: route '${r.route}' response.ack.body must be a string`);
+      }
       if (r.response.ack?.headers) {
         for (const [name, value] of Object.entries(r.response.ack.headers)) {
           if (!HTTP_HEADER_NAME.test(name)) {
             throw new Error(
               `Plugin ${manifest.id}: route '${r.route}' response.ack header name '${name}' is not a valid HTTP token`,
             );
+          }
+          // Before the CR/LF guard: RegExp.test coerces its argument, so a number would pass it and
+          // then be dropped at render time, leaving the header silently absent from every ack.
+          if (typeof value !== 'string') {
+            throw new Error(`Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' must be a string`);
           }
           if (!HTTP_HEADER_VALUE_NO_CRLF.test(value)) {
             throw new Error(

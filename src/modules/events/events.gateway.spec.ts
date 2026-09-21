@@ -44,6 +44,8 @@ interface MockSocket {
     address: string;
   };
   data: Record<string, unknown>;
+  /** socket.io sets this the moment the transport closes, before the disconnect handler runs. */
+  disconnected?: boolean;
   emit: jest.Mock;
   disconnect: jest.Mock;
   join: jest.Mock;
@@ -208,6 +210,44 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     expect(res.type).toBe('error');
     expect(res.code).toBe('FORBIDDEN_SESSION');
     expect(sessionRoomJoins(sock)).toEqual([]);
+  });
+
+  it('pushes a command reply on the message event, not only through the ack callback', async () => {
+    // The Socket.IO adapter delivers a handler's return value through the ack callback and nothing
+    // else, so a client that emits without one (the dashboard, and the documented example client)
+    // saw no answer at all: no subscribe confirmation, and none of the refusals.
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: ['sess-1'] });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    sock.emit.mockClear();
+
+    const granted = (await gateway.handleMessage(
+      asSocket(sock),
+      subscribeMsg('sess-1', ['message.received']),
+    )) as WSSubscribedResponse;
+    expect(sock.emit).toHaveBeenCalledWith('message', granted);
+
+    sock.emit.mockClear();
+    const refused = (await gateway.handleMessage(asSocket(sock), subscribeMsg('sess-2', ['*']))) as WSErrorResponse;
+    expect(refused.code).toBe('FORBIDDEN_SESSION');
+    expect(sock.emit).toHaveBeenCalledWith('message', refused);
+
+    sock.emit.mockClear();
+    const pong = await gateway.handleMessage(asSocket(sock), { type: 'ping' } as unknown as WSClientMessage);
+    expect(sock.emit).toHaveBeenCalledWith('message', pong);
+
+    sock.emit.mockClear();
+    const unsubscribed = await gateway.handleMessage(asSocket(sock), {
+      type: 'unsubscribe',
+      sessionId: 'sess-1',
+      events: ['message.received'],
+    } as unknown as WSClientMessage);
+    expect(sock.emit).toHaveBeenCalledWith('message', unsubscribed);
+
+    sock.emit.mockClear();
+    const unknown = await gateway.handleMessage(asSocket(sock), { type: 'nonsense' } as unknown as WSClientMessage);
+    expect((unknown as WSErrorResponse).code).toBe('INVALID_MESSAGE');
+    expect(sock.emit).toHaveBeenCalledWith('message', unknown);
   });
 
   it('forbids a session-scoped key from subscribing to the * wildcard', async () => {
@@ -944,6 +984,27 @@ describe('EventsGateway rate limiting', () => {
       const s4 = makeSock('s4', { apiKey: 'good' });
       await gw.handleConnection(asSocket(s4));
       expect(s4.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('does not spend a cap slot on a handshake whose transport closed while it was validating', async () => {
+      // Nest runs the disconnect handler as soon as the transport closes, which can be before
+      // handleConnection returns. That untrack ran before the key was on client.data and found
+      // nothing, so the socket tracked a moment later stayed in the per-key set forever.
+      process.env.WS_MAX_SOCKETS_PER_KEY = '1';
+      process.env.WS_RATE_LIMIT_HANDSHAKE_MAX = '100';
+      authService.validateApiKey.mockResolvedValue({ id: 'k1', name: 'k', allowedSessions: null });
+      const gw = buildGateway();
+
+      const aborted = makeSock('aborted', { apiKey: 'good' });
+      const connecting = gw.handleConnection(asSocket(aborted));
+      aborted.disconnected = true; // the client went away mid-validation
+      gw.handleDisconnect(asSocket(aborted)); // Nest dispatches it before the connect resolves
+      await connecting;
+
+      // The one slot the key has must still be free.
+      const next = makeSock('next', { apiKey: 'good' });
+      await gw.handleConnection(asSocket(next));
+      expect(next.disconnect).not.toHaveBeenCalled();
     });
   });
 });

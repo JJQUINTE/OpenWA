@@ -159,9 +159,11 @@ Four tables live on the data connection, each created by a hand-authored dual-di
 - **Authentication inversion.** A provider webhook cannot carry an OpenWA API key, so ingress is public to
   the API-key guard but validates a **per-instance HMAC (or shared secret)** over the **raw** request
   bytes with a constant-time comparison. The raw body is preserved by a verify callback on the body parser
-  because a re-serialized payload is not byte-identical to what the provider signed. The global rate-limit
-  guard still applies, and the payload is intentionally not bound to a DTO so strict validation cannot
-  reject unknown provider fields.
+  because a re-serialized payload is not byte-identical to what the provider signed. The route is exempt from
+  the global per-IP throttle and bounded by its own guard instead, on two keys, `(pluginId, instanceId)` and
+  the client IP: a provider delivering every tenant's webhooks from one egress address would otherwise be
+  shed at the global tier before the per-instance bound ever fired. The payload is intentionally not bound
+  to a DTO so strict validation cannot reject unknown provider fields.
 - **Replay and duplication.** A signed-timestamp tolerance rejects stale deliveries, and
   `(pluginId, instanceId, providerDeliveryId)` deduplication plus a queue job id keyed on the delivery id
   provides best-effort de-duplication when the provider supplies a stable delivery id. Standard Webhooks defaults
@@ -267,7 +269,16 @@ Within major 1 the surface grows additively. A route's optional `response` contr
 `headers`, rendered host-side with `{rawBody}`/`{timestamp}`/`{id}` templates from the verified request),
 and an advisory `deadlineMs` — lets an adapter shape the synchronous HTTP response the provider sees; the
 plugin still always runs async, and a route with no `response` is byte-identical to today's default
-fast-ack. The `mode: 'sync-reply'` value is **deprecated** in favor of `response`: it was inert dead code
+fast-ack. `ack.body` and every `ack.headers` value must be strings, and a manifest that declares otherwise
+is refused at install and at boot, which leaves that plugin in error until the manifest is fixed. A
+declared header is dropped rather than written when it is one of these thirteen names: `content-type`
+(decided by the allowlist in §25.8); `content-length`, `transfer-encoding`, `content-encoding` and
+`trailer`, since the host frames the response itself and never compresses it; `set-cookie`,
+`access-control-allow-origin` and `access-control-allow-credentials`; and `content-security-policy`,
+`x-content-type-options`, `x-frame-options`, `strict-transport-security` and `referrer-policy`, the
+response protections the host sets for every request. Every other declared header goes out verbatim.
+
+The `mode: 'sync-reply'` value is **deprecated** in favor of `response`: it was inert dead code
 that was never wired to the HTTP response (the pipeline is always async + fast-ack), and it is kept in the
 `mode` union only to preserve SDK v1 additive-only compatibility — do not remove it within major 1, and do
 not rely on it at runtime.

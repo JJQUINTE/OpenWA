@@ -17,7 +17,7 @@ export interface BaileysStatusHost {
   toEngineJid(jid: string): string;
   normalizedSelfJid(): string;
   /** Baileys timestamps are `number | Long`; normalize to unix seconds. */
-  toUnixSeconds(ts: number | { toNumber(): number } | null | undefined): number;
+  toUnixSeconds(ts: number | string | { toNumber(): number } | null | undefined): number;
   /** Record the id of a message this session just sent, so its library echo is recognised as ours. */
   rememberOwnSend(id: string | null | undefined): void;
 }
@@ -88,7 +88,7 @@ export class BaileysStatus {
   /**
    * Post a status (story) to `status@broadcast` with a denormalized `statusJidList` (the allow-list of
    * neutral recipients folded back to the engine dialect). Image/video variants route through here too.
-   * The outbound status echo is NOT persisted — status isn't a chat message (its id is recorded below
+   * The outbound status echo is NOT persisted: status isn't a chat message (its id is recorded below
    * so handleMessagesUpsert skips the `type:'append'` echo as ours).
    */
   private async postStatus(content: AnyMessageContent, options: StatusPostOptions): Promise<StatusResult> {

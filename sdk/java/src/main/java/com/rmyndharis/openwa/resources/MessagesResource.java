@@ -142,7 +142,7 @@ public final class MessagesResource {
     }
 
     /**
-     * Click a button on a WhatsApp Business prompt. Baileys only — whatsapp-web.js returns 501.
+     * Click a button on a WhatsApp Business prompt. Baileys only: whatsapp-web.js returns 501.
      * Sends a structured reply proto quoted to the prompt, not a native UI tap.
      */
     public MessageResponse clickButton(String sessionId, ClickButtonRequest body) {

@@ -11,8 +11,9 @@ import { DataSource } from 'typeorm';
  *  - the driver binds a JS Date as the PROCESS's local wall time (`sessions.connectedAt`, the lease
  *    columns, the pending-delivery stamps: every column the app itself writes),
  *  - the driver parses a naive timestamp back as PROCESS-local,
- *  - `DEFAULT now()`, which is what fills every `@CreateDateColumn`/`@UpdateDateColumn` (TypeORM does
- *    not bind those), writes the SERVER session's zone.
+ *  - `DEFAULT now()`, which is what fills a `@CreateDateColumn`/`@UpdateDateColumn` the app leaves
+ *    alone (TypeORM binds one only when a value is passed, as the lid-mapping, chat-state and
+ *    message-store upserts and the Baileys history backfill do), writes the SERVER session's zone.
  *
  * Off UTC the row therefore carries two conventions at once, and comparisons that mix them are wrong by
  * the offset: a retention `LessThan(cutoff)` binds the cutoff as local wall time and measures it against
@@ -70,8 +71,7 @@ const SET_SESSION_UTC = "SET TIME ZONE 'UTC'";
  * guaranteed to survive the path to the server (a pooler may drop it, and PgBouncer refuses the startup
  * packet outright unless it is listed in `ignore_startup_parameters`), and on this connection it is
  * already spoken for by the search_path of a non-public schema. pg-pool awaits this hook for every
- * client it opens, the first one during `DataSource.initialize()` included, so none can start unpinned,
- * and `connectionTimeoutMillis` still bounds the whole connect, the extra round trip included.
+ * client it opens, the first one during `DataSource.initialize()` included, so none can start unpinned.
  *
  * The hook rather than a `Client` subclass that pins inside its own `connect`, because the pool owns two
  * things a subclass cannot reach. It attaches the client's `error` listener BEFORE calling the hook, so
@@ -79,6 +79,10 @@ const SET_SESSION_UTC = "SET TIME ZONE 'UTC'";
  * instead of reaching Node as an unhandled `error` event, which ends the process. And it calls
  * `client.end()` when the hook rejects, so a server that refuses the statement does not leave an
  * authenticated backend open once per acquire until `max_connections` runs out.
+ *
+ * `connectionTimeoutMillis` does NOT cover this statement: pg-pool clears that timer once the socket
+ * is connected, before it invokes the hook, so a server that accepts the connection and then never
+ * answers holds the acquire until the statement's own failure. Nothing else in the pool bounds it.
  */
 const pinSessionToUtc = (client: ClientBase): Promise<unknown> => client.query(SET_SESSION_UTC);
 

@@ -546,6 +546,32 @@ test('a start that answers with its engine up opens the QR modal', async () => {
   }
 });
 
+// A start of a session that was already linked elsewhere comes back `ready`. The modal's own guard
+// reads the sessions state of the render that began the start, which predates both the answer and the
+// re-read, so the decision has to be taken from the re-read itself.
+test('a start whose re-read shows the session ready opens no QR modal', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  startResult = {
+    answer: { status: 'initializing', engineLoaded: true },
+    leaves: { status: 'ready', engineLoaded: true },
+  };
+  SESSIONS.push({ ...SESSION_QR, id: 'sess-ready-1', name: 'already-linked', status: 'created', engineLoaded: false });
+  try {
+    renderSessions();
+
+    const card = (await screen.findByText('already-linked')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Start' }));
+    await waitFor(() => assert.ok(findFetchCall('POST', '/api/sessions/sess-ready-1/start')));
+    // The re-read lands as this card turning Connected, which is also when the handler has decided
+    // about the modal; the Start button is gone by then, so it cannot be the settle signal here.
+    await waitFor(() => assert.ok(within(card).queryByText('Connected')));
+    assert.ok(!screen.queryByRole('dialog'), 'a QR modal opened over a session that came back ready');
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
 // A start can answer 200 with an engine that is gone by the time the list is read back: a stop that landed
 // while it ran retires it, and an engine can fail right after answering. The re-read decides, not the
 // answer, since a QR modal over that session could only spin.
@@ -765,6 +791,60 @@ test('a disconnected push closes the QR modal once the re-read shows no engine',
     pushSessionStatus(row.id, 'disconnected');
 
     await waitFor(() => assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open with no engine left'));
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// The disconnect handler blanks the code, then asks the server whether an engine is still
+// registered, and closes the modal on the answer. A reconnect can finish inside that window and push
+// a fresh, scannable code; closing then would throw it away.
+test('a QR pushed while the disconnect re-read is in flight keeps the modal open', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-raced-1', name: 'raced', status: 'qr_ready', engineLoaded: true };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+
+    const card = (await screen.findByText('raced')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByAltText('QR');
+
+    // The server answer will say the engine is gone, which is what used to close the modal outright.
+    Object.assign(row, { status: 'disconnected', engineLoaded: false });
+    // Counted BEFORE the push: the mount already read the list once, so waiting for "a GET happened"
+    // would be satisfied by that one and would settle before the handler's own re-read resolves.
+    const readsBeforeDisconnect = fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+    pushSessionStatus(row.id, 'disconnected');
+
+    // A fresh code lands before that answer is applied.
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    act(() => {
+      socket.receive('message', {
+        type: 'event',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        payload: {
+          event: 'session.qr',
+          sessionId: row.id,
+          data: { qrCode: 'data:image/png;base64,FRESH' },
+        },
+      });
+    });
+
+    // The fresh code is on screen, so the push really landed in the modal that is being judged.
+    await waitFor(() =>
+      assert.equal((screen.getByAltText('QR') as HTMLImageElement).src, 'data:image/png;base64,FRESH'),
+    );
+    // And the handler's re-read has resolved, so the close decision has already been taken.
+    await waitFor(() =>
+      assert.ok(
+        fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length > readsBeforeDisconnect,
+      ),
+    );
+    assert.ok(screen.queryByRole('dialog'), 'the modal closed over a QR code that had just arrived');
   } finally {
     SESSIONS.pop();
   }

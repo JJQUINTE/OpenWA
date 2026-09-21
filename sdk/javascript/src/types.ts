@@ -573,8 +573,8 @@ export interface ChatHistoryMessage {
   isLidSender?: boolean;
   senderPhone?: string | null;
   /**
-   * Sender contact info, best-effort from the engine's cache. History carries `pushName` only;
-   * the richer fields arrive on `message.received` when `WEBHOOK_CONTACT_DETAILS=true`.
+   * Sender contact info, best-effort from the engine's cache. History carries `name` and `pushName`;
+   * the richer fields are added when `WEBHOOK_CONTACT_DETAILS=true`, as on `message.received`.
    */
   contact?: {
     id?: Jid;

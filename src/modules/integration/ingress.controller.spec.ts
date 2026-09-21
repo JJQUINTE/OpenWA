@@ -158,4 +158,56 @@ describe('IngressController', () => {
     expect(captured.body).toBe('{"ok":true}');
     expect(captured.headers).toEqual({ 'content-type': 'application/json' });
   });
+
+  it('never writes a reserved header a route declared', async () => {
+    // res.type rewrites content-type whatever happens, so asserting that header alone cannot tell
+    // whether the filter runs at all. These are the ones nothing downstream would put back.
+    const handle = jest.fn().mockResolvedValue({
+      status: 200,
+      body: 'ok',
+      headers: { 'Set-Cookie': 'a=b', 'Transfer-Encoding': 'chunked', 'X-Provider-Ack': 'kept' },
+    });
+    const controller = new IngressController({ handle } as unknown as IngressService);
+    const { res, captured } = fakeRes();
+    const req = {
+      method: 'POST',
+      params: { path: ['send-sms'] },
+      headers: {},
+      rawBody: Buffer.from('{}'),
+    } as unknown as Request & { rawBody?: Buffer };
+
+    await controller.receive('p', 'i1', {}, req, res);
+
+    expect(captured.headers['set-cookie']).toBeUndefined();
+    expect(captured.headers['transfer-encoding']).toBeUndefined();
+    expect(captured.headers['x-provider-ack']).toBe('kept');
+  });
+});
+
+describe('query values reach the pipeline as strings', () => {
+  const callWithQuery = async (query: Record<string, unknown>) => {
+    const handle = jest.fn().mockResolvedValue({ status: 200, body: '' });
+    const controller = new IngressController({ handle } as unknown as IngressService);
+    const { res } = fakeRes();
+    const req = {
+      method: 'GET',
+      params: { path: ['meta'] },
+      headers: {},
+    } as unknown as Request & { rawBody?: Buffer };
+    await controller.receive('meta', 'i1', query as Record<string, string>, req, res);
+    return (handle.mock.calls[0] as [{ query: Record<string, string> }])[0].query;
+  };
+
+  it('keeps the first value of a repeated parameter', async () => {
+    // Express answers `?hub.challenge=a&hub.challenge=b` with an array, and the challenge path feeds
+    // the value into a constant-time compare that accepts only strings, so this used to answer 500.
+    const query = await callWithQuery({ 'hub.challenge': ['a', 'b'], 'hub.verify_token': 'tok' });
+    expect(query).toEqual({ 'hub.challenge': 'a', 'hub.verify_token': 'tok' });
+    for (const value of Object.values(query)) expect(typeof value).toBe('string');
+  });
+
+  it('answers an empty string for a repeated parameter with no values, and for a non-string one', async () => {
+    const query = await callWithQuery({ empty: [], odd: { nested: 'x' } });
+    expect(query).toEqual({ empty: '', odd: '' });
+  });
 });

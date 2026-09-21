@@ -18,6 +18,7 @@ import {
   MENTIONS_DESCRIPTION,
   MENTIONS_MAX,
   MENTION_WID_MAX_LENGTH,
+  BUTTON_ID_MAX_LENGTH,
   MESSAGE_TEXT_MAX_LENGTH,
   QUOTED_MESSAGE_ID_DESCRIPTION,
   QUOTED_MESSAGE_ID_EXAMPLE,
@@ -301,9 +302,13 @@ export class ClickButtonDto {
   @ApiProperty({
     description:
       'Stable id of the choice to tap (inbound `buttons[].id`). URL/call CTA buttons cannot be clicked this way.',
+    maxLength: BUTTON_ID_MAX_LENGTH,
   })
   @IsString()
   @IsNotEmpty()
+  // Bounded by what a choice id can actually be, not by the text cap: the engine never offers a
+  // choice whose id is longer, so anything past this could only ever answer "unknown button".
+  @MaxLength(BUTTON_ID_MAX_LENGTH)
   buttonId!: string;
 
   @ApiPropertyOptional({
