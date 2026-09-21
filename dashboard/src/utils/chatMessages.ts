@@ -124,9 +124,23 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
   for (const m of messages) {
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
-    if (/^\d+$/.test(local) && !map.has(local)) map.set(local, m.chatName);
+    const name = safeMentionName(m.chatName);
+    if (name && /^\d+$/.test(local) && !map.has(local)) map.set(local, name);
   }
   return map;
+}
+
+/**
+ * A push name is set freely by any WhatsApp user and is spliced into text that MessageBody later
+ * linkifies, so keep only letters, digits, marks and spaces: `bit.ly/free` becomes `bitlyfree`, which can
+ * never form a link or WhatsApp formatting. Returns '' when nothing usable is left, so the caller keeps
+ * the original `@<digits>` instead of rendering a bare `@`.
+ */
+function safeMentionName(name: string): string {
+  return name
+    .replace(/[^\p{L}\p{N}\p{M} ]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -138,9 +152,10 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
  */
 export function resolveMentions(text: string, names: Map<string, string>): string {
   if (names.size === 0 || !text.includes('@')) return text;
-  return text.replace(/@(\d{7,})/g, (full: string, digits: string) => {
-    const name = names.get(digits);
-    return name ? `@${name.split(' ')[0]}` : full;
+  // The left boundary keeps this off the middle of a word: `admin@12345678.com` is not a mention.
+  return text.replace(/(?<![\p{L}\p{N}])@(\d{7,})/gu, (full: string, digits: string) => {
+    const first = names.get(digits)?.split(' ')[0];
+    return first ? `@${first}` : full;
   });
 }
 

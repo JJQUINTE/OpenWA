@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, CornerUpLeft, Loader2, MessageSquare, Smile, Trash2 } from 'lucide-react';
 import { sessionApi, type Chat } from '../../services/api';
-import { buildMentionNameMap, getMediaSrc, resolveMentions, senderKey, type ChatMessageView } from '../../utils/chatMessages';
+import {
+  buildMentionNameMap,
+  getMediaSrc,
+  resolveMentions,
+  senderKey,
+  type ChatMessageView,
+} from '../../utils/chatMessages';
 import { shouldFetchOlderMessages } from '../../utils/scrollDecision';
 import MessageBody from './MessageBody';
 

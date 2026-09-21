@@ -442,26 +442,26 @@ test('mergeReactionSnapshot stays undefined when neither side knows anything', (
   assert.equal(mergeReactionSnapshot(undefined, undefined), undefined);
 });
 
-test('buildMentionNameMap keys on the author JID\'s local part, stripped of a :device suffix', () => {
+test("buildMentionNameMap keys on the author JID's local part, stripped of a :device suffix", () => {
   const map = buildMentionNameMap([
     msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' }),
-    msg({ author: '628111@c.us:7', chatName: 'Group Admin' }),
+    msg({ author: '628111:7@s.whatsapp.net', chatName: 'Group Admin' }),
   ]);
   assert.equal(map.get('166868170059932'), 'Sneha Desai');
   assert.equal(map.get('628111'), 'Group Admin');
 });
 
 test('buildMentionNameMap skips a row with no author or no resolved name', () => {
-  const map = buildMentionNameMap([msg({ author: undefined, chatName: 'Sneha Desai' }), msg({ author: '628@c.us', chatName: undefined })]);
+  const map = buildMentionNameMap([
+    msg({ author: undefined, chatName: 'Sneha Desai' }),
+    msg({ author: '628@c.us', chatName: undefined }),
+  ]);
   assert.equal(map.size, 0);
 });
 
 test('resolveMentions replaces a matched @<digits> token with @<FirstName>', () => {
   const names = buildMentionNameMap([msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' })]);
-  assert.equal(
-    resolveMentions('Hi @166868170059932, any update?', names),
-    'Hi @Sneha, any update?',
-  );
+  assert.equal(resolveMentions('Hi @166868170059932, any update?', names), 'Hi @Sneha, any update?');
 });
 
 test('resolveMentions leaves an unmatched @<digits> token exactly as WhatsApp sent it', () => {
@@ -476,4 +476,46 @@ test('resolveMentions does not touch a short @-token that is not a real mention 
 
 test('resolveMentions is a no-op with an empty name map (skips the regex pass entirely)', () => {
   assert.equal(resolveMentions('Hi @166868170059932', new Map()), 'Hi @166868170059932');
+});
+
+test('buildMentionNameMap only keys a device-suffixed author when the :device part is stripped', () => {
+  // Without .split(':')[0] the local part is '628111:7', fails /^\d+$/ and the entry is dropped.
+  assert.equal(
+    buildMentionNameMap([msg({ author: '628111:7@s.whatsapp.net', chatName: 'Ravi' })]).get('628111'),
+    'Ravi',
+  );
+});
+
+test('a push name cannot become a link: link characters are stripped before it is spliced in', () => {
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'bit.ly/free' })]);
+  assert.equal(resolveMentions('hi @6281112345', names), 'hi @bitlyfree');
+});
+
+test('a push name with WhatsApp formatting characters is reduced to plain text', () => {
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: '*_Ravi_* ~x~' })]);
+  assert.equal(resolveMentions('@6281112345', names), '@Ravi');
+});
+
+test('resolveMentions needs a left boundary: it does not fire inside an email address', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('mail admin@12345678.com now', names), 'mail admin@12345678.com now');
+  assert.equal(resolveMentions('(@12345678) and, @12345678.', names), '(@Ravi) and, @Ravi.');
+  assert.equal(resolveMentions('@12345678', names), '@Ravi');
+});
+
+test('a blank push name is skipped, so the mention stays as WhatsApp sent it instead of a bare @', () => {
+  const names = buildMentionNameMap([
+    msg({ author: '6281112345@c.us', chatName: ' ' }),
+    msg({ author: '6281112346@c.us', chatName: '///' }),
+  ]);
+  assert.equal(names.size, 0);
+  assert.equal(resolveMentions('@6281112345 @6281112346', names), '@6281112345 @6281112346');
+});
+
+test('a later usable name for the same participant is still picked up after a blank one', () => {
+  const names = buildMentionNameMap([
+    msg({ author: '6281112345@c.us', chatName: ' ' }),
+    msg({ author: '6281112345@c.us', chatName: 'Ravi Kumar' }),
+  ]);
+  assert.equal(resolveMentions('@6281112345', names), '@Ravi');
 });
