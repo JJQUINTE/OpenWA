@@ -126,6 +126,14 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     expect(sock.data.rawApiKey).toBe('good');
   });
 
+  it('refuses a chat-restricted key at the handshake (event filtering is a later slice)', async () => {
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: null, allowedChats: ['123@g.us'] });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    expect(sock.disconnect).toHaveBeenCalled();
+    expect(sock.emit).toHaveBeenCalled();
+  });
+
   it('re-validates on subscribe and disconnects a key revoked after connect', async () => {
     authService.validateApiKey.mockResolvedValueOnce({ name: 'k', allowedSessions: null }); // connect
     const sock = makeSocket({ apiKey: 'good' });

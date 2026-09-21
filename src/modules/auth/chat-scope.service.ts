@@ -1,9 +1,9 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ApiKey } from './entities/api-key.entity';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { ContactDirectory } from '../../engine/identity/jid-candidates';
 import {
   ChatScope,
-  ChatScopeDirectory,
   buildChatScope,
   chatScopeAllows,
   filterByChatScope,
@@ -15,9 +15,10 @@ import {
  * wiring the shared lid<->phone directory so a phone entry matches its `@lid` form and vice versa.
  *
  * Provided by the global AuthModule so both the ApiKeyGuard (route-param fence) and the feature
- * controllers/services (list filtering and body-chat sends) share one definition of "inside the
- * fence". A missing lid directory degrades to exact-dialect matching only, which fails CLOSED for an
- * unmapped `@lid` — the documented behaviour.
+ * controllers/services (list filtering) share one definition of "inside the fence". The directory
+ * reads the persisted lid table, not the evictable in-memory mirror, so the answer is deterministic.
+ * A missing directory degrades to exact-dialect matching only, which fails CLOSED for an unmapped
+ * `@lid` — the documented behaviour.
  */
 @Injectable()
 export class ChatScopeService {
@@ -34,30 +35,30 @@ export class ChatScopeService {
   }
 
   /** The compiled scope for a key, or `null` when unrestricted. */
-  scopeFor(apiKey?: Pick<ApiKey, 'allowedChats'> | null): ChatScope | null {
+  scopeFor(apiKey?: Pick<ApiKey, 'allowedChats'> | null): Promise<ChatScope | null> {
     return buildChatScope(apiKey?.allowedChats ?? null, this.directory());
   }
 
   /** Whether `chatId` is inside the key's fence (an unrestricted key admits every chat). */
-  allows(apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined, chatId: string): boolean {
-    return chatScopeAllows(this.scopeFor(apiKey), chatId);
+  async allows(apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined, chatId: string): Promise<boolean> {
+    return chatScopeAllows(await this.scopeFor(apiKey), chatId);
   }
 
   /** The subset of `items` whose chat id is inside the key's fence (unrestricted ⇒ unchanged). */
-  filter<T>(
+  async filter<T>(
     apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined,
     items: readonly T[],
     chatIdOf: (item: T) => string | null | undefined,
-  ): T[] {
-    return filterByChatScope(this.scopeFor(apiKey), items, chatIdOf);
+  ): Promise<T[]> {
+    return filterByChatScope(await this.scopeFor(apiKey), items, chatIdOf);
   }
 
-  private directory(): ChatScopeDirectory | undefined {
+  private directory(): ContactDirectory | undefined {
     const store = this.lidStore;
     if (!store) return undefined;
     return {
-      resolveLid: jid => store.resolveLid(jid),
-      lidsForPhone: phone => store.lidsForPhone(phone),
+      resolveLid: userPart => store.resolveLidPersisted(userPart),
+      lidsForPhone: phone => store.lidsForPhonePersisted(phone),
     };
   }
 }

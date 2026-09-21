@@ -7,6 +7,7 @@ export const REQUIRED_ROLE_KEY = 'requiredRole';
 export const PUBLIC_KEY = 'isPublic';
 export const SESSION_SCOPED_KEY = 'sessionScoped';
 export const UNSCOPED_KEY = 'requireUnscopedKey';
+export const CHAT_SCOPED_KEY = 'chatScoped';
 
 /**
  * Mark a route as requiring a specific role
@@ -37,6 +38,21 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
  * @example @RequireUnscopedKey() @Controller('auth/api-keys')
  */
 export const RequireUnscopedKey = () => SetMetadata(UNSCOPED_KEY, true);
+
+/**
+ * Mark a handler (or controller) a chat-restricted key — one carrying `allowedChats` — may reach,
+ * when the handler's target chat is one the ApiKeyGuard can see: a `:chatId` / `:groupId` /
+ * `:contactId` path param, a `chatId` / `fromChatId` / `toChatId` body field, or a `messages[]`
+ * entry's `chatId`.
+ *
+ * This is an ALLOWLIST, not a restriction: a chat-restricted key is refused with 403 on every route
+ * that is NOT marked, so surfaces with no chat dimension (webhooks, automation rules, status, key
+ * management, channels) — and every route added later — stay closed without having to enumerate
+ * them. A marked handler that lists chats instead of naming one must filter its result through
+ * ChatScopeService; the structural coverage spec enforces both halves.
+ * @example @ChatScoped() @Get(':chatId')
+ */
+export const ChatScoped = () => SetMetadata(CHAT_SCOPED_KEY, true);
 
 /**
  * Get the current API key from request

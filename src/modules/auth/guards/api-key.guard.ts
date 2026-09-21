@@ -1,11 +1,25 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { ChatScopeService } from '../chat-scope.service';
-import { ApiKeyRole } from '../entities/api-key.entity';
-import { REQUIRED_ROLE_KEY, PUBLIC_KEY, SESSION_SCOPED_KEY, UNSCOPED_KEY } from '../decorators/auth.decorators';
+import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
+import {
+  REQUIRED_ROLE_KEY,
+  PUBLIC_KEY,
+  SESSION_SCOPED_KEY,
+  UNSCOPED_KEY,
+  CHAT_SCOPED_KEY,
+} from '../decorators/auth.decorators';
+import { ChatScope, chatScopeAllows } from '../../../common/security/chat-scope';
 import { resolveClientIp } from '../../../common/utils/ip';
 import { setRequestActor } from '../../../common/services/request-context';
 import { AuditService } from '../../audit/audit.service';
@@ -94,51 +108,20 @@ export class ApiKeyGuard implements CanActivate {
       throw new ForbiddenException(`Insufficient permissions. Required: ${requiredRole}`);
     }
 
-    // Chat fence. Routes that name a chat in the path — `:chatId`, `:groupId`, `:contactId` — are
-    // rejected when the chat is outside the key's `allowedChats`, exactly as a session outside
-    // `allowedSessions` is rejected inside validateApiKey. An unrestricted key (no allowlist) admits
-    // every chat, so the model stays fail-open. List routes (`/chats`, `/contacts`, `/groups`, …) and
-    // sends whose target travels in the body carry no such param; they scope themselves through
-    // ChatScopeService, which is what the structural coverage spec enforces.
-    const scopedChatId = (request.params['chatId'] || request.params['groupId'] || request.params['contactId']) as
-      string | undefined;
-    if (scopedChatId && !this.chatScope.allows(apiKey, scopedChatId)) {
-      throw new ForbiddenException('API key not authorized for this chat');
-    }
-
-    // Body fence. Sends carry their target chat in the body, not the path (`POST /messages` and the
-    // other write routes). Single sends name it `chatId`, bulk send names `messages[].chatId`, and
-    // forward names `fromChatId` and `toChatId`. Fenced centrally here so the whole send surface is
-    // protected and a handler cannot forget it.
-    const body: unknown = request.body;
-    if (body !== null && typeof body === 'object') {
-      const b = body as Record<string, unknown>;
-
-      const bodyChatId = b.chatId;
-      if (typeof bodyChatId === 'string' && bodyChatId && !this.chatScope.allows(apiKey, bodyChatId)) {
-        throw new ForbiddenException('API key not authorized for this chat');
+    // Chat fence — DEFAULT DENY. A key carrying `allowedChats` may reach only a handler marked
+    // @ChatScoped, and only for a chat inside its allowlist. Surfaces with no chat dimension
+    // (webhooks, automation rules, status, key management, channels) — and every route added later —
+    // are refused without being enumerated. An unrestricted key (no allowlist) skips this entirely,
+    // so the model stays fail-open for every key that was not scoped.
+    if (this.chatScope.isRestricted(apiKey)) {
+      const chatScoped = this.reflector.getAllAndOverride<boolean>(CHAT_SCOPED_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (!chatScoped) {
+        throw new ForbiddenException('API key is restricted to selected chats');
       }
-
-      const fromChatId = b.fromChatId;
-      if (typeof fromChatId === 'string' && fromChatId && !this.chatScope.allows(apiKey, fromChatId)) {
-        throw new ForbiddenException('API key not authorized for this chat');
-      }
-
-      const toChatId = b.toChatId;
-      if (typeof toChatId === 'string' && toChatId && !this.chatScope.allows(apiKey, toChatId)) {
-        throw new ForbiddenException('API key not authorized for this chat');
-      }
-
-      const bodyMessages = b.messages;
-      if (Array.isArray(bodyMessages)) {
-        for (const item of bodyMessages) {
-          const itemChatId =
-            item !== null && typeof item === 'object' ? (item as { chatId?: unknown }).chatId : undefined;
-          if (typeof itemChatId === 'string' && itemChatId && !this.chatScope.allows(apiKey, itemChatId)) {
-            throw new ForbiddenException('API key not authorized for this chat');
-          }
-        }
-      }
+      await this.assertChatsAllowed(request, apiKey);
     }
 
     // Routes marked @RequireUnscopedKey carry no session dimension, so the allowedSessions check
@@ -160,6 +143,52 @@ export class ApiKeyGuard implements CanActivate {
     (request as Request & { clientIp?: string }).clientIp = clientIp;
 
     return true;
+  }
+
+  /** Route params the guard treats as a chat id. */
+  private static readonly CHAT_ROUTE_PARAMS = ['chatId', 'groupId', 'contactId'] as const;
+  /** Body fields that name a chat; bulk send nests the same name inside `messages[]`. */
+  private static readonly CHAT_BODY_FIELDS = ['chatId', 'fromChatId', 'toChatId'] as const;
+
+  /**
+   * Enforce a restricted key's allowlist across every chat id the guard can see: route params,
+   * `?chatId=`, and the body fields sends use. A field that is PRESENT but not a string is rejected
+   * rather than skipped — the global ValidationPipe coerces afterwards (enableImplicitConversion),
+   * so skipping here would let a handler receive a string the fence never checked.
+   */
+  private async assertChatsAllowed(request: Request, apiKey: ApiKey): Promise<void> {
+    const scope = await this.chatScope.scopeFor(apiKey);
+    for (const name of ApiKeyGuard.CHAT_ROUTE_PARAMS) {
+      this.assertChatAllowed(scope, request.params[name], name);
+    }
+    this.assertChatAllowed(scope, (request.query ?? {})['chatId'], 'chatId');
+    const body: unknown = request.body;
+    if (body === null || typeof body !== 'object') return;
+    const b = body as Record<string, unknown>;
+    for (const field of ApiKeyGuard.CHAT_BODY_FIELDS) {
+      this.assertChatAllowed(scope, b[field], field);
+    }
+    const messages = b.messages;
+    if (messages === undefined || messages === null) return;
+    if (!Array.isArray(messages)) {
+      throw new BadRequestException('messages must be an array');
+    }
+    for (const item of messages) {
+      if (item === null || typeof item !== 'object') continue;
+      this.assertChatAllowed(scope, (item as { chatId?: unknown }).chatId, 'messages[].chatId');
+    }
+  }
+
+  /** Reject an out-of-scope chat; ignore an absent field; refuse a present non-string field. */
+  private assertChatAllowed(scope: ChatScope | null, value: unknown, field: string): void {
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${field} must be a single chat id string`);
+    }
+    if (value.length === 0) return;
+    if (!chatScopeAllows(scope, value)) {
+      throw new ForbiddenException('API key not authorized for this chat');
+    }
   }
 
   private extractApiKey(request: Request): string | undefined {

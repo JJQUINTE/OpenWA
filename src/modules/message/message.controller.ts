@@ -46,7 +46,7 @@ import {
   ClickButtonDto,
   UnpinMessageDto,
 } from './dto/message-actions.dto';
-import { RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import {
   CHANNEL_MEDIA_501,
@@ -131,6 +131,7 @@ export class MessageController {
     });
   }
 
+  @ChatScoped()
   @Post('send-text')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a text message' })
@@ -153,6 +154,7 @@ export class MessageController {
     return this.messageService.sendText(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-template')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Render a stored text template and send it as a text message' })
@@ -175,6 +177,7 @@ export class MessageController {
     return this.messageService.sendTemplate(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-image')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send an image message' })
@@ -201,6 +204,7 @@ export class MessageController {
     return this.messageService.sendImage(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-video')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a video message' })
@@ -249,6 +253,7 @@ export class MessageController {
     return this.messageService.sendAudio(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-document')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a document/file' })
@@ -275,6 +280,7 @@ export class MessageController {
 
   // ========== Phase 3: Extended Messaging ==========
 
+  @ChatScoped()
   @Post('send-location')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a location message' })
@@ -291,6 +297,7 @@ export class MessageController {
     return this.messageService.sendLocation(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-contact')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a contact card message' })
@@ -307,6 +314,7 @@ export class MessageController {
     return this.messageService.sendContact(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-sticker')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a sticker message' })
@@ -328,6 +336,7 @@ export class MessageController {
     return this.messageService.sendSticker(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('send-poll')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a native WhatsApp poll' })
@@ -344,6 +353,7 @@ export class MessageController {
     return this.messageService.sendPoll(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('reply')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Reply to a message' })
@@ -360,6 +370,7 @@ export class MessageController {
     return this.messageService.reply(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('click-button')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({
@@ -390,6 +401,7 @@ export class MessageController {
     return this.messageService.clickButton(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('forward')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Forward a message to another chat' })
@@ -408,6 +420,7 @@ export class MessageController {
 
   // ========== Phase 3: Reactions ==========
 
+  @ChatScoped()
   @Post('react')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -435,6 +448,7 @@ export class MessageController {
     return { success: true };
   }
 
+  @ChatScoped()
   @Get(':chatId/history')
   @ApiOperation({
     summary: 'Fetch chat history live from WhatsApp',
@@ -495,6 +509,7 @@ export class MessageController {
     );
   }
 
+  @ChatScoped()
   @Get(':chatId/:messageId/reactions')
   @ApiOperation({ summary: 'Get reactions for a specific message' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -524,6 +539,7 @@ export class MessageController {
 
   // Three path segments, so it never collides with `:chatId/history` (two) regardless of
   // declaration order — Nest/Express match on segment count first.
+  @ChatScoped()
   @Get(':chatId/:messageId/media')
   @ApiOperation({ summary: 'Download a message’s stored media' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -563,6 +579,7 @@ export class MessageController {
 
   // ========== Delete Message ==========
 
+  @ChatScoped()
   @Post('delete')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -593,6 +610,7 @@ export class MessageController {
     return { success: true };
   }
 
+  @ChatScoped()
   @Post('vote-poll')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -615,6 +633,7 @@ export class MessageController {
 
   // ========== Pin / Unpin ==========
 
+  @ChatScoped()
   @Post('pin')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -643,6 +662,7 @@ export class MessageController {
     return this.messageService.pinMessage(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('unpin')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -671,6 +691,7 @@ export class MessageController {
     return this.messageService.unpinMessage(sessionId, dto);
   }
 
+  @ChatScoped()
   @Post('star')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -698,6 +719,7 @@ export class MessageController {
 
   // ========== Edit Message ==========
 
+  @ChatScoped()
   @Post('edit')
   @HttpCode(HttpStatus.OK)
   @RequireRole(ApiKeyRole.OPERATOR)
@@ -733,6 +755,7 @@ export class MessageController {
 
   // ========== Bulk Messaging ==========
 
+  @ChatScoped()
   @Post('send-bulk')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.ACCEPTED)

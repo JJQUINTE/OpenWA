@@ -202,13 +202,14 @@ describe('AuthService', () => {
   }
 
   /** JS mirror of the guard's "usable admin" row predicate (the SQL definition lives in the
-   * service): an active, unexpired ADMIN key with no session scope. */
+   * service): an active, unexpired ADMIN key with no session OR chat scope. */
   function isUsableAdminRow(key: ApiKey): boolean {
     return (
       key.role === ApiKeyRole.ADMIN &&
       key.isActive &&
       (!key.expiresAt || key.expiresAt.getTime() > Date.now()) &&
-      (!key.allowedSessions || key.allowedSessions.length === 0)
+      (!key.allowedSessions || key.allowedSessions.length === 0) &&
+      (!key.allowedChats || key.allowedChats.length === 0)
     );
   }
 
@@ -564,6 +565,10 @@ describe('AuthService', () => {
     // admin must be rejected like a demotion — otherwise the system locks itself out for good.
     const unscopedAdmin = (id: string) => createMockApiKey({ id, role: ApiKeyRole.ADMIN });
     const scopedAdmin = (id: string) => createMockApiKey({ id, role: ApiKeyRole.ADMIN, allowedSessions: ['sess-1'] });
+    // A chat-scoped admin is likewise fenced out of key management (its routes are not
+    // @ChatScoped, so the guard refuses it), so it must not count as a usable admin either.
+    const chatScopedAdmin = (id: string) =>
+      createMockApiKey({ id, role: ApiKeyRole.ADMIN, allowedChats: ['123@g.us'] });
 
     it('rejects deleting the last unscoped admin even while a session-scoped admin survives', async () => {
       setupKeys([unscopedAdmin('admin-a'), scopedAdmin('admin-scoped')]);
@@ -603,6 +608,27 @@ describe('AuthService', () => {
 
       await expect(service.delete('admin-scoped')).resolves.toBeUndefined();
       await expect(service.findOne('admin-scoped')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('admin-a')).resolves.toBeDefined();
+    });
+
+    it('rejects deleting the last unscoped admin even while a chat-scoped admin survives', async () => {
+      setupKeys([unscopedAdmin('admin-a'), chatScopedAdmin('admin-chat')]);
+
+      await expect(service.delete('admin-a')).rejects.toThrow(/last active admin/i);
+      expect(repository.remove).not.toHaveBeenCalled();
+    });
+
+    it('rejects scoping the last unscoped admin to chats — the same capability-stripping', async () => {
+      setupKeys([unscopedAdmin('admin-a'), chatScopedAdmin('admin-chat')]);
+
+      await expect(service.update('admin-a', { allowedChats: ['123@g.us'] })).rejects.toThrow(/last active admin/i);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('lets a chat-scoped admin be deleted — it never counted toward the invariant', async () => {
+      setupKeys([unscopedAdmin('admin-a'), chatScopedAdmin('admin-chat')]);
+
+      await expect(service.delete('admin-chat')).resolves.toBeUndefined();
       await expect(service.findOne('admin-a')).resolves.toBeDefined();
     });
 

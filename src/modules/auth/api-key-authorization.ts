@@ -1,4 +1,5 @@
 import type { ApiKey } from './entities/api-key.entity';
+import { normalizeChatAllowList } from '../../common/security/chat-scope';
 
 /**
  * Collapse an `allowedSessions` list to the two shapes the enforcement sites actually distinguish.
@@ -52,7 +53,7 @@ export function apiKeyAuthorizationFingerprint(key: ApiKeyAuthorization): string
     key.role,
     scope(key.allowedIps),
     scope(key.allowedSessions),
-    scope(key.allowedChats),
+    scope(normalizeChatAllowList(key.allowedChats)),
     apiKeyExpiryTime(key.expiresAt),
   ]);
 }

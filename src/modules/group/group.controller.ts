@@ -11,7 +11,7 @@ import {
   MembershipRequestActionDto,
   SetGroupPictureDto,
 } from './dto/group.dto';
-import { RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import {
   GroupAckResponseDto,
@@ -88,6 +88,7 @@ export class GroupController {
     return this.groupService.getGroupJoinInfo(sessionId, code);
   }
 
+  @ChatScoped()
   @Get(':groupId')
   @ApiOperation({ summary: 'Get detailed group info' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -125,6 +126,7 @@ export class GroupController {
     return { success: true, groupId };
   }
 
+  @ChatScoped()
   @Get(':groupId/settings')
   @ApiOperation({ summary: 'Get group settings (announce / locked / ephemeral timer)' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -140,6 +142,7 @@ export class GroupController {
     return this.groupService.getGroupSettings(sessionId, groupId);
   }
 
+  @ChatScoped()
   @Put(':groupId/settings')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Update group settings (announce / locked / ephemeral timer)' })
@@ -185,6 +188,7 @@ export class GroupController {
     return this.groupService.createGroup(sessionId, dto.name, dto.participants);
   }
 
+  @ChatScoped()
   @Post(':groupId/participants')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Add participants to a group' })
@@ -211,6 +215,7 @@ export class GroupController {
     return { success: true, message: 'Participants added', results };
   }
 
+  @ChatScoped()
   @Delete(':groupId/participants')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Remove participants from a group' })
@@ -236,6 +241,7 @@ export class GroupController {
     return { success: true, message: 'Participants removed', results };
   }
 
+  @ChatScoped()
   @Post(':groupId/participants/promote')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Promote participants to admin' })
@@ -262,6 +268,7 @@ export class GroupController {
     return { success: true, message: 'Participants promoted to admin', results };
   }
 
+  @ChatScoped()
   @Post(':groupId/participants/demote')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Demote participants from admin' })
@@ -288,6 +295,7 @@ export class GroupController {
     return { success: true, message: 'Participants demoted from admin', results };
   }
 
+  @ChatScoped()
   @Get(':groupId/membership-requests')
   @ApiOperation({
     summary: 'List pending join requests for a group',
@@ -306,6 +314,7 @@ export class GroupController {
     return this.groupService.getGroupMembershipRequests(sessionId, groupId);
   }
 
+  @ChatScoped()
   @Post(':groupId/membership-requests/approve')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -338,6 +347,7 @@ export class GroupController {
     return { success: true, message: 'Membership requests approved', results };
   }
 
+  @ChatScoped()
   @Post(':groupId/membership-requests/reject')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -370,6 +380,7 @@ export class GroupController {
     return { success: true, message: 'Membership requests rejected', results };
   }
 
+  @ChatScoped()
   @Put(':groupId/subject')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Change group name/subject' })
@@ -394,6 +405,7 @@ export class GroupController {
     return { success: true, message: 'Group subject updated' };
   }
 
+  @ChatScoped()
   @Put(':groupId/description')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Change group description' })
@@ -418,6 +430,7 @@ export class GroupController {
     return { success: true, message: 'Group description updated' };
   }
 
+  @ChatScoped()
   @Post(':groupId/leave')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Leave a group' })
@@ -439,6 +452,7 @@ export class GroupController {
 
   // ========== Gap Quick Wins: Invite Link ==========
 
+  @ChatScoped()
   @Get(':groupId/picture')
   @ApiOperation({ summary: "Get the group's picture URL" })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -458,6 +472,7 @@ export class GroupController {
     return { url: await this.groupService.getGroupPicture(sessionId, groupId) };
   }
 
+  @ChatScoped()
   @Put(':groupId/picture')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -488,6 +503,7 @@ export class GroupController {
     return { success: true, message: 'Group picture updated' };
   }
 
+  @ChatScoped()
   @Delete(':groupId/picture')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -512,6 +528,7 @@ export class GroupController {
 
   // The invite code is a bearer join capability, not read data: it works outside OpenWA and keeps
   // working after the key that fetched it is revoked. OPERATOR, like the QR endpoint.
+  @ChatScoped()
   @Get(':groupId/invite-code')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Get group invite code/link' })
@@ -529,6 +546,7 @@ export class GroupController {
     };
   }
 
+  @ChatScoped()
   @Post(':groupId/invite-code/revoke')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)

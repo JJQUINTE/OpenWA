@@ -403,3 +403,57 @@ describe('LidMappingStoreService — deterministic preload + repository fallback
     expect(store.getCached('lid-a')).toBeUndefined();
   });
 });
+
+describe('LidMappingStoreService — deterministic persisted lookups (authorization path)', () => {
+  it('resolveLidPersisted answers from the cache when warm', async () => {
+    const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
+    const store = await newStore(repo);
+    expect(await store.resolveLidPersisted('111@lid')).toBe('628999');
+  });
+
+  it('resolveLidPersisted reads the table for a lid evicted from the LRU cache', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '1';
+    try {
+      // Preload keeps one row; the other is persisted but not cached, so the table must answer.
+      const repo = makeFakeRepo([
+        { lid: '111', phone: '628999' },
+        { lid: '222', phone: '628888' },
+      ]);
+      const store = await newStore(repo);
+      expect(await store.resolveLidPersisted('111@lid')).toBe('628999');
+      expect(await store.resolveLidPersisted('222@lid')).toBe('628888');
+    } finally {
+      delete process.env.LID_MAPPING_CACHE_MAX;
+    }
+  });
+
+  it('resolveLidPersisted returns null for a lid with no persisted row', async () => {
+    const repo = makeFakeRepo();
+    const store = await newStore(repo);
+    expect(await store.resolveLidPersisted('999@lid')).toBeNull();
+    expect(repo.findOne).toHaveBeenCalledWith({ where: { lid: '999' } });
+  });
+
+  it('resolveLidPersisted fails soft (null) when the table read throws', async () => {
+    const repo = makeFakeRepo();
+    const store = await newStore(repo);
+    repo.findOne.mockRejectedValueOnce(new Error('no such table'));
+    expect(await store.resolveLidPersisted('555@lid')).toBeNull();
+  });
+
+  it('lidsForPhonePersisted unions the cache with the persisted table', async () => {
+    const repo = makeFakeRepo([
+      { lid: '111', phone: '628999' },
+      { lid: '222', phone: '628999' },
+    ]);
+    const store = await newStore(repo);
+    expect((await store.lidsForPhonePersisted('628999')).sort()).toEqual(['111', '222']);
+  });
+
+  it('lidsForPhonePersisted falls back to the cache when the table read throws', async () => {
+    const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
+    const store = await newStore(repo);
+    repo.find.mockRejectedValueOnce(new Error('no such table'));
+    expect(await store.lidsForPhonePersisted('628999')).toEqual(['111']);
+  });
+});

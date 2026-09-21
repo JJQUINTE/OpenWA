@@ -1,4 +1,4 @@
-import { ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { runWithRequestId, getRequestActor } from '../../../common/services/request-context';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
@@ -8,6 +8,7 @@ import { ChatScopeService } from '../chat-scope.service';
 import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../audit/entities/audit-log.entity';
+import { CHAT_SCOPED_KEY } from '../decorators/auth.decorators';
 
 function createMockApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
   return {
@@ -34,6 +35,7 @@ function createMockContext(
   params: Record<string, string> = {},
   socketIp = '127.0.0.1',
   body?: unknown,
+  query: Record<string, unknown> = {},
 ): ExecutionContext {
   const request = {
     headers,
@@ -41,6 +43,7 @@ function createMockContext(
     ip: socketIp,
     socket: { remoteAddress: socketIp },
     body,
+    query,
   };
 
   return {
@@ -58,6 +61,8 @@ describe('ApiKeyGuard', () => {
   let reflector: jest.Mocked<Reflector>;
   let configService: jest.Mocked<Partial<ConfigService>>;
   let auditService: jest.Mocked<Partial<AuditService>>;
+  /** Per-call metadata the guard reads via Reflector; tests set only what they need. */
+  let metadata: Record<string, unknown>;
 
   function buildGuard(trustedProxies: string[] = []): ApiKeyGuard {
     configService = {
@@ -78,8 +83,9 @@ describe('ApiKeyGuard', () => {
       hasPermission: jest.fn(),
     };
 
+    metadata = {};
     reflector = {
-      getAllAndOverride: jest.fn(),
+      getAllAndOverride: jest.fn((key: string) => metadata[key]),
     } as unknown as jest.Mocked<Reflector>;
 
     auditService = {
@@ -414,6 +420,12 @@ describe('ApiKeyGuard', () => {
   });
 
   describe('chat scope enforcement', () => {
+    // The guard is default deny for a chat-restricted key: the handler must be marked @ChatScoped
+    // to be reachable at all. These tests are about the membership fence, so mark the route.
+    beforeEach(() => {
+      metadata[CHAT_SCOPED_KEY] = true;
+    });
+
     const ALLOWED_GROUP = '120363000000000000@g.us';
     const FORBIDDEN_GROUP = '120363999999999999@g.us';
     const ALLOWED_CONTACT = '919999999999@c.us';
@@ -536,6 +548,48 @@ describe('ApiKeyGuard', () => {
         ],
       });
       expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('refuses a chat-restricted key on a route that is not marked @ChatScoped', async () => {
+      delete metadata[CHAT_SCOPED_KEY];
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {});
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key is restricted to selected chats'),
+      );
+    });
+
+    it('fences ?chatId= on the query string', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const denied = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', undefined, { chatId: FORBIDDEN_GROUP });
+      await expect(guard.canActivate(denied)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+
+      const allowed = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', undefined, { chatId: ALLOWED_GROUP });
+      expect(await guard.canActivate(allowed)).toBe(true);
+    });
+
+    it('rejects a present but non-string chat field instead of skipping it', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      // The global ValidationPipe coerces with enableImplicitConversion, so a numeric chatId would
+      // reach the handler as a string the fence never checked — refuse it here.
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', { chatId: 120363 });
+      await expect(guard.canActivate(context)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a bulk `messages` field that is present but not an array', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', { messages: 'nope' });
+      await expect(guard.canActivate(context)).rejects.toThrow(BadRequestException);
     });
 
     it('admits forward and bulk send for an unrestricted key (allowedChats null)', async () => {

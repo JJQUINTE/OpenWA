@@ -5,7 +5,7 @@ import { ChatSummaryDto } from '../session/dto/chat-summary.dto';
 import { LabelService } from './label.service';
 import { AddLabelDto } from './dto/add-label.dto';
 import { UpsertLabelDto } from './dto/upsert-label.dto';
-import { RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import {
   ENGINE_NOT_READY_409,
@@ -142,6 +142,7 @@ export class LabelController {
     return { success: true };
   }
 
+  @ChatScoped()
   @Get('chat/:chatId')
   @ApiOperation({ summary: 'Get labels for a specific chat' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -159,6 +160,7 @@ export class LabelController {
     return this.labelService.getChatLabels(sessionId, chatId);
   }
 
+  @ChatScoped()
   @Post('chat/:chatId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -195,6 +197,7 @@ export class LabelController {
     return { success: true };
   }
 
+  @ChatScoped()
   @Delete('chat/:chatId/:labelId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Remove a label from a chat' })

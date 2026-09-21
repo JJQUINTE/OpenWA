@@ -10,7 +10,7 @@ import { Message, MessageDirection } from './entities/message.entity';
 import { HookManager, applySendingGate } from '../../core/hooks';
 import { SendPacingService } from './send-pacing.service';
 import { createLogger } from '../../common/services/logger.service';
-import { parseWaId } from '../../engine/identity/wa-id';
+import { resolveJidCandidates as expandJidCandidates } from '../../engine/identity/jid-candidates';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
 import { ChatMediaArchiveService } from '../chat-media/chat-media-archive.service';
 import { StorageService, isMissingObjectError } from '../../common/storage/storage.service';
@@ -296,7 +296,7 @@ export class MessageService implements PluginMessagePort {
       // Match across dialects: a stored chatId may be `@s.whatsapp.net` (e.g. an outbound send addressed
       // by a raw engine id) while the caller filters by the neutral `@c.us` from the chat list - same
       // chat, different dialect. Resolving both sides through the table keeps them equal.
-      query.andWhere('message.chatId IN (:...chatIds)', { chatIds: this.resolveJidCandidates(chatId) });
+      query.andWhere('message.chatId IN (:...chatIds)', { chatIds: await this.resolveJidCandidates(chatId) });
     }
 
     if (from) {
@@ -309,7 +309,7 @@ export class MessageService implements PluginMessagePort {
       // within the (sessionId, createdAt)-narrowed scan exactly as the from-only filter did, so the
       // OR costs nothing the old plan didn't already pay. No new index: per-session narrowing
       // dominates selectivity and a single btree cannot serve an OR across two columns anyway.
-      const froms = this.resolveJidCandidates(from);
+      const froms = await this.resolveJidCandidates(from);
       query.andWhere('(message.from IN (:...froms) OR message.author IN (:...authorFroms))', {
         froms,
         authorFroms: froms,
@@ -364,26 +364,15 @@ export class MessageService implements PluginMessagePort {
    * A `@lid` input forward-resolves to its phone instead of minting `<lid-digits>@c.us` (the lid's
    * digits are NOT a phone), so rows stored under the resolved form still match a raw-lid filter.
    */
-  private resolveJidCandidates(value: string): string[] {
-    const parsed = parseWaId(value);
-    if (parsed.kind !== 'user' && parsed.kind !== 'lid' && parsed.kind !== 'unknown') {
-      return [value];
-    }
-    if (parsed.kind === 'lid') {
-      const candidates = new Set<string>([value]);
-      const resolved = this.lidMappingStore.getCached(parsed.userPart);
-      if (resolved) {
-        candidates.add(`${resolved}@c.us`);
-        candidates.add(`${resolved}@s.whatsapp.net`);
-      }
-      return [...candidates];
-    }
-    const phone = parsed.userPart;
-    const candidates = new Set<string>([value, `${phone}@c.us`, `${phone}@s.whatsapp.net`]);
-    for (const lid of this.lidMappingStore.lidsForPhone(phone)) {
-      candidates.add(`${lid}@lid`);
-    }
-    return [...candidates];
+  private resolveJidCandidates(value: string): Promise<string[]> {
+    // Rules live in the shared helper (engine/identity/jid-candidates) so this filter and the
+    // API-key chat scope cannot disagree about which ids refer to the same entity. The store's
+    // cache-based lookups are passed through unchanged: this path is a read filter, not an
+    // authorization decision, so the evictable mirror is acceptable here.
+    return expandJidCandidates(value, {
+      resolveLid: lid => this.lidMappingStore.getCached(lid) ?? null,
+      lidsForPhone: phone => this.lidMappingStore.lidsForPhone(phone),
+    });
   }
 
   /**
@@ -429,7 +418,7 @@ export class MessageService implements PluginMessagePort {
     chatId: string,
     messageId: string,
   ): Promise<{ buffer: Buffer; mimetype: string }> {
-    const chatIds = this.resolveJidCandidates(chatId);
+    const chatIds = await this.resolveJidCandidates(chatId);
     const media = await this.chatMediaArchive?.getMedia(sessionId, chatIds, messageId);
     if (media && this.storageService) {
       try {

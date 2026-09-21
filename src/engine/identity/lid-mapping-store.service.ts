@@ -148,6 +148,36 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
     return set ? [...set] : [];
   }
 
+  /**
+   * Deterministic forward lookup for authorization paths (the API-key chat fence): the in-memory
+   * cache first, then the persisted table. The cache alone is NOT enough there — it is LRU-evicted
+   * at `LID_MAPPING_CACHE_MAX`, so a cache-only answer would let the same key and chat pass or fail
+   * depending on cache residency. The table is the source of truth and is consulted on every miss.
+   */
+  async resolveLidPersisted(jid: string): Promise<string | null> {
+    const lid = userPart(jid);
+    const cached = this.getCached(lid);
+    if (cached !== undefined) return cached;
+    try {
+      const row = await this.repo.findOne({ where: { lid } });
+      return row?.phone ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Deterministic reverse lookup, companion to {@link resolveLidPersisted}: cache ∪ persisted table. */
+  async lidsForPhonePersisted(phone: string): Promise<string[]> {
+    const lids = new Set<string>(this.lidsForPhone(phone));
+    try {
+      const rows = await this.repo.find({ where: { phone } });
+      for (const row of rows) lids.add(row.lid);
+    } catch {
+      // The table may not exist yet (migration pending); the cache is the best available answer.
+    }
+    return [...lids];
+  }
+
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {
     if (!lid || this.lidToPhone.get(lid) === phone) {
       return; // unseen-or-changed only; a no-op write would just churn updatedAt

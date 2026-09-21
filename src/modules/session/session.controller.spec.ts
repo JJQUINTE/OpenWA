@@ -5,6 +5,7 @@ import type { Session } from './entities/session.entity';
 import type { SessionService } from './session.service';
 import type { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
+import { ChatScopeService } from '../auth/chat-scope.service';
 import type { ApiKey } from '../auth/entities/api-key.entity';
 import { BadGatewayException, BadRequestException, ConflictException } from '@nestjs/common';
 
@@ -44,6 +45,7 @@ describe('SessionController — create() response contract', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -128,6 +130,7 @@ describe('SessionController — logout() audit + error forwarding contract', () 
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -197,6 +200,7 @@ describe('SessionController — start/stop lifecycle', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -287,6 +291,7 @@ describe('SessionController — muteChat', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -314,6 +319,7 @@ describe('SessionController findAll name filter', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       { logInfo: jest.fn() } as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -355,6 +361,7 @@ describe('SessionController — pinChat', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
@@ -401,6 +408,7 @@ describe('SessionController — proxy() response contract', () => {
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       auditService as unknown as AuditService,
+      new ChatScopeService(),
     );
   });
 
