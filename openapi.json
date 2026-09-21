@@ -8914,7 +8914,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -8975,7 +8975,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -9036,7 +9036,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -9097,7 +9097,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -9158,7 +9158,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -9219,7 +9219,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."
@@ -9280,7 +9280,7 @@
         ],
         "responses": {
           "200": {
-            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status."
+            "description": "GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery that reaches the dedup check is answered with the route's ack (same status and headers as the first delivery), so it is not distinguishable by status."
           },
           "202": {
             "description": "Webhook accepted and queued for async plugin processing (the primary success path)."

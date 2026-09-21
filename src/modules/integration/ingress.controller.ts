@@ -46,12 +46,16 @@ export class IngressController {
     name: 'path',
     type: String,
     description:
-      'The plugin-declared route: a single path segment. Only the first segment selects the route; any further segments are ignored.',
+      'The plugin-declared route: a single path segment. ' +
+      'Only the first segment selects the route; any further segments are ignored.',
     example: 'chatwoot',
   })
   @ApiOkResponse({
     description:
-      'GET verification challenge echo, or a route whose declared ack sets 200. Not the primary success path; see 202. A re-delivery is answered with the same ack as the first delivery, so it is not distinguishable by status.',
+      'GET verification challenge echo, or a route whose declared ack sets 200. ' +
+      'Not the primary success path; see 202. ' +
+      "A re-delivery that reaches the dedup check is answered with the route's ack " +
+      '(same status and headers as the first delivery), so it is not distinguishable by status.',
   })
   @ApiResponse({
     status: 202,
