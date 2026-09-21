@@ -94,4 +94,25 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
     client.getLabels.mockResolvedValue([]);
     await expect(labels.getLabelById('5')).resolves.toBeNull();
   });
+
+  // Client.getChatById resolves undefined for a chat the page cannot resolve; dereferencing it was a
+  // TypeError, a 500 on GET and on both chat-label writes that read the current set first.
+  it('treats an unresolved chat as carrying no labels', async () => {
+    const client = {
+      getChatById: jest.fn().mockResolvedValue(undefined),
+      addOrRemoveLabels: jest.fn().mockResolvedValue(undefined),
+    };
+    const host = {
+      ensureReady: jest.fn(),
+      getClient: () => client as unknown as Client,
+      isPageTransportError: () => false,
+      reportIfPageTransportError: jest.fn(),
+      logger,
+    } as unknown as WwebjsEngineHost;
+    const labels = new WwebjsLabels(host);
+
+    await expect(labels.getChatLabels('628999@c.us')).resolves.toEqual([]);
+    await expect(labels.addLabelToChat('628999@c.us', '7')).resolves.toBeUndefined();
+    expect(client.addOrRemoveLabels).toHaveBeenCalledWith(['7'], ['628999@c.us']);
+  });
 });

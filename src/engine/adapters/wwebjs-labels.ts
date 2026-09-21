@@ -123,7 +123,9 @@ export class WwebjsLabels {
     }
     const labels = await withPage(this.host, 'getChatLabels', async () => {
       const chat = await this.client().getChatById(chatId);
-      return (chat as unknown as GroupChat).getLabels();
+      // getChatById resolves undefined for a chat the page cannot resolve; an unknown chat carries no
+      // labels, and the label write then matches no chat page-side, the same no-op upstream makes.
+      return chat ? (chat as unknown as GroupChat).getLabels() : [];
     });
     if (!labels) {
       return [];
