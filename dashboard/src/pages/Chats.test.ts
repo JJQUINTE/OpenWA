@@ -611,6 +611,21 @@ test('Escape dismisses the message search results instead of the conversation be
   await waitFor(() => assert.ok(!screen.queryByRole('button', { name: 'Back' }), 'Escape did not close the room'));
 });
 
+test('a read-only key is offered no status compose trigger', async () => {
+  const { screen, fireEvent } = rtl;
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+    // Reading statuses stays open to a viewer; only posting one is withheld.
+    await screen.findByText('No contacts have an active status.');
+    assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
 // Stage a file in the open room and wait for the preview banner. A non-image type is used on
 // purpose: the image branch calls URL.createObjectURL, which JSDOM does not implement.
 //
