@@ -3182,6 +3182,97 @@
         ]
       }
     },
+    "/api/sessions/{sessionId}/messages/batch/{batchId}": {
+      "get": {
+        "operationId": "MessageController_getBatchStatus",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "Session ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "description": "Batch ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch status and progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchStatusResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Batch not found"
+          }
+        },
+        "summary": "Get batch processing status",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/sessions/{sessionId}/messages/batch/{batchId}/cancel": {
+      "post": {
+        "operationId": "MessageController_cancelBatch",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "description": "Session ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "description": "Batch ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Batch cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchCancelResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Batch already completed, cancelled, or failed (terminal statuses are exclusive)"
+          },
+          "404": {
+            "description": "Batch not found"
+          }
+        },
+        "summary": "Cancel a running batch",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
     "/api/sessions/{sessionId}/messages/{chatId}/history": {
       "get": {
         "description": "Reads messages directly from the WhatsApp client for the given chat, bypassing the local DB. Useful for retrieving messages that arrived before the gateway was started.",
@@ -3761,97 +3852,6 @@
           }
         },
         "summary": "Send messages to multiple recipients (async batch processing)",
-        "tags": [
-          "messages"
-        ]
-      }
-    },
-    "/api/sessions/{sessionId}/messages/batch/{batchId}": {
-      "get": {
-        "operationId": "MessageController_getBatchStatus",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "required": true,
-            "in": "path",
-            "description": "Session ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "batchId",
-            "required": true,
-            "in": "path",
-            "description": "Batch ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Batch status and progress",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchStatusResponseDto"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Batch not found"
-          }
-        },
-        "summary": "Get batch processing status",
-        "tags": [
-          "messages"
-        ]
-      }
-    },
-    "/api/sessions/{sessionId}/messages/batch/{batchId}/cancel": {
-      "post": {
-        "operationId": "MessageController_cancelBatch",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "required": true,
-            "in": "path",
-            "description": "Session ID",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "batchId",
-            "required": true,
-            "in": "path",
-            "description": "Batch ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Batch cancelled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchCancelResponseDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Batch already completed, cancelled, or failed (terminal statuses are exclusive)"
-          },
-          "404": {
-            "description": "Batch not found"
-          }
-        },
-        "summary": "Cancel a running batch",
         "tags": [
           "messages"
         ]
@@ -12118,6 +12118,173 @@
           "success"
         ]
       },
+      "BatchProgressDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 10
+          },
+          "sent": {
+            "type": "number",
+            "example": 7
+          },
+          "failed": {
+            "type": "number",
+            "example": 1
+          },
+          "pending": {
+            "type": "number",
+            "example": 2
+          },
+          "cancelled": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "total",
+          "sent",
+          "failed",
+          "pending",
+          "cancelled"
+        ]
+      },
+      "BatchMessageErrorDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable failure code.",
+            "example": "RECIPIENT_UNREACHABLE"
+          },
+          "message": {
+            "type": "string",
+            "example": "The number is not registered on WhatsApp"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "BatchMessageResultDto": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "type": "string",
+            "example": "628123456789@c.us"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "failed",
+              "cancelled"
+            ],
+            "example": "sent"
+          },
+          "messageId": {
+            "type": "string",
+            "description": "Assigned on a successful send.",
+            "example": "true_628123456789@c.us_3EB0123456789"
+          },
+          "error": {
+            "description": "Present on a failed send.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BatchMessageErrorDto"
+              }
+            ]
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the send completed."
+          }
+        },
+        "required": [
+          "chatId",
+          "status"
+        ]
+      },
+      "BatchStatusResponseDto": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "example": "batch_abc123"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "cancelled",
+              "failed"
+            ],
+            "example": "processing"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/BatchProgressDto"
+          },
+          "results": {
+            "description": "One entry per recipient already attempted.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchMessageResultDto"
+            }
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When processing started; null while the batch is pending."
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the batch reached a terminal status; null while it is still running."
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "progress",
+          "results"
+        ]
+      },
+      "BatchCancelResponseDto": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "example": "batch_abc123"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "cancelled",
+              "failed"
+            ],
+            "example": "cancelled"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/BatchProgressDto"
+          }
+        },
+        "required": [
+          "batchId",
+          "status",
+          "progress"
+        ]
+      },
       "ChatHistoryCallDto": {
         "type": "object",
         "properties": {
@@ -12866,173 +13033,6 @@
           "status",
           "totalMessages",
           "statusUrl"
-        ]
-      },
-      "BatchProgressDto": {
-        "type": "object",
-        "properties": {
-          "total": {
-            "type": "number",
-            "example": 10
-          },
-          "sent": {
-            "type": "number",
-            "example": 7
-          },
-          "failed": {
-            "type": "number",
-            "example": 1
-          },
-          "pending": {
-            "type": "number",
-            "example": 2
-          },
-          "cancelled": {
-            "type": "number",
-            "example": 0
-          }
-        },
-        "required": [
-          "total",
-          "sent",
-          "failed",
-          "pending",
-          "cancelled"
-        ]
-      },
-      "BatchMessageErrorDto": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Machine-readable failure code.",
-            "example": "RECIPIENT_UNREACHABLE"
-          },
-          "message": {
-            "type": "string",
-            "example": "The number is not registered on WhatsApp"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ]
-      },
-      "BatchMessageResultDto": {
-        "type": "object",
-        "properties": {
-          "chatId": {
-            "type": "string",
-            "example": "628123456789@c.us"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "sent",
-              "failed",
-              "cancelled"
-            ],
-            "example": "sent"
-          },
-          "messageId": {
-            "type": "string",
-            "description": "Assigned on a successful send.",
-            "example": "true_628123456789@c.us_3EB0123456789"
-          },
-          "error": {
-            "description": "Present on a failed send.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/BatchMessageErrorDto"
-              }
-            ]
-          },
-          "sentAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the send completed."
-          }
-        },
-        "required": [
-          "chatId",
-          "status"
-        ]
-      },
-      "BatchStatusResponseDto": {
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string",
-            "example": "batch_abc123"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "processing",
-              "completed",
-              "cancelled",
-              "failed"
-            ],
-            "example": "processing"
-          },
-          "progress": {
-            "$ref": "#/components/schemas/BatchProgressDto"
-          },
-          "results": {
-            "description": "One entry per recipient already attempted.",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BatchMessageResultDto"
-            }
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "When processing started; null while the batch is pending."
-          },
-          "completedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "When the batch reached a terminal status; null while it is still running."
-          }
-        },
-        "required": [
-          "batchId",
-          "status",
-          "progress",
-          "results"
-        ]
-      },
-      "BatchCancelResponseDto": {
-        "type": "object",
-        "properties": {
-          "batchId": {
-            "type": "string",
-            "example": "batch_abc123"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "processing",
-              "completed",
-              "cancelled",
-              "failed"
-            ],
-            "example": "cancelled"
-          },
-          "progress": {
-            "$ref": "#/components/schemas/BatchProgressDto"
-          }
-        },
-        "required": [
-          "batchId",
-          "status",
-          "progress"
         ]
       },
       "CreateTemplateDto": {

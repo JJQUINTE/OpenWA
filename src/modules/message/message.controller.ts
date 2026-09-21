@@ -436,6 +436,61 @@ export class MessageController {
     return { success: true };
   }
 
+  // Declared before ':chatId/history': Express takes the first matching route, so a batch whose
+  // caller-supplied id is 'history' would otherwise be read as the chat history of chat 'batch'.
+  @Get('batch/:batchId')
+  @ApiOperation({ summary: 'Get batch processing status' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'batchId', description: 'Batch ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch status and progress',
+    type: BatchStatusResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Batch not found',
+  })
+  async getBatchStatus(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
+    const batch = await this.bulkMessageService.getBatchStatus(sessionId, batchId);
+    return {
+      batchId: batch.batchId,
+      status: batch.status,
+      progress: batch.progress,
+      results: batch.results,
+      startedAt: batch.startedAt,
+      completedAt: batch.completedAt,
+    };
+  }
+
+  @Post('batch/:batchId/cancel')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel a running batch' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'batchId', description: 'Batch ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch cancelled',
+    type: BatchCancelResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Batch already completed, cancelled, or failed (terminal statuses are exclusive)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Batch not found',
+  })
+  async cancelBatch(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
+    const batch = await this.bulkMessageService.cancelBatch(sessionId, batchId);
+    return {
+      batchId: batch.batchId,
+      status: batch.status,
+      progress: batch.progress,
+    };
+  }
+
   @Get(':chatId/history')
   @ApiOperation({
     summary: 'Fetch chat history live from WhatsApp',
@@ -764,60 +819,7 @@ export class MessageController {
       status: batch.status,
       totalMessages: batch.messages.length,
       estimatedCompletionTime: estimatedTime.toISOString(),
-      statusUrl: `/api/sessions/${sessionId}/messages/batch/${batch.batchId}`,
-    };
-  }
-
-  @Get('batch/:batchId')
-  @ApiOperation({ summary: 'Get batch processing status' })
-  @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiParam({ name: 'batchId', description: 'Batch ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Batch status and progress',
-    type: BatchStatusResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Batch not found',
-  })
-  async getBatchStatus(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
-    const batch = await this.bulkMessageService.getBatchStatus(sessionId, batchId);
-    return {
-      batchId: batch.batchId,
-      status: batch.status,
-      progress: batch.progress,
-      results: batch.results,
-      startedAt: batch.startedAt,
-      completedAt: batch.completedAt,
-    };
-  }
-
-  @Post('batch/:batchId/cancel')
-  @RequireRole(ApiKeyRole.OPERATOR)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel a running batch' })
-  @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiParam({ name: 'batchId', description: 'Batch ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Batch cancelled',
-    type: BatchCancelResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Batch already completed, cancelled, or failed (terminal statuses are exclusive)',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Batch not found',
-  })
-  async cancelBatch(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
-    const batch = await this.bulkMessageService.cancelBatch(sessionId, batchId);
-    return {
-      batchId: batch.batchId,
-      status: batch.status,
-      progress: batch.progress,
+      statusUrl: `/api/sessions/${encodeURIComponent(sessionId)}/messages/batch/${encodeURIComponent(batch.batchId)}`,
     };
   }
 }

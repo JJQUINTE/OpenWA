@@ -2268,7 +2268,7 @@ The rendered text is bounded the same way, by `TEMPLATE_RENDER_MAX_CHARS` (defau
 
 **Response** `202`
 
-`202 Accepted` (via `@HttpCode`). `statusUrl` points at the batch-status route below.
+`202 Accepted` (via `@HttpCode`). `statusUrl` points at the batch-status route below, with the session id and `batchId` percent-encoded.
 
 ```json
 {

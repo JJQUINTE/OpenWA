@@ -1285,6 +1285,17 @@ describe('BulkMessageService.createBatch base64 media cap', () => {
     expect((service as unknown as { inFlightBatches: number }).inFlightBatches).toBe(0);
   });
 
+  it.each(['.', '..'])('rejects the dot-segment batchId %p, which no URL can address', async batchId => {
+    const create = service.createBatch('s1', {
+      batchId,
+      messages: [{ chatId: 'c0@c.us', type: 'text', content: { text: 'hi' } }],
+    } as unknown as SendBulkMessageDto);
+
+    await expect(create).rejects.toBeInstanceOf(BadRequestException);
+    await expect(create).rejects.toThrow(`Batch ID '${batchId}' is not allowed`);
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
   it('scopes the batchId uniqueness check to the session (no cross-session collision/oracle)', async () => {
     // Simulate a DB where batchId 'dup' exists only under session 's1'.
     repo.findOne.mockImplementation((opts: { where: { batchId?: string; sessionId?: string } }) => {

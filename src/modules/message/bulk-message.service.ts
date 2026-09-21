@@ -220,6 +220,11 @@ export class BulkMessageService implements OnApplicationBootstrap {
     }
 
     const batchId = dto.batchId || `batch_${randomUUID().split('-')[0]}`;
+    // '.' and '..' are dot segments: URL clients collapse them, so the statusUrl and the status and
+    // cancel routes for such a batch would resolve to a different path and it could never be reached.
+    if (batchId === '.' || batchId === '..') {
+      throw new BadRequestException(`Batch ID '${batchId}' is not allowed`);
+    }
 
     // Check if this batchId already exists FOR THIS SESSION. Scoping by sessionId (matching how
     // getBatchStatus/cancelBatch already query) makes (sessionId, batchId) the namespace: one session
