@@ -105,7 +105,11 @@ export function createProxyAgent(proxyUrl: string, connectTimeoutMs = PROXY_CONN
     return new AbortableHttpsProxyAgent(proxyUrl, connectTimeoutMs);
   }
   if (protocol === 'socks4:' || protocol === 'socks5:') {
-    return new SocksProxyAgent(proxyUrl);
+    const agent = new SocksProxyAgent(proxyUrl);
+    // The library passes URL.hostname through, so an IPv6 literal keeps its brackets and fails as a
+    // DNS lookup of "[::1]". Mutated in place: userId and password are non-enumerable on this object.
+    agent.proxy.host = agent.proxy.host?.replace(/^\[|\]$/g, '');
+    return agent;
   }
   throw new Error(`Unsupported proxy protocol for the baileys engine: ${protocol}`);
 }

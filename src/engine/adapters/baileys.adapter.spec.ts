@@ -5730,6 +5730,14 @@ describe('BaileysAdapter proxy support', () => {
     expect(createProxyAgent('socks4://proxy.example:1080')).toBeInstanceOf(SocksProxyAgent);
   });
 
+  it('hands the SOCKS client an IPv6 proxy address without its URL brackets', () => {
+    expect((createProxyAgent('socks5://user:pass@[2001:db8::10]:1080') as SocksProxyAgent).proxy.host).toBe(
+      '2001:db8::10',
+    );
+    expect((createProxyAgent('socks4://[::1]:1080') as SocksProxyAgent).proxy.host).toBe('::1');
+    expect((createProxyAgent('socks5://proxy.example:1080') as SocksProxyAgent).proxy.host).toBe('proxy.example');
+  });
+
   it('throws on an unsupported proxy scheme', () => {
     expect(() => createProxyAgent('ftp://proxy.example:21')).toThrow(/unsupported proxy/i);
   });
