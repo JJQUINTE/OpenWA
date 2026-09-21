@@ -163,6 +163,22 @@ describe('PluginLoaderService — sandbox tier routing', () => {
     expect(registerSpy.mock.calls.filter(c => c[1] === 'message:received')).toHaveLength(1);
   });
 
+  it('forwards the host in-flight chain to the worker with each dispatch', async () => {
+    const loader = makeLoader();
+    seed(loader, { builtIn: false, instance: null });
+    const hookManager = (loader as unknown as { hookManager: HookManager }).hookManager;
+    await loader.enablePlugin('p1');
+    loader.capturedOnHookSubscribe!('message:sent');
+
+    await hookManager.runInFlight(['message:sending'], () =>
+      hookManager.execute('message:sent', {}, { sessionId: 's1', source: 't' }),
+    );
+
+    expect(loader.hosts[0].dispatchHook).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'message:sent', inFlight: ['message:sending', 'message:sent'] }),
+    );
+  });
+
   it('enables a built-in plugin in-process (no sandbox worker spawned)', async () => {
     const loader = makeLoader();
     const onEnable = jest.fn().mockResolvedValue(undefined);

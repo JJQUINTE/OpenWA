@@ -126,6 +126,13 @@ export class HookManager {
     return this.inFlightEvents.getStore()?.has(event) ?? false;
   }
 
+  /** Every event in flight on the active async context, for a caller that must carry the chain across a
+   *  boundary AsyncLocalStorage does not span (the sandbox worker IPC) and re-establish it with
+   *  {@link runInFlight} on the way back. */
+  currentInFlight(): HookEvent[] {
+    return [...(this.inFlightEvents.getStore() ?? [])];
+  }
+
   private async runHandlers<T>(
     event: HookEvent,
     data: T,

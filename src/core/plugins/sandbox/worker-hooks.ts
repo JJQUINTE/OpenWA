@@ -5,8 +5,11 @@ import { WorkerToHostMessage, HostToWorkerMessage } from './protocol';
  * Carries the per-session-resolved config for the duration of a hook dispatch so ctx.config (a getter
  * in worker-bootstrap) returns the right slice — even when events for different sessions interleave.
  * AsyncLocalStorage scopes it per async call tree, so concurrent dispatches never see each other's.
+ * It also carries the dispatch's in-flight hook chain, which a capability call made from that tree
+ * sends back to the host: only a call caused by a hook handler is re-entrancy-guarded, never an
+ * unrelated one (an ingress handler, a timer set outside a hook) that merely overlaps a dispatch.
  */
-export const hookConfigStore = new AsyncLocalStorage<{ config: Record<string, unknown> }>();
+export const hookConfigStore = new AsyncLocalStorage<{ config?: Record<string, unknown>; inFlight?: string[] }>();
 
 export interface WorkerHookContext {
   event: string;
@@ -51,11 +54,16 @@ export class WorkerHookRegistry {
     // Run the whole dispatch inside the per-session config scope so every handler (and any async work
     // it awaits) sees ctx.config resolved for THIS event's session. Absent config => the bootstrap
     // getter falls back to the base config.
-    const run = () => this.dispatch(message);
-    if (message.config !== undefined) {
-      await hookConfigStore.run({ config: message.config }, run);
-    } else {
-      await run();
+    // The store outlives the dispatch in any timer or detached promise a handler starts; drop the
+    // chain once it settles so such a later call is not treated as re-entrant.
+    const store: { config?: Record<string, unknown>; inFlight?: string[] } = {
+      config: message.config,
+      inFlight: message.inFlight ?? [message.event],
+    };
+    try {
+      await hookConfigStore.run(store, () => this.dispatch(message));
+    } finally {
+      store.inFlight = undefined;
     }
   }
 

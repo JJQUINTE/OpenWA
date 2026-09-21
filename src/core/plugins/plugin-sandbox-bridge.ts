@@ -475,6 +475,9 @@ export class PluginSandboxBridge {
                 hookCtx.sessionId,
                 plugin.manifest.sessionScoped !== false,
               ),
+              // The chain this dispatch belongs to, so a capability the handler calls is guarded
+              // against re-firing any event of it (not only this one) once it returns to the host.
+              inFlight: this.hookManager.currentInFlight(),
               timeoutMs: SANDBOX_HOOK_TIMEOUT_MS,
               onTimeout: () =>
                 this.logger.warn(`Sandboxed plugin ${pluginId} hook '${event}' timed out`, {

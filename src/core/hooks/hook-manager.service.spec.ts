@@ -202,6 +202,18 @@ describe('HookManager.isInFlight + selective re-entrancy guard (conversation.sen
     expect(unrelated).toBe(false);
   });
 
+  it('currentInFlight reports the whole chain a handler runs under (what a sandbox dispatch forwards)', async () => {
+    const hm = new HookManager();
+    let seen: HookEvent[] = [];
+    hm.register('p', 'message:sent', async () => {
+      seen = hm.currentInFlight();
+      return { continue: true };
+    });
+    expect(hm.currentInFlight()).toEqual([]);
+    await hm.runInFlight(SENDING, () => hm.execute('message:sent', {}, { source: 't' }));
+    expect(seen).toEqual(['message:sending', 'message:sent']);
+  });
+
   it('a top-level guarded send still fires message:sending for unrelated observers; genuine re-entrancy suppresses it', async () => {
     const hm = new HookManager();
     let observerCalls = 0;
