@@ -6,6 +6,7 @@ import type { SessionService } from './session.service';
 import type { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { ChatScopeService } from '../auth/chat-scope.service';
+import type { ChatSummary } from '../../engine/interfaces/whatsapp-engine.interface';
 import type { ApiKey } from '../auth/entities/api-key.entity';
 import { BadGatewayException, BadRequestException, ConflictException } from '@nestjs/common';
 
@@ -435,5 +436,50 @@ describe('SessionController — proxy() response contract', () => {
         },
       }),
     );
+  });
+});
+
+// GET /sessions/:sessionId/chats is the one list route a chat-restricted key may use, and it must
+// FILTER BEFORE paginating: filtering the page instead hands back a short or empty window while an
+// allowed chat sits just past it.
+describe('SessionController — GET .../chats filters before paginating', () => {
+  const chat = (id: string, timestamp: number): ChatSummary => ({
+    id,
+    name: id,
+    isGroup: id.endsWith('@g.us'),
+    kind: id.endsWith('@g.us') ? 'group' : 'individual',
+    unreadCount: 0,
+    timestamp,
+    archived: false,
+    pinned: false,
+    muted: false,
+  });
+
+  let sessionService: { listChats: jest.Mock };
+  let controller: SessionController;
+
+  beforeEach(() => {
+    sessionService = { listChats: jest.fn() };
+    controller = new SessionControllerClass(
+      sessionService as unknown as SessionService,
+      { logInfo: jest.fn() } as unknown as AuditService,
+      new ChatScopeService(),
+    );
+  });
+
+  it('filters the full list before the window (a page-first filter would return nothing here)', async () => {
+    // The disallowed chat is NEWEST, so a page of 1 taken before filtering would be all-disallowed.
+    sessionService.listChats.mockResolvedValue([chat('999@g.us', 3), chat('123@g.us', 2), chat('123@g.us', 1)]);
+    const apiKey = { allowedChats: ['123@g.us'] } as ApiKey;
+
+    const out = await controller.getChats('sess-uuid-1', apiKey, '1', '0');
+
+    expect(out.map(c => c.id)).toEqual(['123@g.us']);
+  });
+
+  it('passes the whole list through for an unrestricted key', async () => {
+    sessionService.listChats.mockResolvedValue([chat('123@g.us', 3), chat('999@g.us', 2)]);
+    const out = await controller.getChats('sess-uuid-1', { allowedChats: null } as ApiKey, undefined, undefined);
+    expect(out).toHaveLength(2);
   });
 });

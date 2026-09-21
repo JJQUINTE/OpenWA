@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { LidMapping } from './lid-mapping.entity';
 import { userPart } from './wa-id';
 import { createLogger } from '../../common/services/logger.service';
@@ -176,6 +176,48 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
       // The table may not exist yet (migration pending); the cache is the best available answer.
     }
     return [...lids];
+  }
+
+  /**
+   * Batched forward lookup for a list filter: lid user-part -> phone digits. One query for the whole
+   * allowlist instead of one per entry, and the cache is merged in so a mapping the table holds but
+   * the mirror evicted is still answered.
+   */
+  async phonesForLidsPersisted(lids: string[]): Promise<Record<string, string | null>> {
+    const out: Record<string, string | null> = {};
+    if (lids.length === 0) return out;
+    for (const lid of lids) {
+      const cached = this.getCached(lid);
+      if (cached !== undefined) out[lid] = cached;
+    }
+    try {
+      const rows = await this.repo.find({ where: { lid: In(lids) } });
+      for (const row of rows) {
+        if (!(row.lid in out)) out[row.lid] = row.phone;
+      }
+    } catch {
+      // The table may not exist yet (migration pending); the cache is the best available answer.
+    }
+    return out;
+  }
+
+  /** Batched reverse lookup, companion to {@link phonesForLidsPersisted}: phone digits -> lids. */
+  async lidsForPhonesPersisted(phones: string[]): Promise<Record<string, string[]>> {
+    const out: Record<string, string[]> = {};
+    if (phones.length === 0) return out;
+    for (const phone of phones) out[phone] = this.lidsForPhone(phone);
+    try {
+      const rows = await this.repo.find({ where: { phone: In(phones) } });
+      for (const row of rows) {
+        if (!row.phone) continue;
+        const list = out[row.phone] ?? [];
+        if (!list.includes(row.lid)) list.push(row.lid);
+        out[row.phone] = list;
+      }
+    } catch {
+      // The table may not exist yet (migration pending); the cache is the best available answer.
+    }
+    return out;
   }
 
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {

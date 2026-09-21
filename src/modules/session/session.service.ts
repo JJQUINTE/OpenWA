@@ -731,14 +731,22 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
     return paginate(mapped, opts.limit, opts.offset);
   }
 
-  async getChats(id: string, opts: ListOptions = {}): Promise<ChatSummary[]> {
+  /**
+   * Every chat for a session, most-recent first, WITHOUT the response window. Callers that must
+   * filter before paging (a chat-restricted API key) use this, then paginate themselves: filtering
+   * after paginate() would hand back short or empty pages for an allowed chat past the window.
+   */
+  async listChats(id: string): Promise<ChatSummary[]> {
     await this.findOne(id); // Verify session exists
     const engine = this.requireEngine(id);
 
-    // Most-recent first, then bound the response window. Sorting before the cap means a capped
-    // response is the N newest chats (what clients show first) rather than an arbitrary slice.
-    const chats = [...(await engine.getChats())].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    return paginate(chats, opts.limit, opts.offset);
+    // Most-recent first. Sorting before the cap means a capped response is the N newest chats (what
+    // clients show first) rather than an arbitrary slice.
+    return [...(await engine.getChats())].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
+
+  async getChats(id: string, opts: ListOptions = {}): Promise<ChatSummary[]> {
+    return paginate(await this.listChats(id), opts.limit, opts.offset);
   }
 
   /**

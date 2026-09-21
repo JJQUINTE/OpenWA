@@ -3,23 +3,23 @@
 //
 // The guard is DEFAULT DENY (api-key.guard.ts): a chat-restricted key is refused with 403 on every
 // handler that is not marked @ChatScoped, so surfaces with no chat dimension (webhooks, automation
-// rules, status, key management, channels) and every route added later stay closed without being
-// enumerated.
+// rules, status, key management, channels, Bull Board) and every route added later stay closed
+// without being enumerated.
 //
-// Marking a handler is the operator's assertion that it is safe for such a key, and it is safe in
-// one of three ways:
+// Marking carries the reason, and this spec checks each one:
 //
-//   1. fenced — it names a chat the guard inspects (a `:chatId` / `:groupId` / `:contactId` path
-//      param, `?chatId=`, or the `chatId` / `fromChatId` / `toChatId` / `messages[].chatId` body
-//      fields);
-//   2. filtered — it lists chats and filters them through ChatScopeService;
-//   3. chat-agnostic — it names no chat at all.
+//   @ChatScoped('fenced')    the handler names a chat the guard inspects — a `:chatId` / `:groupId` /
+//                            `:contactId` path param, or a REQUIRED guard-read body field
+//                            (`chatId` / `fromChatId` / `toChatId` / `messages[]`). An optional
+//                            `?chatId=` does NOT qualify: the guard would have nothing to check when
+//                            it is omitted.
+//   @ChatScoped('filtered')  the handler lists chats and returns through ChatScopeService.filter.
+//   @ChatScoped('agnostic')  the handler cannot reach a chat at all. This is the one category the
+//                            spec cannot derive (a webhook with `events: ['*']` also names no chat),
+//                            so every grant must also appear in AGNOSTIC_GRANTS.
 //
-// This spec fails when a marked handler reaches chats by a field the guard does NOT read (a
-// `recipients[]`, `participants[]`, `channelId`, …) while naming no guard-visible chat — the class of
-// route the design calls out (status posts, group creation). A chat-agnostic handler is accepted: the
-// mark is the assertion, and the spec cannot derive it, since a webhook with `events: ['*']` also
-// names no chat.
+// Every @ChatScoped decorator must pair with a parsed handler (the non-vacuity check below), so a
+// decorator the parser cannot see fails rather than silently going unchecked.
 import { readdirSync, readFileSync } from 'fs';
 import { basename, join, sep } from 'path';
 
@@ -27,19 +27,25 @@ import { basename, join, sep } from 'path';
 export const GUARD_CHAT_ROUTE_PARAMS = ['chatId', 'groupId', 'contactId'];
 /** Body fields the ApiKeyGuard treats as a chat id (bulk send nests `chatId` inside `messages[]`). */
 export const GUARD_BODY_CHAT_FIELDS = ['chatId', 'fromChatId', 'toChatId'];
-/** Chat-targeting field names the guard does NOT read — reaching a chat through one is the hazard. */
-const UNFENCED_CHAT_FIELDS = ['recipients', 'participants', 'channelId', 'chatIds', 'groupIds', 'contactIds'];
-
-const GUARD_FIELD_RE = new RegExp(`\\b(?:${GUARD_BODY_CHAT_FIELDS.join('|')})[!?]?\\s*:`);
-const UNFENCED_FIELD_RE = new RegExp(`\\b(?:${UNFENCED_CHAT_FIELDS.join('|')})[!?]?\\s*:`);
-const BULK_ARRAY_RE = /\bmessages[!?]?\s*:\s*[\w.]*\[\]/;
 
 /**
- * Request DTO classes that carry a chat id, classified by whether the guard fences the field it
- * carries. `guard` wins over `other`: a DTO the guard can fence is safe to mark.
+ * The complete set of handlers granted `@ChatScoped('agnostic')`. Each entry is a deliberate access
+ * decision, so the spec fails if a grant is missing from here OR listed here without the mark.
+ * Key format: `<controller file basename> :: <handler name>`.
  */
-export function chatBearingDtoClasses(dir: string): Map<string, 'guard' | 'other'> {
-  const out = new Map<string, 'guard' | 'other'>();
+export const AGNOSTIC_GRANTS: ReadonlyArray<readonly [string, string]> = [
+  // Reports the session's own state and account: no chat data, changes nothing, and an integration
+  // needs it to know whether its session is connected.
+  ['session.controller.ts', 'findOne'],
+];
+
+const REQUIRED_GUARD_FIELD = new RegExp(`\\b(?:${GUARD_BODY_CHAT_FIELDS.join('|')})!\\s*:`);
+const REQUIRED_BULK_FIELD = /\bmessages!\s*:/;
+
+/** Request DTO classes carrying a REQUIRED guard-read chat field. */
+function requiredGuardChatDtos(dir: string): Set<string> {
+  const own = new Set<string>();
+  const parents = new Map<string, string>();
   const walk = (current: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = join(current, entry.name);
@@ -48,51 +54,74 @@ export function chatBearingDtoClasses(dir: string): Map<string, 'guard' | 'other
         continue;
       }
       if (!entry.name.endsWith('.ts') || entry.name.endsWith('.spec.ts')) continue;
-      // Split on class boundaries so a field in one class does not mark an earlier one.
       for (const chunk of readFileSync(full, 'utf8')
         .split(/export\s+class\s+/)
         .slice(1)) {
         const name = /^([A-Za-z0-9_]+)/.exec(chunk)?.[1];
         if (!name) continue;
-        if (GUARD_FIELD_RE.test(chunk) || BULK_ARRAY_RE.test(chunk)) out.set(name, 'guard');
-        else if (UNFENCED_FIELD_RE.test(chunk)) out.set(name, 'other');
+        const parent = /^[A-Za-z0-9_]+\s+extends\s+([A-Za-z0-9_]+)/.exec(chunk)?.[1];
+        if (parent) parents.set(name, parent);
+        if (REQUIRED_GUARD_FIELD.test(chunk) || REQUIRED_BULK_FIELD.test(chunk)) own.add(name);
       }
     }
   };
   walk(dir);
+  // Resolve `extends` transitively: a DTO inheriting a fenced `chatId` counts (send-audio extends the
+  // media DTO). Anything unresolved or cyclic is simply not required.
+  const out = new Set<string>();
+  for (const name of [...own, ...parents.keys()]) {
+    let cursor: string | undefined = name;
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor);
+      if (own.has(cursor)) {
+        out.add(name);
+        break;
+      }
+      cursor = parents.get(cursor);
+    }
+  }
   return out;
 }
 
-/**
- * Return @ChatScoped handlers in `source` that reach chats through a field the guard does not read
- * while naming no guard-visible chat — marked handlers a chat-restricted key could use to reach any
- * chat. A marked handler that names a guard-visible chat is fenced by the guard; one that names no
- * chat at all is chat-agnostic and accepted (the mark is the assertion).
- */
-export function markedHandlersReachingUnfencedChats(
-  source: string,
-  chatDtos: Map<string, 'guard' | 'other'>,
-): string[] {
-  const offenders: string[] = [];
+/** Every @ChatScoped decorator in `source` paired with the handler it decorates. */
+export function chatScopedHandlers(source: string): Array<{ name: string; kind: string; body: string }> {
+  const out: Array<{ name: string; kind: string; body: string }> = [];
   const handlerRe = /((?:^ {2}@[\s\S]*?)?)^ {2}(?:async\s+)?([a-zA-Z0-9_]+)\s*\(([\s\S]*?)\)\s*[:{]/gm;
   const matches: { name: string; from: number; decorators: string }[] = [];
   for (let m = handlerRe.exec(source); m !== null; m = handlerRe.exec(source)) {
     matches.push({ name: m[2], from: m.index, decorators: m[1] ?? '' });
   }
   for (let i = 0; i < matches.length; i++) {
-    const { name, from, decorators } = matches[i];
-    if (!/@ChatScoped\(\)/.test(decorators)) continue;
-    const body = source.slice(from, matches[i + 1]?.from ?? source.length);
+    const kind = /@ChatScoped\(\s*'([a-z]+)'\s*\)/.exec(matches[i].decorators)?.[1];
+    if (kind === undefined) continue;
+    out.push({
+      name: matches[i].name,
+      kind,
+      body: source.slice(matches[i].from, matches[i + 1]?.from ?? source.length),
+    });
+  }
+  return out;
+}
+
+/** Return a description of every marked handler that does not hold up its declared category. */
+export function chatScopeViolations(
+  source: string,
+  file: string,
+  requiredDtos: Set<string>,
+  agnosticGrants: ReadonlyArray<readonly [string, string]> = AGNOSTIC_GRANTS,
+): string[] {
+  const offenders: string[] = [];
+  for (const { name, kind, body } of chatScopedHandlers(source)) {
     const hasPathChat = new RegExp(`@Param\\(\\s*['"](?:${GUARD_CHAT_ROUTE_PARAMS.join('|')})['"]\\s*\\)`).test(body);
-    const hasQueryChat = /@Query\(\s*['"]chatId['"]\s*\)/.test(body);
     const bodyDto = /@Body\(\)\s*[A-Za-z0-9_]+\s*:\s*([A-Za-z0-9_]+)/.exec(body)?.[1];
-    const hasGuardBodyChat = bodyDto !== undefined && chatDtos.get(bodyDto) === 'guard';
-    // A chat-agnostic handler names no chat: accepted, the mark is the assertion.
-    const namesGuardChat = hasPathChat || hasQueryChat || hasGuardBodyChat;
-    const unfencedQuery = new RegExp(`@Query\\(\\s*['"](?:${UNFENCED_CHAT_FIELDS.join('|')})['"]\\s*\\)`).test(body);
-    const unfencedBody = bodyDto !== undefined && chatDtos.get(bodyDto) === 'other';
-    const filtersChatScope = /\bchatScope\b/.test(body);
-    if (!namesGuardChat && (unfencedQuery || unfencedBody) && !filtersChatScope) offenders.push(name);
+    const hasRequiredBodyChat = bodyDto !== undefined && requiredDtos.has(bodyDto);
+    if (kind === 'fenced' && !(hasPathChat || hasRequiredBodyChat))
+      offenders.push(`${name} (fenced, no guard-read chat)`);
+    else if (kind === 'filtered' && !/chatScope\.filter\(/.test(body)) offenders.push(`${name} (filtered, no filter)`);
+    else if (kind === 'agnostic' && !agnosticGrants.some(([f, h]) => f === file && h === name))
+      offenders.push(`${name} (agnostic, not on AGNOSTIC_GRANTS)`);
+    else if (!['fenced', 'filtered', 'agnostic'].includes(kind)) offenders.push(`${name} (unknown kind '${kind}')`);
   }
   return offenders;
 }
@@ -110,99 +139,125 @@ function listControllerFiles(dir: string): string[] {
 describe('a chat-restricted key can only reach a handler fenced to its allowedChats', () => {
   it('the guard denies by default and fences every chat id it can see', () => {
     const guard = readFileSync(join(__dirname, 'guards', 'api-key.guard.ts'), 'utf8');
-    // Default deny: unmarked route with a restricted key ⇒ 403.
     expect(guard).toContain('CHAT_SCOPED_KEY');
     expect(guard).toContain('API key is restricted to selected chats');
-    // The fence reads the route params, the query, and the body fields.
     for (const param of GUARD_CHAT_ROUTE_PARAMS) expect(guard).toContain(`'${param}'`);
     for (const field of GUARD_BODY_CHAT_FIELDS) expect(guard).toContain(`'${field}'`);
     expect(guard).toContain("['chatId']");
     expect(guard).toContain('messages');
+    // A chat reference the guard cannot fence is refused outright.
+    expect(guard).toContain('quotedMessageId');
   });
 
-  it('flags a marked handler that reaches chats by a field the guard does not read', () => {
-    const vulnerable = `
-  @ChatScoped()
+  it("flags a 'fenced' handler that names no guard-read chat", () => {
+    const source = `
+  @ChatScoped('fenced')
   @Post('status')
-  async postStatus(@Body() dto: SendStatusDto): Promise<unknown> {
+  async postStatus(@Body() dto: StatusDto): Promise<unknown> {
     return this.svc.post(dto);
   }
 `;
-    expect(markedHandlersReachingUnfencedChats(vulnerable, new Map([['SendStatusDto', 'other']]))).toEqual([
-      'postStatus',
+    expect(chatScopeViolations(source, 'x.controller.ts', new Set())).toEqual([
+      'postStatus (fenced, no guard-read chat)',
     ]);
   });
 
-  it('clears a marked chat-agnostic handler (it names no chat — the mark is the assertion)', () => {
-    const agnostic = `
-  @ChatScoped()
-  @Get('profile')
-  async profile(@Param('sessionId') sessionId: string): Promise<unknown> {
-    return this.svc.profile(sessionId);
+  it("flags a 'fenced' handler whose only chat is an optional query param", () => {
+    const source = `
+  @ChatScoped('fenced')
+  @Get()
+  async list(@Query('chatId') chatId?: string): Promise<unknown> {
+    return this.svc.list(chatId);
   }
 `;
-    expect(markedHandlersReachingUnfencedChats(agnostic, new Map())).toEqual([]);
+    expect(chatScopeViolations(source, 'x.controller.ts', new Set())).toEqual(['list (fenced, no guard-read chat)']);
   });
 
-  it('clears a marked handler fenced by a path chat, a query chat, a body chat, or a filter', () => {
-    const fenced = `
-  @ChatScoped()
+  it("flags a 'filtered' handler that does not filter and an unlisted 'agnostic'", () => {
+    const source = `
+  @ChatScoped('filtered')
+  @Get('chats')
+  async chats(): Promise<unknown> {
+    return this.svc.chats();
+  }
+
+  @ChatScoped('agnostic')
+  @Get('profile')
+  async profile(): Promise<unknown> {
+    return this.svc.profile();
+  }
+`;
+    expect(chatScopeViolations(source, 'x.controller.ts', new Set())).toEqual([
+      'chats (filtered, no filter)',
+      'profile (agnostic, not on AGNOSTIC_GRANTS)',
+    ]);
+  });
+
+  it('clears a fenced path chat, a required body chat, a filter, and a listed agnostic grant', () => {
+    const source = `
+  @ChatScoped('fenced')
   @Get(':chatId')
   async getOne(@Param('chatId') chatId: string): Promise<unknown> {
     return this.svc.get(chatId);
   }
 
-  @ChatScoped()
-  @Get()
-  async list(@Query('chatId') chatId?: string): Promise<unknown> {
-    return this.svc.list(chatId);
-  }
-
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Post()
   async send(@Body() dto: SendThingDto): Promise<unknown> {
     return this.svc.send(dto);
   }
 
-  @ChatScoped()
+  @ChatScoped('filtered')
   @Get('chats')
   async chats(@CurrentApiKey() apiKey: ApiKey): Promise<unknown> {
     return this.chatScope.filter(apiKey, await this.svc.chats(), c => c.id);
   }
-`;
-    expect(markedHandlersReachingUnfencedChats(fenced, new Map([['SendThingDto', 'guard']]))).toEqual([]);
-  });
 
-  it('clears a marked group route: the :groupId in the path fences the participants it carries', () => {
-    const group = `
-  @ChatScoped()
-  @Post(':groupId/participants')
-  async addParticipants(@Param('groupId') groupId: string, @Body() dto: AddParticipantsDto): Promise<unknown> {
-    return this.svc.add(groupId, dto);
+  @ChatScoped('agnostic')
+  @Get('granted')
+  async granted(): Promise<unknown> {
+    return this.svc.granted();
   }
 `;
-    expect(markedHandlersReachingUnfencedChats(group, new Map([['AddParticipantsDto', 'other']]))).toEqual([]);
+    expect(
+      chatScopeViolations(source, 'x.controller.ts', new Set(['SendThingDto']), [['x.controller.ts', 'granted']]),
+    ).toEqual([]);
   });
 
-  it('no marked controller handler reaches an unfenced chat, and the scan is not vacuous', () => {
+  it('pairs every decorator with a parsed handler, and the scan is not vacuous', () => {
     const modulesDir = join(__dirname, '..');
-    const chatDtos = chatBearingDtoClasses(modulesDir);
-    expect(chatDtos.size).toBeGreaterThan(0); // the DTO scan must not silently collapse
+    const requiredDtos = requiredGuardChatDtos(modulesDir);
+    expect(requiredDtos.size).toBeGreaterThan(0); // the DTO scan must not silently collapse
     const files = listControllerFiles(modulesDir);
     expect(files.length).toBeGreaterThan(10);
-    let marked = 0;
     const offenders: string[] = [];
+    const seenGrants = new Set<string>();
+    let marked = 0;
     for (const file of files) {
       const source = readFileSync(file, 'utf8');
-      marked += [...source.matchAll(/^ {2}@ChatScoped\(\)$/gm)].length;
       const fileName = basename(file);
-      const posixPath = file.split(sep).join('/');
-      for (const handler of markedHandlersReachingUnfencedChats(source, chatDtos)) {
-        offenders.push(`${posixPath.replace(/.*\/src\//, 'src/')} :: ${fileName} :: ${handler}`);
+      const posixPath = file
+        .split(sep)
+        .join('/')
+        .replace(/.*\/src\//, 'src/');
+      // Non-vacuity: every @ChatScoped decorator in the file must pair with a parsed handler, or the
+      // parser is blind to it and the category checks never run.
+      const decorators = [...source.matchAll(/@ChatScoped\(/g)].length;
+      const paired = chatScopedHandlers(source);
+      expect({ file: posixPath, decorators, paired: paired.length }).toEqual({
+        file: posixPath,
+        decorators: paired.length,
+        paired: paired.length,
+      });
+      marked += paired.length;
+      for (const { name, kind } of paired) if (kind === 'agnostic') seenGrants.add(`${fileName} :: ${name}`);
+      for (const violation of chatScopeViolations(source, fileName, requiredDtos)) {
+        offenders.push(`${posixPath} :: ${fileName} :: ${violation}`);
       }
     }
-    // Non-vacuity: a scan that found no marked handlers would pass for the wrong reason.
     expect(marked).toBeGreaterThan(30);
     expect(offenders).toEqual([]);
+    // Every declared grant is used, and every used grant is declared.
+    expect([...seenGrants].sort()).toEqual(AGNOSTIC_GRANTS.map(([f, h]) => `${f} :: ${h}`).sort());
   });
 });

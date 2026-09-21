@@ -4,21 +4,22 @@ import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.
 import { ContactDirectory } from '../../engine/identity/jid-candidates';
 import {
   ChatScope,
+  ChatScopeDirectory,
   buildChatScope,
-  chatScopeAllows,
+  buildExpandedChatScope,
+  chatIdAllowed,
   filterByChatScope,
   isChatScopeRestricted,
 } from '../../common/security/chat-scope';
 
 /**
  * Compiles an API key's `allowedChats` into an enforceable {@link ChatScope} and answers membership,
- * wiring the shared lid<->phone directory so a phone entry matches its `@lid` form and vice versa.
+ * wiring the lid<->phone table so a phone entry matches its `@lid` form and vice versa.
  *
- * Provided by the global AuthModule so both the ApiKeyGuard (route-param fence) and the feature
- * controllers/services (list filtering) share one definition of "inside the fence". The directory
- * reads the persisted lid table, not the evictable in-memory mirror, so the answer is deterministic.
- * A missing directory degrades to exact-dialect matching only, which fails CLOSED for an unmapped
- * `@lid` — the documented behaviour.
+ * Provided by the global AuthModule so both the ApiKeyGuard (single requested id) and the list
+ * endpoints (whole result set) share one definition of "inside the fence". The table is read
+ * persistently rather than from the evictable in-memory mirror, so the answer is deterministic. A
+ * missing store degrades to exact-dialect matching only, which fails CLOSED for an unmapped `@lid`.
  */
 @Injectable()
 export class ChatScopeService {
@@ -34,14 +35,22 @@ export class ChatScopeService {
     return isChatScopeRestricted(apiKey?.allowedChats);
   }
 
-  /** The compiled scope for a key, or `null` when unrestricted. */
-  scopeFor(apiKey?: Pick<ApiKey, 'allowedChats'> | null): Promise<ChatScope | null> {
-    return buildChatScope(apiKey?.allowedChats ?? null, this.directory());
+  /** The literal scope for a key (no lookups), or `null` when unrestricted. */
+  scopeFor(apiKey?: Pick<ApiKey, 'allowedChats'> | null): ChatScope | null {
+    return buildChatScope(apiKey?.allowedChats ?? null);
   }
 
-  /** Whether `chatId` is inside the key's fence (an unrestricted key admits every chat). */
-  async allows(apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined, chatId: string): Promise<boolean> {
-    return chatScopeAllows(await this.scopeFor(apiKey), chatId);
+  /**
+   * Whether a single requested `chatId` is inside the key's fence. Expands the REQUESTED id once
+   * through the lid table (at most two lookups) instead of expanding the whole allowlist.
+   */
+  allows(apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined, chatId: string): Promise<boolean> {
+    return chatIdAllowed(this.scopeFor(apiKey), chatId, this.singleDirectory());
+  }
+
+  /** The allowlist expanded once with the lid table (batched), for filtering a whole list. */
+  scopeForFilter(apiKey: Pick<ApiKey, 'allowedChats'> | null | undefined): Promise<ChatScope | null> {
+    return buildExpandedChatScope(apiKey?.allowedChats ?? null, this.batchDirectory());
   }
 
   /** The subset of `items` whose chat id is inside the key's fence (unrestricted ⇒ unchanged). */
@@ -50,15 +59,24 @@ export class ChatScopeService {
     items: readonly T[],
     chatIdOf: (item: T) => string | null | undefined,
   ): Promise<T[]> {
-    return filterByChatScope(await this.scopeFor(apiKey), items, chatIdOf);
+    return filterByChatScope(await this.scopeForFilter(apiKey), items, chatIdOf);
   }
 
-  private directory(): ContactDirectory | undefined {
+  private singleDirectory(): ContactDirectory | undefined {
     const store = this.lidStore;
     if (!store) return undefined;
     return {
       resolveLid: userPart => store.resolveLidPersisted(userPart),
       lidsForPhone: phone => store.lidsForPhonePersisted(phone),
+    };
+  }
+
+  private batchDirectory(): ChatScopeDirectory | undefined {
+    const store = this.lidStore;
+    if (!store) return undefined;
+    return {
+      phonesForLids: lids => store.phonesForLidsPersisted(lids),
+      lidsForPhones: phones => store.lidsForPhonesPersisted(phones),
     };
   }
 }

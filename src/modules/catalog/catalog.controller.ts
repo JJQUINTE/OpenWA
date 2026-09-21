@@ -69,7 +69,7 @@ export class CatalogController {
     return this.catalogService.getProduct(sessionId, productId);
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Post('messages/send-product')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a product message (Baileys engine only)' })

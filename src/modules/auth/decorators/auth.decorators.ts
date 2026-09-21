@@ -39,26 +39,29 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
  */
 export const RequireUnscopedKey = () => SetMetadata(UNSCOPED_KEY, true);
 
+/** How a handler is safe for a chat-restricted key. See {@link ChatScoped}. */
+export type ChatScopeKind = 'fenced' | 'filtered' | 'agnostic';
+
 /**
- * Mark a handler (or controller) a chat-restricted key — one carrying `allowedChats` — may reach.
+ * Mark a handler (or controller) a chat-restricted key — one carrying `allowedChats` — may reach,
+ * and say WHICH way it is safe. This is an ALLOWLIST, not a restriction: a chat-restricted key is
+ * refused with 403 on every route that is NOT marked, so surfaces with no chat dimension (webhooks,
+ * automation rules, status, key management, channels, Bull Board) — and every route added later —
+ * stay closed without having to enumerate them.
  *
- * This is an ALLOWLIST, not a restriction: a chat-restricted key is refused with 403 on every route
- * that is NOT marked, so surfaces with no chat dimension (webhooks, automation rules, status, key
- * management, channels) — and every route added later — stay closed without having to enumerate
- * them. A handler is safe to mark in one of three ways:
+ * - `'fenced'` — names a chat the ApiKeyGuard inspects: a `:chatId` / `:groupId` / `:contactId`
+ *   path param, or a REQUIRED guard-read body field (`chatId` / `fromChatId` / `toChatId` /
+ *   `messages[]`). An optional `?chatId=` does not qualify — the guard would have nothing to check
+ *   when it is omitted.
+ * - `'filtered'` — lists chats instead of naming one, and filters the result through
+ *   ChatScopeService.
+ * - `'agnostic'` — names no chat and cannot reach one, so the mark itself is the assertion. This is
+ *   the one category the structural coverage spec cannot derive (a webhook with `events: ['*']` also
+ *   names no chat), so every `'agnostic'` grant must also be listed in the spec's AGNOSTIC_GRANTS.
  *
- * - **fenced by path, body or query** — it names a chat the ApiKeyGuard inspects (`:chatId` /
- *   `:groupId` / `:contactId`, `?chatId=`, or the `chatId` / `fromChatId` / `toChatId` /
- *   `messages[].chatId` body fields);
- * - **filtered** — it lists chats instead of naming one, and filters the result through
- *   ChatScopeService;
- * - **chat-agnostic** — it names no chat at all, so the mark itself is the assertion that it cannot
- *   reach one. This is the one category the structural coverage spec cannot derive (a webhook with
- *   `events: ['*']` also names no chat), so the mark is a deliberate operator decision.
- *
- * @example @ChatScoped() @Get(':chatId')
+ * @example @ChatScoped('fenced') @Get(':chatId')
  */
-export const ChatScoped = () => SetMetadata(CHAT_SCOPED_KEY, true);
+export const ChatScoped = (kind: ChatScopeKind) => SetMetadata(CHAT_SCOPED_KEY, kind);
 
 /**
  * Get the current API key from request

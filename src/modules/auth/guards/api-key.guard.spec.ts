@@ -423,7 +423,7 @@ describe('ApiKeyGuard', () => {
     // The guard is default deny for a chat-restricted key: the handler must be marked @ChatScoped
     // to be reachable at all. These tests are about the membership fence, so mark the route.
     beforeEach(() => {
-      metadata[CHAT_SCOPED_KEY] = true;
+      metadata[CHAT_SCOPED_KEY] = 'fenced';
     });
 
     const ALLOWED_GROUP = '120363000000000000@g.us';
@@ -548,6 +548,47 @@ describe('ApiKeyGuard', () => {
         ],
       });
       expect(await guard.canActivate(context)).toBe(true);
+    });
+
+    it('fences a :groupId path param', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const denied = createMockContext({ 'x-api-key': 'key' }, { groupId: FORBIDDEN_GROUP });
+      await expect(guard.canActivate(denied)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+
+      const allowed = createMockContext({ 'x-api-key': 'key' }, { groupId: ALLOWED_GROUP });
+      expect(await guard.canActivate(allowed)).toBe(true);
+    });
+
+    it('fences a :contactId path param', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      const denied = createMockContext({ 'x-api-key': 'key' }, { contactId: FORBIDDEN_CONTACT });
+      await expect(guard.canActivate(denied)).rejects.toThrow(
+        new ForbiddenException('API key not authorized for this chat'),
+      );
+
+      const allowed = createMockContext({ 'x-api-key': 'key' }, { contactId: ALLOWED_CONTACT });
+      expect(await guard.canActivate(allowed)).toBe(true);
+    });
+
+    it('refuses a quotedMessageId — a chat reference the guard cannot fence', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+
+      // The chat is allowed, but the quote resolves from the global store and could be a message
+      // from a chat outside the allowlist.
+      const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', {
+        chatId: ALLOWED_GROUP,
+        quotedMessageId: 'm-from-elsewhere',
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(
+        new ForbiddenException('API key is restricted to selected chats'),
+      );
     });
 
     it('refuses a chat-restricted key on a route that is not marked @ChatScoped', async () => {

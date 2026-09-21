@@ -142,7 +142,7 @@ export class LabelController {
     return { success: true };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Get('chat/:chatId')
   @ApiOperation({ summary: 'Get labels for a specific chat' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -160,7 +160,7 @@ export class LabelController {
     return this.labelService.getChatLabels(sessionId, chatId);
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Post('chat/:chatId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -197,7 +197,7 @@ export class LabelController {
     return { success: true };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Delete('chat/:chatId/:labelId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Remove a label from a chat' })

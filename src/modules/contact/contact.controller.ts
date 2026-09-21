@@ -82,7 +82,7 @@ export class ContactController {
     return this.contactService.getBlockedContacts(sessionId);
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Get(':contactId')
   @ApiOperation({ summary: 'Get a specific contact by ID' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -142,7 +142,7 @@ export class ContactController {
 
   // ========== Gap Quick Wins: Profile Picture, Block/Unblock ==========
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Get(':contactId/profile-picture')
   @ApiOperation({ summary: 'Get profile picture URL for a contact' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -164,7 +164,7 @@ export class ContactController {
     return { url };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Get(':contactId/phone')
   @ApiOperation({ summary: 'Resolve a contact id (e.g. an @lid) to a phone number — best-effort' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -180,7 +180,7 @@ export class ContactController {
     return { contactId, phone };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Put(':contactId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -207,7 +207,7 @@ export class ContactController {
 
   // Two path segments on the sibling route (`:contactId/block`) keep this single-segment DELETE
   // from shadowing the unblock route, whichever order they are declared in.
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Delete(':contactId')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: "Remove a contact from the account's addressbook" })
@@ -227,7 +227,7 @@ export class ContactController {
     return { success: true, message: 'Contact deleted' };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Post(':contactId/block')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -251,7 +251,7 @@ export class ContactController {
     return { success: true, message: 'Contact blocked' };
   }
 
-  @ChatScoped()
+  @ChatScoped('fenced')
   @Delete(':contactId/block')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Unblock a contact' })

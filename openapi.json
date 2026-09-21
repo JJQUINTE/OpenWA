@@ -3800,6 +3800,9 @@
               }
             }
           },
+          "403": {
+            "description": "The calling key is restricted with `allowedChats`. A batch row has no key owner, so the status cannot be checked against the key's allowlist and a chat-restricted key is refused; use the single-send routes instead."
+          },
           "404": {
             "description": "Batch not found"
           }
@@ -3846,6 +3849,9 @@
           },
           "400": {
             "description": "Batch already completed, cancelled, or failed (terminal statuses are exclusive)"
+          },
+          "403": {
+            "description": "The calling key is restricted with `allowedChats`. A batch row has no key owner, so the cancel cannot be checked against the key's allowlist and a chat-restricted key is refused."
           },
           "404": {
             "description": "Batch not found"

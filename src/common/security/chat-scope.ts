@@ -5,22 +5,34 @@
  * contacts — independent of `allowedSessions`. A key with no allowlist (NULL/empty) is unrestricted;
  * with one, it may reach only the chats inside the fence.
  *
- * Matching is expansion, not string comparison: each allowlist entry is expanded by
- * {@link resolveJidCandidates} into every JID that refers to the same entity (both user dialects,
- * the lid form of a phone and vice versa, through the directory), and an incoming chat id is
- * reduced to its own address forms before membership. That keeps a lid's digits from being read as
- * a phone: `555000111@lid` admits `555000111@lid` and, once mapped, its phone — never
- * `555000111@c.us`.
+ * Matching is expansion, not string comparison, and it is deliberately asymmetric so the cost lands
+ * on the small side:
  *
- * The directory for the authorization path must be the persisted lookup, not the evictable cache,
- * so the same key and chat cannot pass or fail depending on cache residency.
+ * - the allowlist is compiled to its LITERAL address forms (both user dialects for a phone, the
+ *   `@lid` form for a lid, the `@g.us` form for a group) — no lookups;
+ * - a SINGLE requested chat id is expanded once, through the lid table, into every JID that refers
+ *   to the same entity, and tested against those literals. That is at most two lookups per request
+ *   (the guard's path), not one per allowlist entry;
+ * - a LIST filter is the other way round: the allowlist is expanded once with the table (batched),
+ *   and each row is then a pure literal membership test.
+ *
+ * Keeping phones and lids apart is what stops `555000111@lid` admitting `555000111@c.us`: a lid's
+ * digits are not a phone number, so the two only cross where the table maps them.
  */
 import { parseWaId } from '../../engine/identity/wa-id';
 import { ContactDirectory, resolveJidCandidates } from '../../engine/identity/jid-candidates';
 
-/** A compiled allowlist: the exact JIDs a key may reach (an entry expands to several). */
+/** A compiled allowlist: the exact JIDs a key may reach (an entry expands to its dialects). */
 export interface ChatScope {
   allowed: Set<string>;
+}
+
+/** Batched lid<->phone lookups, used to expand the ALLOWLIST once for a list filter. */
+export interface ChatScopeDirectory {
+  /** lid user-part -> phone digits, for the lids that are mapped. */
+  phonesForLids(lids: string[]): Promise<Record<string, string | null>>;
+  /** phone digits -> the lid user-parts mapped to it. */
+  lidsForPhones(phones: string[]): Promise<Record<string, string[]>>;
 }
 
 /** A bare phone number (MSISDN digits) — accepted as a convenience in place of `<phone>@c.us`. */
@@ -43,22 +55,19 @@ export function normalizeChatAllowList(list: string[] | null | undefined): strin
   return qualified.length > 0 ? qualified : null;
 }
 
-/**
- * Compile an `allowedChats` allowlist into a {@link ChatScope}, or `null` for "unrestricted"
- * (NULL/empty). Each entry expands through `directory` — see {@link resolveJidCandidates}.
- */
-export async function buildChatScope(
-  allowedChats: string[] | null | undefined,
-  directory?: ContactDirectory,
-): Promise<ChatScope | null> {
-  if (!isChatScopeRestricted(allowedChats)) return null;
-  const allowed = new Set<string>();
-  for (const raw of allowedChats as string[]) {
-    const entry = raw.trim();
-    if (!entry) continue;
-    for (const jid of await resolveJidCandidates(entry, directory)) allowed.add(jid);
+/** The stored address forms of one allowlist entry. No directory: literal dialects only. */
+function literalForms(entry: string): string[] {
+  const parsed = parseWaId(entry);
+  switch (parsed.kind) {
+    case 'user':
+      return [`${parsed.userPart}@c.us`, `${parsed.userPart}@s.whatsapp.net`];
+    case 'lid':
+      return [`${parsed.userPart}@lid`];
+    case 'group':
+      return [`${parsed.userPart}@g.us`];
+    default:
+      return [];
   }
-  return { allowed };
 }
 
 /**
@@ -80,12 +89,72 @@ function addressForms(chatId: string): string[] {
   }
 }
 
+/** Compile an `allowedChats` allowlist into a {@link ChatScope}, or `null` for "unrestricted". */
+export function buildChatScope(allowedChats: string[] | null | undefined): ChatScope | null {
+  if (!isChatScopeRestricted(allowedChats)) return null;
+  const allowed = new Set<string>();
+  for (const entry of normalizeChatAllowList(allowedChats) ?? []) {
+    for (const form of literalForms(entry)) allowed.add(form);
+  }
+  return { allowed };
+}
+
 /**
- * Whether `chatId` falls inside `scope`. A `null` scope is unrestricted and admits everything.
+ * Whether `chatId` falls inside `scope` by LITERAL address form. A `null` scope is unrestricted and
+ * admits everything. Use {@link chatIdAllowed} when the lid table should be consulted.
  */
 export function chatScopeAllows(scope: ChatScope | null, chatId: string): boolean {
   if (scope === null) return true;
   return addressForms(chatId).some(form => scope.allowed.has(form));
+}
+
+/**
+ * Whether a single requested `chatId` is inside the allowlist, expanding the REQUESTED id (once)
+ * through the lid table rather than the allowlist. `directory` may be omitted, in which case only
+ * exact dialects match.
+ */
+export async function chatIdAllowed(
+  scope: ChatScope | null,
+  chatId: string,
+  directory?: ContactDirectory,
+): Promise<boolean> {
+  if (scope === null) return true;
+  const candidates = await resolveJidCandidates(chatId, directory);
+  return candidates.some(candidate => scope.allowed.has(candidate));
+}
+
+/**
+ * Expand the allowlist once with the lid table (batched: two queries at most) so a list filter can
+ * then be a pure membership test per row. Returns the literal scope when there is no directory.
+ */
+export async function buildExpandedChatScope(
+  allowedChats: string[] | null | undefined,
+  directory?: ChatScopeDirectory,
+): Promise<ChatScope | null> {
+  const scope = buildChatScope(allowedChats);
+  if (scope === null || !directory) return scope;
+  const phones = new Set<string>();
+  const lids = new Set<string>();
+  for (const entry of normalizeChatAllowList(allowedChats) ?? []) {
+    const parsed = parseWaId(entry);
+    if (parsed.kind === 'user') phones.add(parsed.userPart);
+    else if (parsed.kind === 'lid') lids.add(parsed.userPart);
+  }
+  const [lidToPhone, phoneToLids] = await Promise.all([
+    directory.phonesForLids([...lids]),
+    directory.lidsForPhones([...phones]),
+  ]);
+  const allowed = new Set(scope.allowed);
+  for (const phone of Object.values(lidToPhone)) {
+    if (phone) {
+      allowed.add(`${phone}@c.us`);
+      allowed.add(`${phone}@s.whatsapp.net`);
+    }
+  }
+  for (const mapped of Object.values(phoneToLids)) {
+    for (const lid of mapped) allowed.add(`${lid}@lid`);
+  }
+  return { allowed };
 }
 
 /**

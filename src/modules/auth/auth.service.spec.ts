@@ -97,6 +97,8 @@ describe('AuthService', () => {
   /** Statements whose write committed (affected = 1), newest last, with whether the last-admin
    * guard clause was bound — for assertions on what actually landed, and how. */
   let committedWrites: Array<{ mode: 'update' | 'delete'; patch?: Record<string, unknown>; guarded: boolean }>;
+  /** The raw AND-fragment the last-admin guard binds, so the SQL predicate itself is asserted. */
+  let lastAdminFragments: string[];
 
   beforeEach(async () => {
     repository = {
@@ -140,6 +142,7 @@ describe('AuthService', () => {
   function setupKeys(seed: ApiKey[]): void {
     keys = new Map(seed.map(k => [k.id, k]));
     committedWrites = [];
+    lastAdminFragments = [];
     (repository.findOne as jest.Mock).mockImplementation((options: { where: { id: string } }) =>
       Promise.resolve(keys.get(options.where.id) ?? null),
     );
@@ -176,8 +179,9 @@ describe('AuthService', () => {
           this.targetId = params.id;
           return this;
         },
-        andWhere() {
+        andWhere(fragment: string) {
           this.guarded = true;
+          lastAdminFragments.push(fragment);
           return this;
         },
         setParameters() {
@@ -609,6 +613,16 @@ describe('AuthService', () => {
       await expect(service.delete('admin-scoped')).resolves.toBeUndefined();
       await expect(service.findOne('admin-scoped')).rejects.toThrow(NotFoundException);
       await expect(service.findOne('admin-a')).resolves.toBeDefined();
+    });
+
+    it('the guard SQL excludes a chat-scoped key (the predicate the database actually runs)', async () => {
+      // The isUsableAdminRow mirror above cannot prove the SQL: the string is never executed by the
+      // mock. Assert the AND-fragment the guard binds names allowedChats, so dropping the clause
+      // fails here rather than in production.
+      setupKeys([unscopedAdmin('admin-a'), chatScopedAdmin('admin-chat')]);
+
+      await expect(service.update('admin-a', { role: ApiKeyRole.OPERATOR })).rejects.toThrow(/last active admin/i);
+      expect(lastAdminFragments.join(' ')).toContain('allowedChats');
     });
 
     it('rejects deleting the last unscoped admin even while a chat-scoped admin survives', async () => {

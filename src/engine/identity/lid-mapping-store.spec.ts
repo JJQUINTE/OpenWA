@@ -441,6 +441,22 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     expect(await store.resolveLidPersisted('555@lid')).toBeNull();
   });
 
+  it('lidsForPhonePersisted reads the table for a lid evicted from the LRU cache', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '1';
+    try {
+      // Preload keeps one of the two lids; the reverse map then holds only that one, so the second
+      // can only come from the table.
+      const repo = makeFakeRepo([
+        { lid: '111', phone: '628999' },
+        { lid: '222', phone: '628999' },
+      ]);
+      const store = await newStore(repo);
+      expect((await store.lidsForPhonePersisted('628999')).sort()).toEqual(['111', '222']);
+    } finally {
+      delete process.env.LID_MAPPING_CACHE_MAX;
+    }
+  });
+
   it('lidsForPhonePersisted unions the cache with the persisted table', async () => {
     const repo = makeFakeRepo([
       { lid: '111', phone: '628999' },
@@ -448,6 +464,51 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     ]);
     const store = await newStore(repo);
     expect((await store.lidsForPhonePersisted('628999')).sort()).toEqual(['111', '222']);
+  });
+
+  it('phonesForLidsPersisted reads the table for a lid evicted from the LRU cache', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '1';
+    try {
+      const repo = makeFakeRepo([
+        { lid: '111', phone: '628999' },
+        { lid: '222', phone: '628888' },
+      ]);
+      const store = await newStore(repo);
+      expect(await store.phonesForLidsPersisted(['111', '222'])).toEqual({ 111: '628999', 222: '628888' });
+    } finally {
+      delete process.env.LID_MAPPING_CACHE_MAX;
+    }
+  });
+
+  it('lidsForPhonesPersisted reads the table for a lid evicted from the LRU cache', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '1';
+    try {
+      const repo = makeFakeRepo([
+        { lid: '111', phone: '628999' },
+        { lid: '222', phone: '628999' },
+      ]);
+      const store = await newStore(repo);
+      expect((await store.lidsForPhonesPersisted(['628999']))['628999'].sort()).toEqual(['111', '222']);
+    } finally {
+      delete process.env.LID_MAPPING_CACHE_MAX;
+    }
+  });
+
+  it('batched lookups handle an empty input, a null-phone row, and a read error', async () => {
+    const repo = makeFakeRepo([
+      { lid: '111', phone: '628999' },
+      { lid: '333', phone: null },
+    ]);
+    const store = await newStore(repo);
+    expect(await store.phonesForLidsPersisted([])).toEqual({});
+    expect(await store.lidsForPhonesPersisted([])).toEqual({});
+    // The null-phone row is skipped rather than indexed under a null key.
+    expect((await store.lidsForPhonesPersisted(['628999']))['628999']).toEqual(['111']);
+    // A read error falls back to the cache, which the preload filled.
+    repo.find.mockRejectedValueOnce(new Error('no such table'));
+    expect(await store.phonesForLidsPersisted(['111'])).toEqual({ 111: '628999' });
+    repo.find.mockRejectedValueOnce(new Error('no such table'));
+    expect(await store.lidsForPhonesPersisted(['628999'])).toEqual({ 628999: ['111'] });
   });
 
   it('lidsForPhonePersisted falls back to the cache when the table read throws', async () => {

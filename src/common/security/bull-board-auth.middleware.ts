@@ -92,6 +92,14 @@ export class BullBoardAuthMiddleware implements NestMiddleware {
         throw new ForbiddenException('API keys restricted to specific sessions cannot access the queue dashboard');
       }
 
+      // A key restricted to selected chats is refused here too. This mount is the third surface
+      // outside ApiKeyGuard (beside /events and the MCP mount), and the board shows and mutates the
+      // webhook job queue, whose payloads carry every chat's events — so it has no chat dimension to
+      // scope against and must refuse such a key outright.
+      if ((apiKey.allowedChats?.length ?? 0) > 0) {
+        throw new ForbiddenException('API keys restricted to selected chats cannot access the queue dashboard');
+      }
+
       // Boundary trace of queue-mutation attempts. GET/HEAD are the UI's read/poll traffic; every
       // other method reaching the Bull Board router mutates queue state, so record it with the
       // authenticated key, the resolved client IP, and the method + full path (no query string).
