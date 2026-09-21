@@ -227,6 +227,7 @@
         "30d": "30 j"
       },
       "overTime": "Messages au fil du temps",
+      "overTimeUtcDays": "Messages au fil du temps (jours en UTC)",
       "byType": "Messages par type",
       "topChats": "Discussions principales",
       "sent": "Envoyés",

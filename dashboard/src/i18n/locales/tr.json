@@ -227,6 +227,7 @@
         "30d": "30g"
       },
       "overTime": "Zamana göre mesajlar",
+      "overTimeUtcDays": "Zamana göre mesajlar (günler UTC'ye göre)",
       "byType": "Türe göre mesajlar",
       "topChats": "En popüler sohbetler",
       "sent": "Gönderilen",

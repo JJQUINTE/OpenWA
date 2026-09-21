@@ -227,6 +227,7 @@
         "30d": "30 g"
       },
       "overTime": "Messaggi nel tempo",
+      "overTimeUtcDays": "Messaggi nel tempo (giorni in UTC)",
       "byType": "Messaggi per tipo",
       "topChats": "Chat principali",
       "sent": "Inviati",

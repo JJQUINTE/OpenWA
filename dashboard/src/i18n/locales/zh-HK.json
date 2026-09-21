@@ -227,6 +227,7 @@
         "30d": "30天"
       },
       "overTime": "訊息趨勢",
+      "overTimeUtcDays": "訊息趨勢（按 UTC 日期）",
       "byType": "按類型分類的訊息",
       "topChats": "熱門聊天",
       "sent": "已傳送",

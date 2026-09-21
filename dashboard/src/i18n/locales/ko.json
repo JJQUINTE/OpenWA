@@ -227,6 +227,7 @@
         "30d": "30일"
       },
       "overTime": "시간별 메시지 추이",
+      "overTimeUtcDays": "시간별 메시지 추이 (UTC 기준 날짜)",
       "byType": "유형별 메시지",
       "topChats": "인기 채팅",
       "sent": "보냄",
