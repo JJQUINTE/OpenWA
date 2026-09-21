@@ -9717,7 +9717,7 @@
             "name": "offset",
             "required": false,
             "in": "query",
-            "description": "Pagination offset",
+            "description": "Pagination offset, at most 100000",
             "schema": {
               "type": "number"
             }
