@@ -197,11 +197,21 @@ export function MessageTester() {
     }
   };
 
-  // Stop polling on unmount; the batch itself keeps running server-side regardless.
-  useEffect(() => stopBatchPolling, []);
+  // Stop polling on unmount; the batch itself keeps running server-side regardless. A send-bulk still
+  // in flight at unmount resolves later, so startBatchPolling must refuse to start once unmounted.
+  // Reset on every mount: StrictMode runs mount, unmount, mount.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      stopBatchPolling();
+    };
+  }, []);
 
   const startBatchPolling = (batchSessionId: string, batchId: string) => {
     stopBatchPolling();
+    if (unmountedRef.current) return;
     batchPollRef.current = setInterval(async () => {
       try {
         const status = await messageApi.getBatchStatus(batchSessionId, batchId);

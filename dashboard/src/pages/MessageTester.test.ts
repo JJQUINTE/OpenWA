@@ -363,6 +363,48 @@ test('a bulk send with a picked image carries it in every item', async () => {
   }
 });
 
+test('a bulk send that resolves after the page is left starts no progress polling', async () => {
+  let release: (response: Response) => void = () => {};
+  let bulkPosted = false;
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(jsonResponse([{ id: 's1', name: 'Main', status: 'ready', phone: '15550000000' }]));
+    }
+    if (url.endsWith('/messages/send-bulk')) {
+      bulkPosted = true;
+      return new Promise<Response>(resolve => {
+        release = resolve;
+      });
+    }
+    return Promise.resolve(jsonResponse([]));
+  }) as typeof fetch;
+  const container = await renderBulkAsWriter();
+  type(container, '#mt-11', '15550000001');
+  rtl.fireEvent.change(rtl.screen.getByPlaceholderText('Enter your message here...'), { target: { value: 'hi' } });
+  await rtl.waitFor(() => assert.equal(sendButton().disabled, false));
+  rtl.fireEvent.click(sendButton());
+  await rtl.waitFor(() => assert.ok(bulkPosted));
+
+  // Record the poller instead of waiting it out, and clear it so a regression fails instead of hanging.
+  const pollers: ReturnType<typeof setInterval>[] = [];
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = ((handler: () => void, ms?: number) => {
+    const id = realSetInterval(handler, ms);
+    if (ms === 2000) pollers.push(id);
+    return id;
+  }) as typeof setInterval;
+  try {
+    rtl.cleanup();
+    release(jsonResponse({ batchId: 'b1', status: 'pending', totalMessages: 1 }, 202));
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } finally {
+    globalThis.setInterval = realSetInterval;
+    pollers.forEach(clearInterval);
+  }
+  assert.equal(pollers.length, 0);
+});
+
 test('an inline file too large for the recipient count keeps Send disabled', async () => {
   stubGateway();
   const container = await renderBulkAsWriter();
