@@ -409,7 +409,11 @@ export class WwebjsLifecycle {
       },
       ...(authTimeoutMs !== undefined ? { authTimeoutMs } : {}),
       ...(proxyAuthentication ? { proxyAuthentication } : {}),
-      ...(versionPin ?? {}),
+      // Unpinned, whatsapp-web.js defaults to a local HTML cache at the cwd-relative
+      // './.wwebjs_cache/' and writes it after the link, before `ready`. The image's /app is not
+      // writable (root-owned, read-only in compose and Helm), so that write throws and the session
+      // never reaches ready. 'none' caches nothing and serves WhatsApp's live build.
+      ...(versionPin ?? { webVersionCache: { type: 'none' as const } }),
     });
     this.client = client;
 

@@ -348,7 +348,9 @@ default behaviour rather than the pin you asked for. With
 `WWEBJS_WEB_VERSION` unset, `latest`, or `auto` (the default), OpenWA auto-resolves a settled build
 from that registry and pins its HTML — note this HTML is fetched from a third-party repository and
 executed inside the `web.whatsapp.com` origin without an integrity check. Set
-`WWEBJS_WEB_VERSION=off` to disable pinning and use the first-party build served by WhatsApp.
+`WWEBJS_WEB_VERSION=off` to disable pinning and use the first-party build served by WhatsApp. An
+unpinned session (this setting, or an auto-resolve that could not reach the registry) caches nothing to
+disk, so it also works on the image's read-only root filesystem.
 
 ### Issue: QR generation times out on slow first boot (WSL2 / low-resource)
 
