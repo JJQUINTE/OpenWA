@@ -25,14 +25,15 @@ fi
 
 # The value is interpolated into the CREATE SCHEMA / SET search_path statements below, so apply
 # the same boot-time validation the app does (src/config/env.validation.ts): a plain, non-reserved
-# Postgres identifier or nothing. Fail fast here rather than let a typo reach the SQL.
-identifier_re='^[A-Za-z_][A-Za-z0-9_]{0,62}$'
+# Postgres identifier or nothing. Fail fast here rather than let a typo reach the SQL. Lower case
+# only: the app sets an unquoted search_path, which Postgres folds to lower case.
+identifier_re='^[a-z_][a-z0-9_]{0,62}$'
 if ! [[ "$schema" =~ $identifier_re ]]; then
-  echo "postgres-init-schema: ERROR: POSTGRES_SCHEMA must be a valid Postgres identifier (a letter or underscore, then letters/digits/underscores, max 63 chars; got '${schema}')." >&2
+  echo "postgres-init-schema: ERROR: POSTGRES_SCHEMA must be a valid lower-case Postgres identifier (a lower-case letter or underscore, then lower-case letters/digits/underscores, max 63 chars; got '${schema}')." >&2
   exit 1
 fi
 case "$schema" in
-  [pP][gG]_*)
+  pg_*)
     echo "postgres-init-schema: ERROR: POSTGRES_SCHEMA must not use the reserved \"pg_\" prefix (got '${schema}')." >&2
     exit 1
     ;;
