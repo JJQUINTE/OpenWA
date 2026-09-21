@@ -40,7 +40,7 @@ export function webhookTools(webhook: WebhookService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        webhookId: z.string().describe('Webhook UUID'),
+        webhookId: z.string().min(1).describe('Webhook UUID'),
       }),
       handler: input => webhook.findOne(input.sessionId, input.webhookId).then(w => WebhookResponseDto.fromEntity(w)),
     }),
