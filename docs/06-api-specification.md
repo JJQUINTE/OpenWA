@@ -6208,6 +6208,7 @@ Key facts:
 - Gated by **`MCP_ENABLED=true`**. When off, the module/route is never mounted and `POST /mcp` returns `404`.
 - MCP is **read-only by default**: only read-tier tools are registered unless you set `MCP_READONLY=false` to expose write tools. Per-key sliding-window rate limit: `MCP_RATE_LIMIT_MAX` (default 60) per `MCP_RATE_LIMIT_WINDOW_MS` (default 60000).
 - Stateless transport (no SSE/session id for normal calls).
+- Pre-auth per-IP throttle: `MCP_IP_RATE_LIMIT_MAX` (default 120) JSON-RPC messages per `MCP_IP_RATE_LIMIT_WINDOW_MS` (default 60000). Each element of a batch counts; an over-budget request gets HTTP `429` with a JSON-RPC error body and runs none of its messages, but still spends whatever budget the IP had left.
 
 **Request body** — JSON-RPC 2.0 envelope (validated by the MCP SDK, **not** the Nest ValidationPipe)
 
