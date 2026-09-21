@@ -460,6 +460,10 @@ export type HookEvent =
   | 'ingress:error';
 ```
 
+`session:created` carries the new session in the shape the REST API returns it (`id`, `name`, `status`,
+timestamps and so on), never the stored `proxyUrl` or `config`; `session:deleted` carries
+`{ id, name, phone, pushName }`.
+
 ### Hook context and result
 
 ```typescript
