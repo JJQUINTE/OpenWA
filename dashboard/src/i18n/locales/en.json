@@ -216,6 +216,7 @@
     "noSessions": "No sessions found. Create one to get started.",
     "view": "View",
     "disconnect": "Disconnect",
+    "disconnectFailed": "Could not disconnect the session",
     "errorPrefix": "Error: {{message}}",
     "loadError": "Failed to load data",
     "charts": {
@@ -350,7 +351,8 @@
       "actionRequiredTitle": "Action required",
       "actionRequiredDesc": "This session needs your attention. Open the session to see what to do.",
       "failedTitle": "Session Failed",
-      "failedDesc": "The WhatsApp session failed to start. Open the session to see the reason."
+      "failedDesc": "The WhatsApp session failed to start. Open the session to see the reason.",
+      "stopFailedTitle": "Stop Failed"
     },
     "card": {
       "phone": "Phone",

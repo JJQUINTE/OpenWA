@@ -216,6 +216,7 @@
     "noSessions": "找不到工作階段。建立一個即可開始。",
     "view": "查看",
     "disconnect": "中斷連線",
+    "disconnectFailed": "無法中斷工作階段連線",
     "errorPrefix": "錯誤：{{message}}",
     "loadError": "載入資料失敗",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "需要操作",
       "actionRequiredDesc": "此工作階段需要您的關注。開啟工作階段以查看需要做什麼。",
       "failedTitle": "工作階段失敗",
-      "failedDesc": "WhatsApp 工作階段啟動失敗。開啟該工作階段以查看原因。"
+      "failedDesc": "WhatsApp 工作階段啟動失敗。開啟該工作階段以查看原因。",
+      "stopFailedTitle": "停止失敗"
     },
     "card": {
       "phone": "電話",

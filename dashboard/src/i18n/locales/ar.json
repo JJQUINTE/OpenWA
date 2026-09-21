@@ -227,6 +227,7 @@
     "noSessions": "لم يتم العثور على جلسات. أنشئ جلسة للبدء.",
     "view": "عرض",
     "disconnect": "قطع الاتصال",
+    "disconnectFailed": "تعذر قطع اتصال الجلسة",
     "errorPrefix": "خطأ: {{message}}",
     "loadError": "فشل تحميل البيانات",
     "charts": {
@@ -356,7 +357,8 @@
       "actionRequiredTitle": "إجراء مطلوب",
       "actionRequiredDesc": "تتطلب هذه الجلسة انتباهك. افتح الجلسة لمعرفة ما يجب فعله.",
       "failedTitle": "فشلت الجلسة",
-      "failedDesc": "فشل بدء جلسة واتساب. افتح الجلسة لمعرفة السبب."
+      "failedDesc": "فشل بدء جلسة واتساب. افتح الجلسة لمعرفة السبب.",
+      "stopFailedTitle": "فشل الإيقاف"
     },
     "card": {
       "phone": "الهاتف",

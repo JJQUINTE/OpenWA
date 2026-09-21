@@ -216,6 +216,7 @@
     "noSessions": "Oturum bulunamadı. Başlamak için bir tane oluşturun.",
     "view": "Görüntüle",
     "disconnect": "Bağlantıyı Kes",
+    "disconnectFailed": "Oturumun bağlantısı kesilemedi",
     "errorPrefix": "Hata: {{message}}",
     "loadError": "Veriler yüklenemedi",
     "charts": {
@@ -350,7 +351,8 @@
       "actionRequiredTitle": "İşlem gerekiyor",
       "actionRequiredDesc": "Bu oturumun ilgilenilmesi gerekiyor. Ne yapılması gerektiğini görmek için oturumu açın.",
       "failedTitle": "Oturum Başarısız",
-      "failedDesc": "WhatsApp oturumu başlatılamadı. Nedenini görmek için oturumu açın."
+      "failedDesc": "WhatsApp oturumu başlatılamadı. Nedenini görmek için oturumu açın.",
+      "stopFailedTitle": "Durdurma başarısız"
     },
     "card": {
       "phone": "Telefon",

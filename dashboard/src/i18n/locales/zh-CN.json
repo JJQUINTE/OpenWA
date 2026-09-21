@@ -216,6 +216,7 @@
     "noSessions": "未找到会话。创建一个即可开始。",
     "view": "查看",
     "disconnect": "断开连接",
+    "disconnectFailed": "无法断开会话连接",
     "errorPrefix": "错误：{{message}}",
     "loadError": "加载数据失败",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "需要操作",
       "actionRequiredDesc": "此会话需要您的关注。打开会话以查看需要做什么。",
       "failedTitle": "会话失败",
-      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。"
+      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。",
+      "stopFailedTitle": "停止失败"
     },
     "card": {
       "phone": "电话",

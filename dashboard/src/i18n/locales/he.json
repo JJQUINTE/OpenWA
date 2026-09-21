@@ -223,6 +223,7 @@
     "noSessions": "לא נמצאו Sessions. יש ליצור אחד כדי להתחיל.",
     "view": "צפייה",
     "disconnect": "ניתוק",
+    "disconnectFailed": "לא ניתן לנתק את ה-Session",
     "errorPrefix": "שגיאה: {{message}}",
     "loadError": "טעינת הנתונים נכשלה",
     "charts": {
@@ -352,7 +353,8 @@
       "actionRequiredTitle": "נדרשת פעולה",
       "actionRequiredDesc": "ה-Session הזה דורש את תשומת לבך. פתחו את ה-Session כדי לראות מה לעשות.",
       "failedTitle": "ה-Session נכשל",
-      "failedDesc": "ה-Session של WhatsApp נכשל באתחול. פתחו את ה-Session כדי לראות את הסיבה."
+      "failedDesc": "ה-Session של WhatsApp נכשל באתחול. פתחו את ה-Session כדי לראות את הסיבה.",
+      "stopFailedTitle": "העצירה נכשלה"
     },
     "card": {
       "phone": "טלפון",

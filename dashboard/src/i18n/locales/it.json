@@ -216,6 +216,7 @@
     "noSessions": "Nessuna sessione trovata. Creane una per iniziare.",
     "view": "Visualizza",
     "disconnect": "Disconnetti",
+    "disconnectFailed": "Impossibile disconnettere la sessione",
     "errorPrefix": "Errore: {{message}}",
     "loadError": "Impossibile caricare i dati",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "Azione richiesta",
       "actionRequiredDesc": "Questa sessione richiede la tua attenzione. Apri la sessione per vedere cosa fare.",
       "failedTitle": "Sessione Fallita",
-      "failedDesc": "Avvio della sessione WhatsApp non riuscito. Apri la sessione per vedere il motivo."
+      "failedDesc": "Avvio della sessione WhatsApp non riuscito. Apri la sessione per vedere il motivo.",
+      "stopFailedTitle": "Arresto non riuscito"
     },
     "card": {
       "phone": "Telefono",

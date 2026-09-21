@@ -216,6 +216,7 @@
     "noSessions": "Aucune session trouvée. Créez-en une pour commencer.",
     "view": "Voir",
     "disconnect": "Déconnecter",
+    "disconnectFailed": "Impossible de déconnecter la session",
     "errorPrefix": "Erreur : {{message}}",
     "loadError": "Échec du chargement des données",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "Action requise",
       "actionRequiredDesc": "Cette session nécessite votre attention. Ouvrez la session pour voir quoi faire.",
       "failedTitle": "Échec de la session",
-      "failedDesc": "Le démarrage de la session WhatsApp a échoué. Ouvrez la session pour en voir la raison."
+      "failedDesc": "Le démarrage de la session WhatsApp a échoué. Ouvrez la session pour en voir la raison.",
+      "stopFailedTitle": "Échec de l'arrêt"
     },
     "card": {
       "phone": "Téléphone",

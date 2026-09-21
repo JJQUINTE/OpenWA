@@ -216,6 +216,7 @@
     "noSessions": "Keine Sitzungen gefunden. Erstelle eine, um zu beginnen.",
     "view": "Ansehen",
     "disconnect": "Trennen",
+    "disconnectFailed": "Sitzung konnte nicht getrennt werden",
     "errorPrefix": "Fehler: {{message}}",
     "loadError": "Daten konnten nicht geladen werden",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "Handlung erforderlich",
       "actionRequiredDesc": "Diese Sitzung braucht deine Aufmerksamkeit. Öffne die Sitzung, um zu sehen, was zu tun ist.",
       "failedTitle": "Sitzung fehlgeschlagen",
-      "failedDesc": "Die WhatsApp-Sitzung konnte nicht gestartet werden. Öffne die Sitzung, um den Grund anzuzeigen."
+      "failedDesc": "Die WhatsApp-Sitzung konnte nicht gestartet werden. Öffne die Sitzung, um den Grund anzuzeigen.",
+      "stopFailedTitle": "Stoppen fehlgeschlagen"
     },
     "card": {
       "phone": "Telefon",

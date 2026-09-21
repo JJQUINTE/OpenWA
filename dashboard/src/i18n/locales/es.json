@@ -216,6 +216,7 @@
     "noSessions": "No se encontraron sesiones. Crea una para empezar.",
     "view": "Ver",
     "disconnect": "Desconectar",
+    "disconnectFailed": "No se pudo desconectar la sesión",
     "errorPrefix": "Error: {{message}}",
     "loadError": "Error al cargar los datos",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "Acción requerida",
       "actionRequiredDesc": "Esta sesión necesita tu atención. Abre la sesión para ver qué hacer.",
       "failedTitle": "Sesión fallida",
-      "failedDesc": "La sesión de WhatsApp no pudo iniciarse. Abre la sesión para ver el motivo."
+      "failedDesc": "La sesión de WhatsApp no pudo iniciarse. Abre la sesión para ver el motivo.",
+      "stopFailedTitle": "Error al detener"
     },
     "card": {
       "phone": "Teléfono",

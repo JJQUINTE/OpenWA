@@ -216,6 +216,7 @@
     "noSessions": "세션이 없습니다. 세션을 생성해 시작하세요.",
     "view": "보기",
     "disconnect": "연결 해제",
+    "disconnectFailed": "세션 연결을 해제할 수 없습니다",
     "errorPrefix": "오류: {{message}}",
     "loadError": "데이터를 불러오지 못했습니다",
     "charts": {
@@ -345,7 +346,8 @@
       "actionRequiredTitle": "조치 필요",
       "actionRequiredDesc": "이 세션에 주의가 필요합니다. 할 일을 확인하려면 세션을 여세요.",
       "failedTitle": "세션 실패",
-      "failedDesc": "WhatsApp 세션을 시작하지 못했습니다. 세션을 열어 원인을 확인하세요."
+      "failedDesc": "WhatsApp 세션을 시작하지 못했습니다. 세션을 열어 원인을 확인하세요.",
+      "stopFailedTitle": "중지 실패"
     },
     "card": {
       "phone": "전화번호",
