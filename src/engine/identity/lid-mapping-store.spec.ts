@@ -153,6 +153,23 @@ describe('LidMappingStoreService — LRU cap', () => {
     expect(await store.findLidsForPhone('628000')).toEqual(['111']);
   });
 
+  it('finds a phone by lid from the table on a cache miss, without indexing the row', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '1';
+    const repo = makeFakeRepo();
+    const store = new LidMappingStoreService(repo as unknown as Repository<LidMapping>);
+    await store.onModuleInit();
+
+    await store.remember('lid-a', '620001');
+    await store.remember('lid-b', '620002'); // evicts lid-a; its row stays persisted
+    expect(await store.findPhoneForLid('lid-a')).toBe('620001');
+    expect(await store.findPhoneForLid('lid-b')).toBe('620002');
+    expect(await store.findPhoneForLid('lid-x')).toBeNull();
+    expect(store.lidsForPhone('620002')).toEqual(['lid-b']); // the table read did not evict it
+
+    repo.findOne.mockRejectedValueOnce(new Error('connection lost'));
+    expect(await store.findPhoneForLid('lid-a')).toBeNull();
+  });
+
   it('reconciles the reverse map on eviction (no orphan phoneToLids entries)', async () => {
     process.env.LID_MAPPING_CACHE_MAX = '2';
     const repo = makeFakeRepo();

@@ -47,8 +47,9 @@ export interface LidMappingStore {
  * A cache miss is warmed from the table in the background (rows past the preload cap stay resolvable)
  * and otherwise falls back to engine re-resolution (the table remains the source of truth), so eviction
  * only costs a re-resolution, never data loss. The reverse map has no such warm path (nothing looks a
- * lid up by phone), so a phone-keyed filter uses {@link findLidsForPhone}, which reads the table. The reverse map is reconciled on each eviction so it does
- * not retain entries for LIDs no longer in the forward cache.
+ * lid up by phone), so a phone-keyed filter uses {@link findLidsForPhone}, which reads the table. The
+ * reverse map is reconciled on each eviction so it does not retain entries for LIDs no longer in the
+ * forward cache.
  */
 @Injectable()
 export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
@@ -170,6 +171,22 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
       this.logger.warn(`Could not read lids for a phone: ${err instanceof Error ? err.message : String(err)}`);
     }
     return [...lids];
+  }
+
+  /**
+   * Forward lookup that reads the table on a cache miss, for callers that can await (the handover
+   * gate). {@link getCached} answers a miss with undefined and only warms in the background, which
+   * is exactly when a mapping past the cap or evicted matters. Like {@link findLidsForPhone}, the row
+   * is not indexed, and a read error answers null.
+   */
+  async findPhoneForLid(lid: string): Promise<string | null> {
+    if (this.lidToPhone.has(lid)) return this.getCached(lid) ?? null;
+    try {
+      return (await this.repo.findOne({ where: { lid } }))?.phone ?? null;
+    } catch (err) {
+      this.logger.warn(`Could not read the phone for a lid: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
   }
 
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {
