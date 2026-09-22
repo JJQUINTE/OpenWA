@@ -473,6 +473,13 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     expect(await store.findPhoneForLid('111@lid')).toBe('628999');
   });
 
+  it('findPhoneForLid answers from the cache when the table read fails', async () => {
+    const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
+    const store = await newStore(repo);
+    repo.findOne.mockRejectedValueOnce(new Error('connection lost'));
+    expect(await store.findPhoneForLid('111@lid')).toBe('628999');
+  });
+
   it('findPhoneForLid reads the table for a lid evicted from the LRU cache', async () => {
     process.env.LID_MAPPING_CACHE_MAX = '1';
     try {
