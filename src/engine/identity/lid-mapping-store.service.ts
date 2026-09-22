@@ -186,22 +186,16 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
    * Reverse lookup that also reads the table. {@link lidsForPhone} only sees lids resident in the
    * forward cache, and nothing phone-keyed ever warms it, so a mapping past the preload cap or
    * evicted by the LRU would stay invisible to a phone filter for good. For callers that can await
-   * (the message and status filters, the handover gate). Table rows are not indexed into the cache,
-   * so a list query cannot evict hot forward entries. A lid this process has since re-mapped
-   * elsewhere is skipped (last-write-wins), and a read error falls back to the cache alone.
+   * (the message and status filters, the handover gate, the API-key chat fence). Same rule as
+   * {@link lidsForPhonesPersisted}; a read error falls back to the cache alone.
    */
   async findLidsForPhone(phone: string): Promise<string[]> {
-    const lids = new Set(this.lidsForPhone(phone));
     try {
-      const rows = await this.repo.find({ select: { lid: true }, where: { phone } });
-      for (const { lid } of rows) {
-        const cached = this.lidToPhone.get(lid);
-        if (cached === undefined || cached === phone) lids.add(lid);
-      }
+      return (await this.readLidsForPhones([phone]))[phone];
     } catch (err) {
       this.logger.warn(`Could not read lids for a phone: ${err instanceof Error ? err.message : String(err)}`);
+      return this.lidsForPhone(phone);
     }
-    return [...lids];
   }
 
   /**
@@ -227,23 +221,37 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
 
   /** Batched reverse lookup, companion to {@link phonesForLidsPersisted}: phone digits -> lids. */
   async lidsForPhonesPersisted(phones: string[]): Promise<Record<string, string[]>> {
-    const out: Record<string, string[]> = {};
-    if (phones.length === 0) return out;
-    for (const phone of phones) out[phone] = this.lidsForPhone(phone);
     try {
-      for (const batch of chunk(phones)) {
-        const rows = await this.repo.find({ where: { phone: In(batch) } });
-        for (const row of rows) {
-          if (!row.phone) continue;
-          const list = out[row.phone] ?? [];
-          if (!list.includes(row.lid)) list.push(row.lid);
-          out[row.phone] = list;
-        }
-      }
+      return await this.readLidsForPhones(phones);
     } catch {
       // The table may not exist yet (migration pending); the cache is the best available answer.
+      return Object.fromEntries(phones.map(phone => [phone, this.lidsForPhone(phone)]));
     }
-    return out;
+  }
+
+  /**
+   * A lid answers a phone only when the cache and the table do not disagree: a cached reverse entry
+   * whose row another node has since re-mapped to a different phone is dropped, and a row this
+   * process has since re-mapped elsewhere is skipped. Either side alone may vouch for it (the row
+   * can be past the cache cap, the cached write can still be in flight). Throws on a read error.
+   */
+  private async readLidsForPhones(phones: string[]): Promise<Record<string, string[]>> {
+    const out: Record<string, Set<string>> = {};
+    for (const phone of phones) out[phone] = new Set(this.lidsForPhone(phone));
+    const cachedLids = [...new Set(phones.flatMap(phone => [...out[phone]]))];
+    for (const batch of chunk(cachedLids)) {
+      for (const row of await this.repo.find({ where: { lid: In(batch) } })) {
+        for (const phone of phones) if (row.phone !== phone) out[phone].delete(row.lid);
+      }
+    }
+    for (const batch of chunk(phones)) {
+      for (const { lid, phone } of await this.repo.find({ where: { phone: In(batch) } })) {
+        if (!phone || !out[phone]) continue;
+        const cached = this.lidToPhone.get(lid);
+        if (cached === undefined || cached === phone) out[phone].add(lid);
+      }
+    }
+    return Object.fromEntries(phones.map(phone => [phone, [...out[phone]]]));
   }
 
   /**

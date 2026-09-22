@@ -595,6 +595,22 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     expect(await store.lidsForPhonesPersisted(['628999'])).toEqual({ 628999: ['111'] });
   });
 
+  it('drops a cached lid that another node has re-mapped to a different phone', async () => {
+    const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
+    const store = await newStore(repo);
+    repo.rows[0].phone = '628000'; // another node re-mapped 111; this node's cache still says 628999
+    expect(store.lidsForPhone('628999')).toEqual(['111']);
+    expect(await store.findLidsForPhone('628999')).toEqual([]);
+    expect(await store.lidsForPhonesPersisted(['628999'])).toEqual({ 628999: [] });
+    // A cached lid with no row yet (its write still in flight) still answers.
+    await store.remember('222', '628999');
+    repo.rows.splice(
+      repo.rows.findIndex(r => r.lid === '222'),
+      1,
+    );
+    expect(await store.findLidsForPhone('628999')).toEqual(['222']);
+  });
+
   it('findLidsForPhone falls back to the cache when the table read throws', async () => {
     const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
     const store = await newStore(repo);

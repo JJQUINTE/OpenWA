@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOperator, In, Repository } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MessageService, spendInlineMediaBudget } from './message.service';
 import { MessageSendService } from './message-send.service';
@@ -12,6 +12,10 @@ import { HookManager } from '../../core/hooks';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
 import { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { SendPacingService } from './send-pacing.service';
+
+/** The `In([...])` condition a lid-table fake honours; an absent condition matches every row. */
+const inList = (value: string, cond?: FindOperator<string>): boolean =>
+  cond === undefined || (cond.value as unknown as string[]).includes(value);
 
 /** Pacing is off by default in these tests; the governor's own spec covers its behaviour. */
 const inertPacing = (): SendPacingService =>
@@ -333,7 +337,8 @@ describe('MessageService', () => {
       // The mapping is only in the table: past the preload cap or evicted by the LRU.
       const table = [{ lid: '111', phone: '628999' }];
       const store = new LidMappingStoreService({
-        find: ({ where }: { where: { phone: string } }) => Promise.resolve(table.filter(r => r.phone === where.phone)),
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
       } as unknown as Repository<LidMapping>);
       const qb = makeFilteringQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
