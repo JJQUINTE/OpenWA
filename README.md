@@ -57,19 +57,21 @@ Admin keys stay unscoped in the dashboard so they can keep managing other API ke
 
 ### Chat-scoped operator & viewer tokens
 
-A session-scoped key still reaches every chat on the sessions it may use. An operator or viewer key can be narrowed further, to **chats** — a chosen set of groups and individual contacts — from the same dashboard form or via `allowedChats` on the API.
+A session-scoped key still reaches every chat on the sessions it may use. A key can be narrowed further, to **chats** (a chosen set of groups and individual contacts), with `allowedChats` on `POST /auth/api-keys` or `PUT /auth/api-keys/{id}`. The dashboard does not set or show it yet, and editing a key there leaves its chats unchanged.
 
 - **No chats selected** — the key can reach every chat on its sessions.
-- **One or more selected** — the key can only read and send in those chats. Everywhere else it is refused with `403`, and the refusal is the default: a route that has not been explicitly marked as safe for a chat-scoped key stays closed to it, including routes added in later releases. A surface we have not thought of yet cannot leak, because nothing is reachable until it is opened.
+- **One or more selected** — the key reaches only those chats. Every authenticated REST route not explicitly marked as safe for a chat-scoped key refuses it with `403` (a request naming a session outside `allowedSessions` still answers `401` first), including routes added in later releases: the refusal is the default. Inside its chats an operator key can do what the marked routes allow, which is more than reading and sending: it can also delete or clear a chat, leave or rename a group, and block the contact. It cannot change who belongs to a group: adding, removing, promoting or demoting participants, answering join requests and reading or resetting the invite link all stay closed.
 - **The two scopes are independent** — a key may be limited to sessions, to chats, to both, or to neither.
 
-This is what makes it safe to point an **AI agent or third-party integration at an account you also use yourself**. Give the agent a key scoped to the few groups (or DMs) it is meant to handle, and it can read and reply there — but it cannot list your other chats, read a personal DM, message a contact outside its set, or reach the queue dashboard. It can still read the session's own status (`GET /sessions/{sessionId}`) so an integration can tell whether it is connected.
+This lets you point an **AI agent or third-party integration at a shared account** without handing it every chat. Give the agent a key scoped to the few groups (or DMs) it is meant to handle: it can send and reply there, but it cannot list your other chats, read any other DM, message a contact outside its set, or reach the queue dashboard. It reads its chats through `GET /sessions/{sessionId}/messages/{chatId}/history`, which works on whatsapp-web.js only; on Baileys it sees just each chat's last-message preview. It receives no pushed events, so it has to poll. It can still read the session's own status (`GET /sessions/{sessionId}`) so an integration can tell whether it is connected.
 
-Identity is matched through the lid mapping table, so a contact allowlisted by phone number also matches the same person's `@lid` privacy id — and a lid's digits are never mistaken for a phone number, so `555000111@lid` does not admit `555000111@c.us`.
+Identity is matched through the lid mapping table: a contact allowlisted by phone number also matches the same person's `@lid` privacy id once the table maps the two, and an unmapped `@lid` is refused rather than guessed. A lid's digits are never mistaken for a phone number, so `555000111@lid` does not admit `555000111@c.us`.
 
-A few surfaces authenticate outside the REST guard and refuse a chat-scoped key outright rather than filtering it: the `/events` WebSocket, the MCP mount (per tool call), and the Bull Board queue dashboard. Of the list routes, only `GET /sessions/{sessionId}/chats` is usable, and it filters to the key's chats before paging.
+The default covers REST routes only. Surfaces that authenticate outside the REST guard do not inherit it, so each one that can return chat data refuses a chat-scoped key with its own check: the `/events` WebSocket, the MCP mount (per tool call), and the Bull Board queue dashboard. Of the list routes, only `GET /sessions/{sessionId}/chats` is usable, and it filters to the key's chats before paging.
 
-None of this changes the ban-risk guidance above. It limits what a _key_ can reach, not what WhatsApp makes of the account.
+The API also accepts `allowedChats` on an admin key, but no admin-only route is open to a chat-scoped key, and the last usable admin key cannot be scoped this way.
+
+None of this changes the ban-risk guidance below. It limits what a _key_ can reach, not what WhatsApp makes of the account.
 
 ---
 
@@ -152,7 +154,7 @@ For any deployment where ethical, legal, or regulatory compliance matters (healt
 | Proxy Support       | ✅     | Per-session proxy configuration                                                                                                                                              |
 | Rate Limiting       | ✅     | Configurable request limits                                                                                                                                                  |
 | CIDR Whitelisting   | ✅     | IP-based access control                                                                                                                                                      |
-| Chat Scoping        | ✅     | Per-key `allowedChats` allowlist: a key can only read and send in the chats it is scoped to (groups and contacts), refused everywhere else                                   |
+| Chat Scoping        | ✅     | Per-key `allowedChats` allowlist (groups and contacts): a key reaches only those chats, and routes not marked safe for it refuse it                                          |
 | Audit Logging       | ✅     | Audit trail for API-key, session, integration-instance, and infra admin operations (message sends and webhook deliveries are tracked in their own tables, not the audit log) |
 
 ### Infrastructure
