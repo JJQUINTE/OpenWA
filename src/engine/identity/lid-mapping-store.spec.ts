@@ -1,6 +1,18 @@
-import { Repository } from 'typeorm';
+import { FindOperator, In, Repository } from 'typeorm';
 import { LidMappingStoreService } from './lid-mapping-store.service';
 import { LidMapping } from './lid-mapping.entity';
+
+/** A where-clause value: a literal, or a TypeORM `In([...])` FindOperator. */
+type Cond = string | FindOperator<unknown>;
+
+function matches(value: string | null, cond: Cond | undefined): boolean {
+  if (cond === undefined) return true;
+  if (cond instanceof FindOperator) {
+    if (cond.type !== 'in') throw new Error(`fake repo does not support ${cond.type}`);
+    return (cond.value as unknown[]).includes(value);
+  }
+  return value === cond;
+}
 
 /** Minimal in-memory stand-in for the TypeORM repo: just the find()/findOne()/upsert() the store uses. */
 function makeFakeRepo(seed: Partial<LidMapping>[] = []) {
@@ -9,8 +21,12 @@ function makeFakeRepo(seed: Partial<LidMapping>[] = []) {
     rows,
     find: jest
       .fn()
-      .mockImplementation((options?: { where?: { phone?: string } }) =>
-        Promise.resolve(rows.filter(r => !options?.where || r.phone === options.where.phone).map(r => ({ ...r }))),
+      .mockImplementation((options?: { where?: { lid?: Cond; phone?: Cond } }) =>
+        Promise.resolve(
+          rows
+            .filter(r => matches(r.lid, options?.where?.lid) && matches(r.phone, options?.where?.phone))
+            .map(r => ({ ...r })),
+        ),
       ),
     findOne: jest
       .fn()
@@ -547,6 +563,19 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     } finally {
       delete process.env.LID_MAPPING_CACHE_MAX;
     }
+  });
+
+  it('batched lookups query only the requested keys', async () => {
+    const repo = makeFakeRepo([
+      { lid: '111', phone: '628999' },
+      { lid: '222', phone: '628888' },
+    ]);
+    const store = await newStore(repo);
+    repo.find.mockClear();
+    expect(await store.phonesForLidsPersisted(['111'])).toEqual({ 111: '628999' });
+    expect(repo.find).toHaveBeenCalledWith({ where: { lid: In(['111']) } });
+    expect(await store.lidsForPhonesPersisted(['628888'])).toEqual({ 628888: ['222'] });
+    expect(repo.find).toHaveBeenCalledWith({ where: { phone: In(['628888']) } });
   });
 
   it('batched lookups handle an empty input, a null-phone row, and a read error', async () => {
