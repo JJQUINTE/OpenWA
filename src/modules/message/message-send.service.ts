@@ -500,7 +500,7 @@ export class MessageSendService {
     const engine = this.getEngine(sessionId);
 
     // Resolve the quoted message body (best-effort) so the dashboard can render the reply preview.
-    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.chatId, finalDto.quotedMessageId);
+    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.quotedMessageId, finalDto.chatId);
 
     // Save message as pending BEFORE sending
     const message = await this.saveOutgoingMessage(sessionId, {
@@ -535,7 +535,7 @@ export class MessageSendService {
     // A click IS a reply to the prompt, so resolve the prompt's body the way reply() does: the
     // dashboard renders the quote box from this field, and a hardcoded empty string left every
     // answered prompt showing an empty quote above the choice the user tapped.
-    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.chatId, finalDto.messageId);
+    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.messageId, finalDto.chatId);
 
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: finalDto.chatId,
@@ -594,23 +594,29 @@ export class MessageSendService {
    * The body of the message a send is quoting, for the dashboard's quote preview. Best-effort in
    * every direction: an id that names nothing stored (evicted, or sent from the phone before this
    * gateway saw the chat) and a read that fails both answer '', because a preview is never worth
-   * failing a send over. The row is looked up by engine id within the session AND the target chat
-   * (any of its phone, lid or group forms): a message from another chat is never a valid quote, and
-   * copying its body would store it under a chat a chat-restricted key may use.
+   * failing a send over. The row is looked up by engine id within the session. A reply and a button
+   * click answer a message in the chat they send into, so for them `chatId` also restricts the lookup
+   * to that chat (any of its phone, lid or group forms): the pending row is saved before the engine
+   * refuses a cross-chat quote, and copying a foreign body would store it under a chat a
+   * chat-restricted key may use. The send routes may quote across chats, and the guard refuses a
+   * chat-restricted key any quotedMessageId there, so they pass no chat.
    */
-  private async resolveQuotedBody(sessionId: string, chatId: string, quotedMessageId: string): Promise<string> {
+  private async resolveQuotedBody(sessionId: string, quotedMessageId: string, chatId?: string): Promise<string> {
     try {
       const store = this.lidMappingStore;
-      const expanded = await resolveJidCandidates(
-        chatId,
-        store && {
-          resolveLid: lid => store.findPhoneForLid(lid),
-          lidsForPhone: phone => store.findLidsForPhone(phone),
-        },
-      );
-      const chatIds = [...new Set([chatId, ...expanded])];
+      const expanded = chatId
+        ? await resolveJidCandidates(
+            chatId,
+            store && {
+              resolveLid: lid => store.findPhoneForLid(lid),
+              lidsForPhone: phone => store.findLidsForPhone(phone),
+            },
+          )
+        : [];
       const quoted = await this.messageRepository.findOne({
-        where: { sessionId, chatId: In(chatIds), waMessageId: quotedMessageId },
+        where: chatId
+          ? { sessionId, chatId: In([...new Set([chatId, ...expanded])]), waMessageId: quotedMessageId }
+          : { sessionId, waMessageId: quotedMessageId },
       });
       return quoted?.body || '';
     } catch (err) {
@@ -637,7 +643,7 @@ export class MessageSendService {
     // location, contact, poll, quoted text) used to persist an id with an empty body and the
     // dashboard drew a blank quote box above the message.
     const quotedMessage = data.quotedMessageId
-      ? { id: data.quotedMessageId, body: await this.resolveQuotedBody(sessionId, data.chatId, data.quotedMessageId) }
+      ? { id: data.quotedMessageId, body: await this.resolveQuotedBody(sessionId, data.quotedMessageId) }
       : undefined;
     const message = this.messageRepository.create({
       sessionId,

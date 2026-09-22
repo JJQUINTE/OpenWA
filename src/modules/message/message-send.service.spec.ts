@@ -982,9 +982,7 @@ describe('MessageSendService', () => {
         quotedMessageId: 'wa-quoted-9',
       });
 
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { sessionId: 'sess-1', chatId: In(['test@c.us', 'test@s.whatsapp.net']), waMessageId: 'wa-quoted-9' },
-      });
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { sessionId: 'sess-1', waMessageId: 'wa-quoted-9' } });
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({
@@ -1012,7 +1010,7 @@ describe('MessageSendService', () => {
     });
   });
 
-  describe('the quoted body is read from the target chat only', () => {
+  describe('a reply or button click reads the quoted body from the target chat only', () => {
     // A stored row per chat. The fake honours the WHERE clause, so a lookup that ignores the chat
     // would find the foreign row and copy its body.
     const rows = [
@@ -1047,9 +1045,9 @@ describe('MessageSendService', () => {
       expect(quoteOf()).toEqual({ id: 'wa-foreign', body: '' });
     });
 
-    it('a quoting send stores no body for a message id from another chat', async () => {
+    it('a quoting send keeps a quote from another chat, which the send routes allow', async () => {
       await service.sendText('sess-1', { chatId: '628111@c.us', text: 'hi', quotedMessageId: 'wa-foreign' });
-      expect(quoteOf()).toEqual({ id: 'wa-foreign', body: '' });
+      expect(quoteOf()).toEqual({ id: 'wa-foreign', body: 'not yours' });
     });
 
     it('stores no body from the chat a stale cached lid mapping names', async () => {
