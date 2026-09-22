@@ -15,7 +15,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { resolveCorsPolicy } from '../../config/bootstrap-security';
-import { resolveClientIp as resolveRequestClientIp, type RequestLike } from '../../common/utils/ip';
+import { limiterKeyForIp, resolveClientIp as resolveRequestClientIp, type RequestLike } from '../../common/utils/ip';
 import { DEFAULT_WEBHOOK_MEDIA_INLINE_MAX_BYTES, shedInlineMedia } from '../../common/utils/inline-media';
 import { ApiKeyRole, type ApiKey } from '../auth/entities/api-key.entity';
 import { apiKeyAuthorizationFingerprint, apiKeyExpiryTime } from '../auth/api-key-authorization';
@@ -312,7 +312,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // Pre-auth, per-IP handshake throttle. This must run BEFORE any credential handling: an
     // unauthenticated handshake flood otherwise reaches the DB validateApiKey below on every
     // attempt (same gap the MCP pre-auth IP throttle covers for the /mcp mount).
-    if (!this.handshakeLimiter.allow(clientIp)) {
+    if (!this.handshakeLimiter.allow(limiterKeyForIp(clientIp))) {
       this.logger.warn(`Client ${client.id} rejected: handshake rate limit exceeded (ip: ${clientIp})`);
       this.noteRateLimitViolation('handshake', { ipAddress: clientIp });
       client.emit('message', this.createError('RATE_LIMITED', 'Too many connection attempts, retry later'));
@@ -448,7 +448,8 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // Over-budget frames get an error frame back and are NOT dispatched to a handler — in
     // particular they never reach the per-subscribe DB re-validation.
     const frameSubject =
-      (client.data as { apiKey?: Pick<ApiKey, 'id'> } | undefined)?.apiKey?.id ?? this.resolveClientIp(client);
+      (client.data as { apiKey?: Pick<ApiKey, 'id'> } | undefined)?.apiKey?.id ??
+      limiterKeyForIp(this.resolveClientIp(client));
     if (!this.frameLimiter.allow(frameSubject)) {
       const requestId = (message as { requestId?: string } | undefined)?.requestId;
       this.noteRateLimitViolation('frame', {
@@ -634,7 +635,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     kind: 'handshake' | 'frame' | 'sockets',
     subject: { apiKeyId?: string; ipAddress?: string },
   ): void {
-    const mapKey = `${kind}:${subject.apiKeyId ?? subject.ipAddress ?? 'unknown'}`;
+    const mapKey = `${kind}:${subject.apiKeyId ?? (subject.ipAddress ? limiterKeyForIp(subject.ipAddress) : 'unknown')}`;
     const now = Date.now();
     const prior = this.violations.get(mapKey);
     if (prior && now - prior.since < EventsGateway.VIOLATION_AUDIT_WINDOW_MS) {

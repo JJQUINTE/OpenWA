@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On the dashboard Chats page, Escape closes the open chat, channel or status viewer and returns to the list. It leaves the key alone while a dialog, a menu or the media viewer is open, since those handle Escape themselves. Thanks @C24212.
 - The dashboard Message Tester's Bulk mode can attach a file or a media URL, sent as image, video, audio or document, with the message text as the caption of an image, video or document; audio carries none, so text next to audio is refused. An inline file too large to repeat for every recipient is refused before sending. Thanks @C24212.
 - The dashboard sidebar tells admins when a newer OpenWA release exists, as a link to its release notes next to the version. `GET /api/infra/update-check` (ADMIN) reads the latest published GitHub release through the SSRF-guarded fetch and caches it for six hours, and a failed check never surfaces as an error; `UPDATE_CHECK_ENABLED=false` turns the request off ([#988](https://github.com/rmyndharis/OpenWA/issues/988), [#1678](https://github.com/rmyndharis/OpenWA/issues/1678)). Thanks @voosam and @OneArmArmy for the request.
+- whatsapp-web.js sessions log the WhatsApp Web build their page actually runs when they reach `ready` (`web_version_running`), and warn with both builds when it is not the pinned one (`web_version_pin_not_applied`), since a pin is not guaranteed to hold ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
 
 ### Changed
 
@@ -84,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - whatsapp-web.js sessions no longer report a call rejection that did not stop the call: the call reject route answers `501` and `autoRejectCalls` logs a failed auto-reject.
 - A Baileys session added to or joining a group emits `group.join`, as whatsapp-web.js already did.
 - A send that fails inside the engine logs a warning carrying the session, chat, message id and the engine's error, where only Nest's generic `[ExceptionsHandler]` line recorded it before ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
+- A whatsapp-web.js send that fails inside the page reports what the page threw and the WhatsApp Web build that was running, in the failure log, the bulk batch result and the `message:failed` hook, instead of the minified `t: t` ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
 - whatsapp-web.js sessions reach ready in the Docker image, Compose and Helm when no WA Web version is pinned; the library's local HTML cache tried to write to the read-only app directory.
 - A stopped built-in `openwa-postgres` container is started before the data connection dials it, instead of the gateway crash-looping at boot.
 - `POST /api/infra/import-data` on PostgreSQL answers `imported: false` with the rejected row's database error instead of `500`.
@@ -182,6 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
 - The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one unauthenticated request can no longer write an audit row per batch element.
 - Per-client rate limits key an IPv6 client on its /64, so rotating addresses inside one allocation no longer escapes them ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)). Thanks @Saksham-official.
+- The MCP, Bull Board and WebSocket pre-auth limiters, the WebSocket rate-limit audit sampler, the per-client upload body budget and the health route's auth-failure audit limiter key an IPv6 client on its /64 as well ([#1695](https://github.com/rmyndharis/OpenWA/issues/1695)).
 
 ## [0.23.5] - 2026-09-15
 

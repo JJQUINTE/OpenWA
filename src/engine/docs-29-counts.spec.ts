@@ -145,7 +145,16 @@ describe('docs/29 counts match the capability matrix', () => {
     // 29.3's opening sentence and 29.3.2's split spell the figure in prose rather than digits, which
     // is why they drifted while the digit-shaped claims held: a patcher was added to each library and
     // the words stayed at "five" and "1 on Baileys".
-    const WORDS: Record<string, number> = { four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const WORDS: Record<string, number> = {
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+      eleven: 11,
+    };
     const spelled = doc.match(/OpenWA ships (\w+) exact, self-disabling source transforms/);
     const wrongProse: string[] = [];
     if (!spelled) wrongProse.push('29.3 opening: phrasing no longer found in the document');

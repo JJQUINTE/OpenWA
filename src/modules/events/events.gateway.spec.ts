@@ -723,9 +723,9 @@ describe('EventsGateway rate limiting', () => {
   let auditService: { logWarn: jest.Mock };
   let savedEnv: Record<string, string | undefined>;
 
-  const makeSock = (id: string, auth: { apiKey?: string } = {}): MockSocket => ({
+  const makeSock = (id: string, auth: { apiKey?: string } = {}, address = '203.0.113.5'): MockSocket => ({
     id,
-    handshake: { headers: {}, query: {}, auth, address: '203.0.113.5' },
+    handshake: { headers: {}, query: {}, auth, address },
     data: {},
     emit: jest.fn(),
     disconnect: jest.fn(),
@@ -966,6 +966,54 @@ describe('EventsGateway rate limiting', () => {
       expect(rateLimited).toHaveLength(2);
       expect(rateLimited[0]?.[1]?.metadata).toEqual(expect.objectContaining({ kind: 'handshake', suppressed: 0 }));
       expect(rateLimited[1]?.[1]?.metadata).toEqual(expect.objectContaining({ kind: 'handshake', suppressed: 1 }));
+    });
+  });
+
+  describe('IPv6 clients are limited on their /64', () => {
+    const ipOf = ([, ctx]: [AuditAction, WarnContext?]): unknown =>
+      (ctx as { ipAddress?: string } | undefined)?.ipAddress;
+
+    it('shares the handshake window and the violation sample across a /64, keeping the real address', async () => {
+      process.env.WS_RATE_LIMIT_HANDSHAKE_MAX = '1';
+      authService.validateApiKey.mockRejectedValue(new Error('bad key'));
+      const gw = buildGateway();
+
+      await gw.handleConnection(asSocket(makeSock('a', { apiKey: 'good' }, '2001:db8:1:2::a')));
+      const rotatedOnce = makeSock('b', { apiKey: 'good' }, '2001:db8:1:2::b');
+      await gw.handleConnection(asSocket(rotatedOnce));
+      const rotatedTwice = makeSock('c', { apiKey: 'good' }, '2001:db8:1:2::c');
+      await gw.handleConnection(asSocket(rotatedTwice));
+      expect(rotatedOnce.emit).toHaveBeenCalledWith('message', expect.objectContaining({ code: 'RATE_LIMITED' }));
+      expect(rotatedTwice.emit).toHaveBeenCalledWith('message', expect.objectContaining({ code: 'RATE_LIMITED' }));
+      expect(authService.validateApiKey).toHaveBeenCalledTimes(1);
+
+      const rateLimited = warnCalls().filter(([action]) => action === AuditAction.RATE_LIMIT_EXCEEDED);
+      expect(rateLimited).toHaveLength(1);
+      expect(ipOf(rateLimited[0])).toBe('2001:db8:1:2::b');
+
+      await gw.handleConnection(asSocket(makeSock('d', { apiKey: 'good' }, '2001:db8:1:3::a')));
+      expect(authService.validateApiKey).toHaveBeenCalledTimes(2);
+    });
+
+    it('meters a not-yet-authenticated socket on its /64', async () => {
+      process.env.WS_RATE_LIMIT_FRAME_PER_SECOND = '1';
+      process.env.WS_RATE_LIMIT_FRAME_BURST = '1';
+      const gw = buildGateway();
+      const ping = { type: 'ping', requestId: 'p' } as unknown as WSClientMessage;
+
+      const first = (await gw.handleMessage(asSocket(makeSock('a', {}, '2001:db8:1:2::a')), ping)) as { type: string };
+      expect(first.type).not.toBe('error');
+      const sameSubnet = (await gw.handleMessage(asSocket(makeSock('b', {}, '2001:db8:1:2::b')), ping)) as {
+        code?: string;
+      };
+      expect(sameSubnet.code).toBe('RATE_LIMITED');
+      const frameViolation = warnCalls().find(([action]) => action === AuditAction.RATE_LIMIT_EXCEEDED);
+      expect(frameViolation && ipOf(frameViolation)).toBe('2001:db8:1:2::b');
+
+      const otherSubnet = (await gw.handleMessage(asSocket(makeSock('c', {}, '2001:db8:1:3::a')), ping)) as {
+        type: string;
+      };
+      expect(otherSubnet.type).not.toBe('error');
     });
   });
 

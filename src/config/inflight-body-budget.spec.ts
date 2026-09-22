@@ -396,6 +396,23 @@ describe('stall reaper', () => {
       expect(other).toHaveBeenCalledTimes(1);
     });
 
+    it('keys an IPv6 client on its /64, so a rotated address draws on the same share', () => {
+      const budget = createInflightBodyBudget(1000);
+      const { next: firstOk } = runFrom(budget, '2001:db8:1:2::a', { 'content-length': '400' });
+      expect(firstOk).toHaveBeenCalledTimes(1);
+
+      const { next: sameSubnet, state } = runFrom(budget, '2001:db8:1:2::b', { 'content-length': '200' });
+      expect(sameSubnet).not.toHaveBeenCalled();
+      expect(state.code).toBe(503);
+
+      const probe = makeReq();
+      (probe as unknown as { socket: { remoteAddress: string } }).socket.remoteAddress = '2001:db8:1:2::ffff';
+      expect(budget.clientBytes(probe as never)).toBe(400);
+
+      const { next: otherSubnet } = runFrom(budget, '2001:db8:1:3::a', { 'content-length': '400' });
+      expect(otherSubnet).toHaveBeenCalledTimes(1);
+    });
+
     it('releases the client ledger exactly once: a finished body frees the share', () => {
       const budget = createInflightBodyBudget(1000);
       const { res } = runFrom(budget, '198.51.100.1', { 'content-length': '400' });

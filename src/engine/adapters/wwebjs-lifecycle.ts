@@ -17,7 +17,8 @@ import { killOrphanedChromiumProcesses, removeStaleSingletonFiles } from './chro
 import { isSupportedProxyUrl, buildProxyLaunchConfig } from './wwebjs-proxy';
 import { BACKPORT_MISSING_MESSAGE, isBackportMissing } from './wwebjs-backport-check';
 import { unappliedPatches, unappliedPatchesMessage } from './engine-patch-status';
-import { reportMissingCallHook } from './wwebjs-call-hook-check';
+import { type EvaluatablePage, reportMissingCallHook } from './wwebjs-call-hook-check';
+import { reportRunningWebBuild } from './wwebjs-running-build';
 import { type WhatsAppWebJsConfig } from './whatsapp-web-js.adapter';
 import { AUTH_FAILURE_REASON, STALE_PROFILE_ADVICE } from '../terminal-engine-failure';
 import { wwjsAuthDir } from '../auth-dir-paths';
@@ -66,6 +67,14 @@ export function isProtocolTimeout(error: unknown): boolean {
   }
   return PROTOCOL_TIMEOUT_PATTERN.test(error instanceof Error ? error.message : String(error));
 }
+
+/**
+ * The start of a send failure that scripts/patch-wwebjs-send-error.js captured inside the page, where
+ * it summarises a thrown value puppeteer would otherwise hand over as `t: t`. The patcher builds the
+ * message from its own copy of this string (it runs at install time, before any of this is compiled),
+ * and wwebjs-send-page-error.spec.ts pins the two equal.
+ */
+export const CAPTURED_PAGE_ERROR_PREFIX = 'page threw ';
 
 /**
  * requestPairingCode retry budget. WhatsApp Web reloads the QR page while UNPAIRED, so a pairing
@@ -200,6 +209,9 @@ export class WwebjsLifecycle {
   // exact jest timer counts, and a timer would also outlive the single-use adapter.
   private lastMainFrameNavigationAt = 0;
   private navigationEpisodeStartedAt = 0;
+  /** The WhatsApp Web build this init asked whatsapp-web.js to pin, undefined when it asked for none.
+   *  Compared against the build the page reports at READY (./wwebjs-running-build). */
+  private requestedWebVersion: string | undefined;
 
   constructor(private readonly host: WwebjsLifecycleHost) {}
 
@@ -265,6 +277,9 @@ export class WwebjsLifecycle {
       // remote HTML (no integrity check — resolveWebVersionPin logs a loud warning); only
       // WWEBJS_WEB_VERSION=off leaves whatsapp-web.js to use the first-party build from WhatsApp.
       const versionPin = await resolveWebVersionPin();
+      // Assigned on every init, including the unpinned case, so a pin from an earlier init is never
+      // compared against the page this one loads.
+      this.requestedWebVersion = versionPin?.webVersion;
       if (this.tearingDown) {
         this.setStatus(EngineStatus.DISCONNECTED);
         return;
@@ -740,6 +755,12 @@ export class WwebjsLifecycle {
       return false;
     }
     const message = error instanceof Error ? error.message : String(error);
+    // A captured page error is never a dead page: the page was alive enough to run the catch that
+    // built it. Its summary quotes WhatsApp Web's own text, and that text can say "connection closed"
+    // about WhatsApp's socket, which the pattern would otherwise read as ours going down.
+    if (message.startsWith(CAPTURED_PAGE_ERROR_PREFIX)) {
+      return false;
+    }
     return WwebjsLifecycle.PAGE_TRANSPORT_ERROR_PATTERN.test(message);
   }
 
@@ -801,6 +822,7 @@ export class WwebjsLifecycle {
     // gets the companion unlinked (~5m later → disconnected: LOGOUT, #982). Dismiss it best-effort
     // and fall back to ACTION_REQUIRED. Started after READY so a non-ready session never arms it.
     this.host.startOnboardingWatcher();
+    const page = (this.client as unknown as { pupPage?: EvaluatablePage } | null)?.pupPage;
     // whatsapp-web.js patches the call collection only when the page's module for it exposes an
     // `.on` function. A WhatsApp Web build that keeps the module but drops that method skips the
     // hook while the rest of the evaluate completes, so the session looks healthy, keeps delivering
@@ -815,12 +837,15 @@ export class WwebjsLifecycle {
     // been installed YET and warn about a problem that does not exist. An unpatched tree already
     // reports itself at startup, which is the honest signal there.
     if (!unappliedPatches('wwebjs').includes('patch-wwebjs-ready-sync')) {
-      void reportMissingCallHook(
-        (this.client as unknown as { pupPage?: { evaluate: <T>(fn: () => T) => Promise<T> } } | null)?.pupPage,
-        this.host.logger,
-        this.host.config.sessionId,
-      );
+      void reportMissingCallHook(page, this.host.logger, this.host.config.sessionId);
     }
+    // The pin logged at startup is only what was requested: a page load that bypasses the library's
+    // request interceptor can run another build (see ./wwebjs-running-build). Log the build this page
+    // actually reports, and warn when it is not the pinned one. Same fire-and-forget contract as the
+    // call-hook probe, and not gated on the ready-sync patch: `window.Debug.VERSION` is WhatsApp
+    // Web's own, set before whatsapp-web.js injects anything. Once per READY, so a post-READY
+    // navigation (which re-emits 'ready' while already READY) is not re-read.
+    void reportRunningWebBuild(page, this.host.logger, this.host.config.sessionId, this.requestedWebVersion);
   }
 
   /** The single status-transition funnel: latches disconnectReported, fires the callback, re-emits

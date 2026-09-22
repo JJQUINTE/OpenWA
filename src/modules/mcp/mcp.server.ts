@@ -13,7 +13,7 @@ import type { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { handleToolError, jsonToolResult, smartToolResult } from './tool-result';
 import type { KeyRateLimiter } from './mcp-rate-limit';
-import { resolveClientIp } from '../../common/utils/ip';
+import { limiterKeyForIp, resolveClientIp } from '../../common/utils/ip';
 import { resolveBodyLimit } from '../../config/bootstrap-security';
 
 const logger = new Logger('McpServer');
@@ -171,7 +171,7 @@ export interface MountMcpServerOptions {
  */
 export function createIpThrottle(ipRateLimiter: KeyRateLimiter): RequestHandler {
   return (req, res, next) => {
-    const ip = resolveClientIp(req, readTrustedProxies());
+    const ip = limiterKeyForIp(resolveClientIp(req, readTrustedProxies()));
     // The unit of work is the JSON-RPC message, not the HTTP request: the transport dispatches every
     // element of a batch, and each tools/call element runs its own key lookup and auth-failure audit.
     // An over-budget batch throws on the first check past the cap, so a huge array costs at most

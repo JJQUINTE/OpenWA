@@ -235,6 +235,23 @@ describe('BullBoardAuthMiddleware pre-auth IP throttle (mirrors MCP createIpThro
     expect(authService.validateApiKey).toHaveBeenCalledWith('admin', '203.0.113.9');
   });
 
+  it('buckets an IPv6 client on its /64 but validates the key against the full address', async () => {
+    const mw = adminMw(1);
+    const headers = { 'x-api-key': 'admin' };
+    const first = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:2::a', headers), res, first);
+    expect(first).toHaveBeenCalledWith();
+    expect(authService.validateApiKey).toHaveBeenCalledWith('admin', '2001:db8:1:2::a');
+
+    const sameSubnet = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:2::b', headers), res, sameSubnet);
+    expect((firstNextArg(sameSubnet) as HttpException).getStatus()).toBe(429);
+
+    const otherSubnet = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:3::a', headers), res, otherSubnet);
+    expect(otherSubnet).toHaveBeenCalledWith();
+  });
+
   it('a missing key still consumes a throttle slot (pre-auth gate fires first)', async () => {
     const mw = adminMw(1);
     // First request: no key → Unauthorized, but the throttle slot is consumed (check runs before extractKey).
