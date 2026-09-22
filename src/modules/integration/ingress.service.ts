@@ -186,10 +186,12 @@ export class IngressService {
       body: req.rawBody,
       rawBody: req.rawBody,
     };
-    // Rendered BEFORE the dedup check so a provider retry gets the byte-identical ack rather than a
-    // second contract on the same route. The ctx is the request in hand (rawBody, deliveryId, now),
-    // never stored state, which is what makes rendering it on a dedup hit sound: an ack field that had
-    // to reflect the PERSISTED row would echo the retry's values as the original's. Keep it that way.
+    // Rendered BEFORE the dedup check so a provider retry gets the route's ack (same status and headers)
+    // rather than a second contract on the same route. A body template renders from the retry, not the
+    // first delivery, and a retry still passes the preflight above first. The ctx is the request in
+    // hand (rawBody, deliveryId, now), never stored state, which is what makes rendering it on a dedup
+    // hit sound: an ack field that had to reflect the PERSISTED row would echo the retry's values as the
+    // original's. Keep it that way.
     const ack = renderAck(route.response?.ack, {
       rawBody: req.rawBody,
       timestamp: String(Math.floor(this.deps.now() / 1000)),
@@ -206,7 +208,7 @@ export class IngressService {
       payloadHash: createHash('sha256').update(req.rawBody).digest('hex'),
       sessionId: instance.sessionScope,
     });
-    if (!isNew) return ack; // already persisted/acked; a retry gets the first delivery's ack
+    if (!isNew) return ack; // already persisted/acked; a retry gets the route's ack, not enqueued again
 
     // Best-effort conversation id for P1 ordering. Never throws — a malformed body just yields undefined.
     const providerConversationId = extractConversationId(route.conversationId, req.headers, req.rawBody);

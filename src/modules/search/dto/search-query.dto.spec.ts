@@ -44,6 +44,11 @@ describe('SearchQueryDto', () => {
     expect(validateSync(dto).some(e => e.property === 'offset')).toBe(true);
   });
 
+  it('rejects offset above SEARCH_OFFSET_MAX instead of letting the service clamp it to a repeated page', () => {
+    expect(validateSync(fromQuery({ q: 'hello', offset: '100001' })).some(e => e.property === 'offset')).toBe(true);
+    expect(validateSync(fromQuery({ q: 'hello', offset: '100000' }))).toHaveLength(0);
+  });
+
   it('rejects an invalid direction (@IsEnum(MessageDirection))', () => {
     const dto = fromQuery({ q: 'hello', direction: 'sideways' });
     expect(validateSync(dto).some(e => e.property === 'direction')).toBe(true);

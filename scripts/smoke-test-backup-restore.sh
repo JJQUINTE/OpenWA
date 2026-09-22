@@ -472,4 +472,33 @@ else
 fi
 
 echo ""
+echo "==> (l) an unwritable BACKUP_DIR fails before anything is staged"
+# The shipped container mounts its root read-only, so the default ./backups cannot be created. The
+# run must stop up front, not after copying every database and media file into /tmp.
+if [ "$(id -u)" -ne 0 ]; then
+  L="$WORK/l"
+  mkdir -p "$L/data" "$L/ro"
+  make_fixture "$L/data/main.sqlite" "l-main"
+  make_fixture "$L/data/openwa.sqlite" "l-data"
+  chmod a-w "$L/ro"
+  set +e
+  OUT_L="$(cd "$L" && BACKUP_DIR="$L/ro/out" "$BACKUP" 2>&1)"
+  RC_L=$?
+  set -e
+  chmod u+w "$L/ro"
+  if [ "$RC_L" -eq 0 ]; then
+    fail "(l) backup.sh exited 0 with an unwritable BACKUP_DIR"
+  fi
+  if ! printf '%s' "$OUT_L" | grep -q 'BACKUP_DIR=.* is not writable'; then
+    fail "(l) error message does not name the unwritable BACKUP_DIR"
+  fi
+  if printf '%s' "$OUT_L" | grep -q 'Backing up'; then
+    fail "(l) state was staged before the BACKUP_DIR check"
+  fi
+  pass "(l) unwritable BACKUP_DIR -> non-zero exit before staging, clear message"
+else
+  echo "SKIP: (l) running as root, which ignores the permission bits this case relies on"
+fi
+
+echo ""
 echo "All smoke tests passed!"

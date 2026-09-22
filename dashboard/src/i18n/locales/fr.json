@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} disponible",
     "loading": "Chargement...",
     "cancel": "Annuler",
     "delete": "Supprimer",
@@ -215,6 +216,7 @@
     "noSessions": "Aucune session trouvée. Créez-en une pour commencer.",
     "view": "Voir",
     "disconnect": "Déconnecter",
+    "disconnectFailed": "Impossible de déconnecter la session",
     "errorPrefix": "Erreur : {{message}}",
     "loadError": "Échec du chargement des données",
     "charts": {
@@ -225,6 +227,7 @@
         "30d": "30 j"
       },
       "overTime": "Messages au fil du temps",
+      "overTimeUtcDays": "Messages au fil du temps (jours en UTC)",
       "byType": "Messages par type",
       "topChats": "Discussions principales",
       "sent": "Envoyés",
@@ -344,7 +347,8 @@
       "actionRequiredTitle": "Action requise",
       "actionRequiredDesc": "Cette session nécessite votre attention. Ouvrez la session pour voir quoi faire.",
       "failedTitle": "Échec de la session",
-      "failedDesc": "Le démarrage de la session WhatsApp a échoué. Ouvrez la session pour en voir la raison."
+      "failedDesc": "Le démarrage de la session WhatsApp a échoué. Ouvrez la session pour en voir la raison.",
+      "stopFailedTitle": "Échec de l'arrêt"
     },
     "card": {
       "phone": "Téléphone",
@@ -463,7 +467,10 @@
     },
     "empty": {
       "title": "Aucun webhook configuré",
-      "description": "Ajoutez un webhook pour recevoir des notifications d'événements en temps réel"
+      "description": "Ajoutez un webhook pour recevoir des notifications d'événements en temps réel",
+      "loadErrorTitle": "Impossible de charger les webhooks",
+      "forbiddenTitle": "Aucun accès aux webhooks",
+      "forbiddenDesc": "Les webhooks nécessitent une clé API avec le rôle opérateur ou administrateur."
     },
     "toasts": {
       "created": "Webhook créé avec succès",
@@ -484,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "Lorsqu'un message est reçu",
       "message.sent": "Lorsqu'un message est envoyé",
-      "session.connected": "Lorsqu'une session se connecte",
-      "session.disconnected": "Lorsqu'une session se déconnecte",
+      "message.ack": "Lorsque l'état de remise ou de lecture d'un message change",
+      "message.failed": "Lorsqu'un message sortant n'a pas pu être remis",
+      "message.revoked": "Lorsqu'un message est supprimé pour tout le monde",
+      "message.reaction": "Lorsqu'une réaction est ajoutée, modifiée ou retirée",
+      "message.edited": "Lorsqu'un message est modifié",
+      "session.status": "Lorsque l'état d'une session change",
       "session.qr": "Lorsqu'un code QR est généré",
+      "session.authenticated": "Lorsqu'une session est associée et prête",
+      "session.disconnected": "Lorsqu'une session se déconnecte",
+      "session.reconnect_loop": "Lorsqu'une session échoue à se reconnecter à plusieurs reprises",
+      "session.restriction": "Lorsque WhatsApp restreint le compte ou lève une restriction",
+      "presence.update": "Lorsqu'un chat suivi passe en ligne, écrit ou se déconnecte",
+      "group.join": "Lorsque des participants rejoignent un groupe ou y sont ajoutés",
+      "group.leave": "Lorsque des participants quittent un groupe ou en sont retirés",
+      "group.update": "Lorsque le nom, la description ou les paramètres d'un groupe changent",
+      "group.join_request": "Lorsque quelqu'un demande à rejoindre un groupe administré par cette session",
+      "call.received": "Lorsqu'un appel entrant commence à sonner",
+      "call.accepted": "Lorsqu'un appel est décroché",
+      "call.rejected": "Lorsqu'un appel est refusé",
+      "call.missed": "Lorsqu'un appel reste sans réponse",
+      "status.received": "Lorsqu'un contact publie un statut",
       "all": "Tous les événements"
     }
   },
@@ -644,6 +669,12 @@
     "loadingGroups": "Chargement des groupes...",
     "noGroupsFound": "Aucun groupe trouvé",
     "selectGroupHint": "Sélectionnez un groupe depuis votre WhatsApp",
+    "selectAllGroups": "Tout sélectionner",
+    "selectMatchingGroups": "Sélectionner les résultats",
+    "clearGroupSelection": "Effacer",
+    "groupsSelectedCount": "Sélectionnés : {{count}}/{{max}}",
+    "noGroupsMatch": "Aucun groupe ne correspond à votre recherche",
+    "forwardUsesFirstGroup": "Le transfert n'utilise que le premier groupe sélectionné, comme discussion d'origine.",
     "phoneHint": "Utilisez le format international sans espaces",
     "messageType": "Type de message",
     "types": {
@@ -701,17 +732,29 @@
     "bulkRecipientsCount": "Destinataires : {{count}}",
     "bulkDelay": "Délai entre les messages (ms)",
     "bulkDelayHint": "1000–60000 ms (par défaut : 3000)",
+    "bulkMediaKind": "Envoyer en tant que",
+    "bulkMediaHint": "Avec une pièce jointe, le message devient sa légende. Un fichier sélectionné est envoyé dans la requête elle-même : pour un gros fichier et de nombreux destinataires, utilisez plutôt une URL de média publique.",
+    "bulkMediaTooLarge": "Ce fichier est trop volumineux pour être envoyé directement à {{count}} destinataires : à ce nombre, chaque fichier peut faire au maximum {{size}}. Utilisez plutôt une URL de média publique ou envoyez à moins de destinataires.",
+    "bulkMediaUrlInvalid": "Saisissez une adresse complète en http:// ou https://, par exemple https://example.com/file.pdf.",
+    "bulkCaptionTooLong": "Avec une pièce jointe, le message est envoyé comme sa légende, limitée à {{max}} caractères ({{count}} actuellement).",
+    "bulkAudioNoCaption": "L'audio est envoyé sans légende, ce texte ne serait donc pas envoyé. Videz le message ou choisissez un autre type.",
     "send": "Envoyer le message",
     "sending": "Envoi...",
+    "sendingProgress": "Envoi {{current}}/{{total}}...",
     "viewOnly": "Lecture seule",
     "responseEmpty": "Envoyez un message pour voir la réponse de l'API",
     "successLabel": "Succès",
     "failedLabel": "Échec",
+    "groupsSentSummary": "{{sent}}/{{total}} envoyés",
+    "groupSendCancelled": "{{count}}, annulés",
+    "groupSendStopped": "{{count}}, arrêté après HTTP {{status}}",
     "response": {
       "timestamp": "Horodatage",
       "messageId": "ID du message",
       "batchId": "ID du lot",
-      "error": "Erreur"
+      "error": "Erreur",
+      "groups": "Groupes",
+      "notSent": "Non envoyés"
     },
     "sendFailed": "Échec de l'envoi du message",
     "notOnWhatsApp": "Ce numéro n'est pas enregistré sur WhatsApp",

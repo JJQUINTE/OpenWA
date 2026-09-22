@@ -35,6 +35,7 @@ import {
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useToast } from '../hooks/useToast';
+import { useRole } from '../hooks/useRole';
 import { PageHeader } from '../components/PageHeader';
 import { GlobalSearch } from '../components/GlobalSearch';
 import {
@@ -120,6 +121,7 @@ export function Chats() {
   const { t } = useTranslation();
   useDocumentTitle(t('nav.chats'));
   const { error: showErrorToast, warning: showWarningToast } = useToast();
+  const { canWrite } = useRole();
 
   // Sessions list & active session
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -344,11 +346,12 @@ export function Chats() {
   // where those queued reads belong.
   useEffect(() => () => markReadCoalescer.flush(), [markReadCoalescer]);
 
+  // Marking a chat read is an operator write; a read-only key would only collect 403 toasts.
   const markChatRead = useCallback(
     (chatId: string) => {
-      markReadCoalescer.call(chatId);
+      if (canWrite) markReadCoalescer.call(chatId);
     },
-    [markReadCoalescer],
+    [markReadCoalescer, canWrite],
   );
 
   // 3. WebSocket integration for real-time messages
@@ -394,7 +397,8 @@ export function Chats() {
       let needsSidebarRefetch = false;
       setChats(prevChats => {
         const result = applyIncomingToChatList(prevChats, newMsg, {
-          activeChatId: activeChat?.id,
+          // Only a chat this key marks read is exempt from the unread count (see markChatRead).
+          activeChatId: canWrite ? activeChat?.id : undefined,
           // A location message's body is the (multi-KB) base64 map thumbnail; show a label instead.
           locationLabel: `📍 ${t('chats.media.location')}`,
         });
@@ -405,7 +409,7 @@ export function Chats() {
         void loadChats(selectedSessionId);
       }
     },
-    [selectedSessionId, activeChat, loadChats, markChatRead, appendMessage, onMessageAppended, t],
+    [selectedSessionId, activeChat, canWrite, loadChats, markChatRead, appendMessage, onMessageAppended, t],
   );
 
   const handleIncomingMessageAck = useCallback(
@@ -671,9 +675,11 @@ export function Chats() {
   useEffect(() => {
     if (!activeChat) return;
     markChatRead(activeChat.id);
-    setChats(prev => prev.map(c => (c.id === activeChat.id ? { ...c, unreadCount: 0 } : c)));
+    // A read-only key sends no mark-as-read, so the chat stays unread on the gateway; clearing the
+    // badge here would only have the next chat-list load bring it back.
+    if (canWrite) setChats(prev => prev.map(c => (c.id === activeChat.id ? { ...c, unreadCount: 0 } : c)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChat?.id, markChatRead]);
+  }, [activeChat?.id, markChatRead, canWrite]);
 
   // --- Global search: jump to a hit's chat (and best-effort scroll to the message) ---
   // A cross-session hit switches session, which asynchronously reloads the chats list — so the

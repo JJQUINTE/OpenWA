@@ -6,6 +6,7 @@ import type { Status, StatusResult, StatusPostOptions } from '../../engine/inter
 import { assertBase64WithinMediaCap, stripBase64DataUri } from '../message/media-cap.util';
 import { HookManager, applySendingGate } from '../../core/hooks';
 import { SendPacingService, countsTowardSendBreaker } from '../message/send-pacing.service';
+import { isMediaUrl } from '../../common/media/media-url';
 
 /** Stored status media is only ever an image, a video or a voice note; a sender-declared mimetype
  * outside that is served as inert octet-stream so the media endpoint can't be turned into active
@@ -18,6 +19,8 @@ import { SendPacingService, countsTowardSendBreaker } from '../message/send-paci
  * the Content-Type parser, and `image/svg+xml;charset=utf-8` still renders as SVG. */
 const SAFE_STATUS_MIMETYPE = /^(image|video|audio)\//;
 const SCRIPTABLE_SVG_MIMETYPE = /^image\/svg\+xml\s*(;|$)/;
+
+const BASE64_TEXT = /^[A-Za-z0-9+/_\-\s]*=*\s*$/;
 
 @Injectable()
 export class StatusService {
@@ -49,9 +52,9 @@ export class StatusService {
 
   /**
    * Re-apply the media guards to whatever the gate returned. A plugin may rewrite `media.data`, and
-   * a rewritten payload has to clear the same data-URI and size checks as the original — this is
+   * a rewritten payload has to clear the same data-URI, url and size checks as the original — this is
    * what the chat path gets for free by gating first and calling buildMediaInput afterwards
-   * (`message.service.ts`). Here the guards run before the gate too, so a plugin cannot use a
+   * (`message.service.ts`). Here the size guard runs before the gate too, so a plugin cannot use a
    * rewrite to slip past `MEDIA_DOWNLOAD_MAX_BYTES`.
    */
   private guardGatedMedia(media: { mimetype: string; data: string }): { mimetype: string; data: string } {
@@ -59,6 +62,12 @@ export class StatusService {
     // field. Both helpers are safe over either form: stripping a data-URI prefix leaves a URL
     // untouched, and the decoded-byte cap on a URL-length string is trivially satisfied.
     const data = stripBase64DataUri(media.data) ?? media.data;
+    // Both engines fetch only an http(s) URL and decode anything else as base64, so a value with another
+    // scheme, or with a character base64 does not use (a path with an extension), would be posted as
+    // noise. A path made only of base64 characters cannot be told apart from base64 and is sent as such.
+    if (!isMediaUrl(data) && !BASE64_TEXT.test(data)) {
+      throw new BadRequestException('media must be an absolute http(s) URL or base64');
+    }
     assertBase64WithinMediaCap(data);
     return { mimetype: media.mimetype, data };
   }

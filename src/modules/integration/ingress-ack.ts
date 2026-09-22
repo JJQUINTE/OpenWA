@@ -82,14 +82,19 @@ export function safeAckHeaders(headers: Record<string, string> | undefined): Rec
  */
 const HONORED_ACK_MEDIA_TYPES = new Set(['application/json', 'text/plain']);
 
-/** The Content-Type to emit for an ack: the declared value when allowlisted, else text/plain. Total. */
+/**
+ * The Content-Type to emit for an ack: the declared media type when allowlisted, else text/plain. Total.
+ * Only the bare media type is returned. Express rewrites the charset of a string body to utf-8 anyway,
+ * and a declared parameter list it cannot parse (`application/json;`) makes send() throw, which
+ * answered 500 to a delivery that had already been persisted.
+ */
 export function ackContentType(headers: Record<string, string> | undefined): string {
   const declared = headers
     ? Object.entries(headers).find(([name]) => name.toLowerCase() === 'content-type')?.[1]
     : undefined;
   if (typeof declared !== 'string' || !declared) return 'text/plain';
   const mediaType = declared.split(';', 1)[0].trim().toLowerCase();
-  return HONORED_ACK_MEDIA_TYPES.has(mediaType) ? declared : 'text/plain';
+  return HONORED_ACK_MEDIA_TYPES.has(mediaType) ? mediaType : 'text/plain';
 }
 
 function substitute(template: string, ctx: AckRenderCtx): string {

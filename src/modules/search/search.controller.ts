@@ -5,6 +5,7 @@ import { RequireRole, CurrentApiKey } from '../auth/decorators/auth.decorators';
 import { ApiKey, ApiKeyRole } from '../auth/entities/api-key.entity';
 import { SearchService } from './search.service';
 import { SearchQueryDto } from './dto/search-query.dto';
+import { SEARCH_OFFSET_MAX } from './search.constants';
 import type { SearchResults } from './search.types';
 
 @ApiTags('search')
@@ -39,7 +40,12 @@ export class SearchController {
   @ApiQuery({ name: 'dateFrom', required: false, description: 'Epoch-ms lower bound (inclusive)' })
   @ApiQuery({ name: 'dateTo', required: false, description: 'Epoch-ms upper bound (inclusive)' })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max hits to return' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Pagination offset' })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: `Pagination offset, at most ${SEARCH_OFFSET_MAX}`,
+  })
   async search(@Query() dto: SearchQueryDto, @CurrentApiKey() apiKey?: ApiKey): Promise<SearchResults> {
     if (!dto.q || !dto.q.trim()) {
       throw new BadRequestException('Query parameter "q" is required and must be non-empty.');

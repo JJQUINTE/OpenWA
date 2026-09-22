@@ -21,6 +21,7 @@ import {
   SessionConfigResponseDto,
   UpdateSessionConfigDto,
   SessionProxyResponseDto,
+  SessionResponseDto,
   UpdateSessionProxyDto,
   projectSessionProxy,
 } from './dto';
@@ -318,8 +319,10 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
       action: 'create',
     });
 
-    // Execute hook after session created (outside transaction since hooks do external I/O)
-    await this.hookManager.execute('session:created', saved, {
+    // Execute hook after session created (outside transaction since hooks do external I/O). Plugins get
+    // the session as the REST API returns it, not the entity: the entity carries proxyUrl (credentials
+    // allowed) and the config blob, which no response ever exposes.
+    await this.hookManager.execute('session:created', SessionResponseDto.fromEntity(saved, this.isActive(saved.id)), {
       sessionId: saved.id,
       source: 'SessionService',
     });

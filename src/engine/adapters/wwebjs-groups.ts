@@ -19,6 +19,7 @@ import { GroupNotFoundError } from '../../common/errors/group-not-found.error';
 import { InvalidInviteCodeError } from '../../common/errors/invalid-invite-code.error';
 import { toMessageMedia } from './wwebjs-messaging';
 import { type WwebjsEngineHost, withPage } from './wwebjs-host';
+import { isProtocolTimeout } from './wwebjs-lifecycle';
 
 /**
  * Extracts the JID of the parent community a group is linked to, if any.
@@ -150,6 +151,10 @@ export class WwebjsGroups {
       if (this.host.isPageTransportError(error)) {
         this.host.reportIfPageTransportError(error, 'getGroupInfo');
         throw new EngineTransportError(`Transport died while reading group ${groupId}`);
+      }
+      // A command that outran the protocol budget got no answer either way: a 503, but no death.
+      if (isProtocolTimeout(error)) {
+        throw new EngineTransportError(`WhatsApp Web did not answer the read of group ${groupId} in time`);
       }
       this.host.logger.warn(`Failed to get group: ${groupId}`, { error: String(error) });
       return null;
@@ -388,6 +393,9 @@ export class WwebjsGroups {
         this.host.reportIfPageTransportError(error, 'getGroupJoinInfo');
         throw new EngineTransportError(`Transport died while previewing invite ${inviteCode}`);
       }
+      if (isProtocolTimeout(error)) {
+        throw new EngineTransportError(`WhatsApp Web did not answer the preview of invite ${inviteCode} in time`);
+      }
       this.host.logger.debug('getInviteInfo rejected; treating the invite as not found', {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -431,6 +439,11 @@ export class WwebjsGroups {
       if (this.host.isPageTransportError(error)) {
         this.host.reportIfPageTransportError(error, 'joinGroupViaInviteCode');
         throw new EngineTransportError('Transport died while accepting the group invite');
+      }
+      // The join may still land WhatsApp-side, so this is the route's "may or may not have been
+      // applied" 503, never "invalid invite".
+      if (isProtocolTimeout(error)) {
+        throw new EngineTransportError('WhatsApp Web did not answer the group invite acceptance in time');
       }
       this.host.logger.warn(`Failed to accept group invite: ${String(error)}`);
       groupId = undefined;

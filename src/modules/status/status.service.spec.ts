@@ -187,6 +187,23 @@ describe('StatusService media validation and selection', () => {
     expect(engine.postVideoStatus).toHaveBeenCalledWith(expect.objectContaining({ data: 'QUJD' }), expect.anything());
   });
 
+  it('refuses media that is neither an http(s) URL nor base64, including a message:sending rewrite', async () => {
+    for (const media of [{ url: 'cdn/banner.jpg' }, { url: 'ftp://host/a.jpg' }, { base64: 'data:image/png,AAAA' }]) {
+      await expect(service.postImageStatus('s1', media, { recipients: ['1@c.us'] })).rejects.toThrow(
+        'media must be an absolute http(s) URL or base64',
+      );
+    }
+    hookManager.execute.mockImplementationOnce((_event: string, data: unknown) => {
+      const gated = data as { input: object };
+      const media = { mimetype: 'image/jpeg', data: 'cdn/banner.jpg' };
+      return Promise.resolve({ continue: true, data: { ...gated, input: { ...gated.input, media } } });
+    });
+    await expect(
+      service.postImageStatus('s1', { url: 'https://example.com/banner.jpg' }, { recipients: ['1@c.us'] }),
+    ).rejects.toThrow('media must be an absolute http(s) URL or base64');
+    expect(engine.postImageStatus).not.toHaveBeenCalled();
+  });
+
   describe('voice status', () => {
     // Ogg/Opus is the only thing WhatsApp plays as a status voice note, and neither engine
     // transcodes — so the default has to be that, not a generic audio type.

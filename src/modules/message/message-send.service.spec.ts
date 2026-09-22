@@ -299,6 +299,35 @@ describe('MessageSendService', () => {
       expect(calls[1][1]).toMatchObject({ message: { status: MessageStatus.FAILED } });
     });
 
+    it('logs an engine-side send failure with the session, chat and type', async () => {
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger,
+        'warn',
+      );
+      const pageError = new Error('t');
+      pageError.name = 't';
+      mockEngine.sendTextMessage.mockRejectedValueOnce(pageError);
+
+      await expect(service.sendText('sess-1', { chatId: '628123456789@c.us', text: 'hi' })).rejects.toThrow();
+
+      expect(warn).toHaveBeenCalledWith(
+        'Send failed in the engine (text)',
+        expect.objectContaining({ sessionId: 'sess-1', chatId: '628123456789@c.us', error: 't: t' }),
+      );
+    });
+
+    it('does not log a client-fault send failure', async () => {
+      const warn = jest.spyOn(
+        (service as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger,
+        'warn',
+      );
+      mockEngine.sendTextMessage.mockRejectedValueOnce(new BadRequestException('bad chat id'));
+
+      await expect(service.sendText('sess-1', { chatId: '628123456789@c.us', text: 'hi' })).rejects.toThrow();
+
+      expect(warn).not.toHaveBeenCalledWith('Send failed in the engine (text)', expect.anything());
+    });
+
     it('reconciles provider indexes when the send echo won the race: upsert the surviving row + drop the ghost (#906)', async () => {
       const echoRow = {
         id: 'echo-uuid-9',
@@ -1162,6 +1191,22 @@ describe('MessageSendService', () => {
   // ── buildMediaInput (via sendImage) ───────────────────────────────
 
   describe('buildMediaInput validation', () => {
+    // A plugin send and a message:sending rewrite never pass the DTO, and both engines decode anything
+    // that is not an http(s) URL as base64.
+    it('refuses a url that is not absolute http(s), including one a hook rewrote', async () => {
+      await expect(service.sendImage('sess-1', { chatId: 'test@c.us', url: '/files/x.png' })).rejects.toThrow(
+        'url must be an absolute http(s) URL',
+      );
+      (hookManager.execute as jest.Mock).mockResolvedValueOnce({
+        continue: true,
+        data: { sessionId: 'sess-1', type: 'image', input: { chatId: 'test@c.us', url: 's3://bucket/key' } },
+      });
+      await expect(service.sendImage('sess-1', { chatId: 'test@c.us', url: 'https://e.com/i.jpg' })).rejects.toThrow(
+        'url must be an absolute http(s) URL',
+      );
+      expect(mockEngine.sendImageMessage).not.toHaveBeenCalled();
+    });
+
     it('should throw when neither url nor base64 is provided', async () => {
       await expect(service.sendImage('sess-1', { chatId: 'test@c.us' })).rejects.toThrow(
         'Either url or base64 must be provided',

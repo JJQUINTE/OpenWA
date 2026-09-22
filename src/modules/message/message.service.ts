@@ -364,15 +364,15 @@ export class MessageService implements PluginMessagePort {
    * A `@lid` input forward-resolves to its phone instead of minting `<lid-digits>@c.us` (the lid's
    * digits are NOT a phone), so rows stored under the resolved form still match a raw-lid filter.
    */
-  private resolveJidCandidates(value: string): Promise<string[]> {
+  private async resolveJidCandidates(value: string): Promise<string[]> {
     // Rules live in the shared helper (engine/identity/jid-candidates) so this filter and the
-    // API-key chat scope cannot disagree about which ids refer to the same entity. The store's
-    // cache-based lookups are passed through unchanged: this path is a read filter, not an
-    // authorization decision, so the evictable mirror is acceptable here.
-    return expandJidCandidates(value, {
-      resolveLid: lid => this.lidMappingStore.getCached(lid) ?? null,
-      lidsForPhone: phone => this.lidMappingStore.lidsForPhone(phone),
+    // API-key chat scope cannot disagree about which ids refer to the same entity. The raw input is
+    // kept as a candidate too: a row stored under a non-folded spelling must still match it.
+    const expanded = await expandJidCandidates(value, {
+      resolveLid: lid => this.lidMappingStore.findPhoneForLid(lid),
+      lidsForPhone: phone => this.lidMappingStore.findLidsForPhone(phone),
     });
+    return [...new Set([value, ...expanded])];
   }
 
   /**

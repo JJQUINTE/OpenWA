@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} disponible",
     "loading": "Cargando...",
     "cancel": "Cancelar",
     "delete": "Eliminar",
@@ -215,6 +216,7 @@
     "noSessions": "No se encontraron sesiones. Crea una para empezar.",
     "view": "Ver",
     "disconnect": "Desconectar",
+    "disconnectFailed": "No se pudo desconectar la sesión",
     "errorPrefix": "Error: {{message}}",
     "loadError": "Error al cargar los datos",
     "charts": {
@@ -225,6 +227,7 @@
         "30d": "30 d"
       },
       "overTime": "Mensajes a lo largo del tiempo",
+      "overTimeUtcDays": "Mensajes a lo largo del tiempo (días en UTC)",
       "byType": "Mensajes por tipo",
       "topChats": "Chats principales",
       "sent": "Enviados",
@@ -344,7 +347,8 @@
       "actionRequiredTitle": "Acción requerida",
       "actionRequiredDesc": "Esta sesión necesita tu atención. Abre la sesión para ver qué hacer.",
       "failedTitle": "Sesión fallida",
-      "failedDesc": "La sesión de WhatsApp no pudo iniciarse. Abre la sesión para ver el motivo."
+      "failedDesc": "La sesión de WhatsApp no pudo iniciarse. Abre la sesión para ver el motivo.",
+      "stopFailedTitle": "Error al detener"
     },
     "card": {
       "phone": "Teléfono",
@@ -463,7 +467,10 @@
     },
     "empty": {
       "title": "No hay webhooks configurados",
-      "description": "Añade un webhook para recibir notificaciones de eventos en tiempo real"
+      "description": "Añade un webhook para recibir notificaciones de eventos en tiempo real",
+      "loadErrorTitle": "No se pudieron cargar los webhooks",
+      "forbiddenTitle": "Sin acceso a los webhooks",
+      "forbiddenDesc": "Los webhooks requieren una clave API con el rol de operador o administrador."
     },
     "toasts": {
       "created": "Webhook creado correctamente",
@@ -484,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "Cuando se recibe un mensaje",
       "message.sent": "Cuando se envía un mensaje",
-      "session.connected": "Cuando una sesión se conecta",
-      "session.disconnected": "Cuando una sesión se desconecta",
+      "message.ack": "Cuando cambia el estado de entrega o lectura de un mensaje",
+      "message.failed": "Cuando falla la entrega de un mensaje saliente",
+      "message.revoked": "Cuando se elimina un mensaje para todos",
+      "message.reaction": "Cuando se añade, cambia o quita una reacción",
+      "message.edited": "Cuando se edita un mensaje",
+      "session.status": "Cuando cambia el estado de una sesión",
       "session.qr": "Cuando se genera un código QR",
+      "session.authenticated": "Cuando una sesión se vincula y queda lista",
+      "session.disconnected": "Cuando una sesión se desconecta",
+      "session.reconnect_loop": "Cuando una sesión sigue sin poder reconectarse",
+      "session.restriction": "Cuando WhatsApp restringe la cuenta o levanta una restricción",
+      "presence.update": "Cuando un chat suscrito se conecta, escribe o se desconecta",
+      "group.join": "Cuando participantes se unen a un grupo o son añadidos",
+      "group.leave": "Cuando participantes salen de un grupo o son eliminados",
+      "group.update": "Cuando cambian el nombre, la descripción o los ajustes de un grupo",
+      "group.join_request": "Cuando alguien solicita unirse a un grupo que administra esta sesión",
+      "call.received": "Cuando empieza a sonar una llamada entrante",
+      "call.accepted": "Cuando se contesta una llamada",
+      "call.rejected": "Cuando se rechaza una llamada",
+      "call.missed": "Cuando una llamada no se contesta",
+      "status.received": "Cuando un contacto publica un estado",
       "all": "Todos los eventos"
     }
   },
@@ -595,6 +620,12 @@
     "loadingGroups": "Cargando grupos...",
     "noGroupsFound": "No se encontraron grupos",
     "selectGroupHint": "Selecciona un grupo de tu WhatsApp",
+    "selectAllGroups": "Seleccionar todos",
+    "selectMatchingGroups": "Seleccionar coincidencias",
+    "clearGroupSelection": "Limpiar",
+    "groupsSelectedCount": "Seleccionados: {{count}}/{{max}}",
+    "noGroupsMatch": "Ningún grupo coincide con tu búsqueda",
+    "forwardUsesFirstGroup": "Reenviar usa solo el primer grupo seleccionado, como chat de origen.",
     "phoneHint": "Usa formato internacional sin espacios",
     "messageType": "Tipo de mensaje",
     "types": {
@@ -652,17 +683,29 @@
     "bulkRecipientsCount": "Destinatarios: {{count}}",
     "bulkDelay": "Retraso entre mensajes (ms)",
     "bulkDelayHint": "1000–60000 ms (predeterminado: 3000)",
+    "bulkMediaKind": "Enviar como",
+    "bulkMediaHint": "Con un adjunto, el mensaje pasa a ser su pie de foto. Un archivo seleccionado viaja dentro de la solicitud, así que los archivos grandes para muchos destinatarios necesitan una URL de medios pública.",
+    "bulkMediaTooLarge": "Este archivo es demasiado grande para enviarlo directamente a {{count}} destinatarios: con esa cantidad, cada archivo puede ocupar como máximo {{size}}. Usa una URL de medios pública o envía a menos destinatarios.",
+    "bulkMediaUrlInvalid": "Usa una dirección completa con http:// o https://, por ejemplo https://example.com/file.pdf.",
+    "bulkCaptionTooLong": "Con un adjunto, el mensaje se envía como su pie de foto, que está limitado a {{max}} caracteres (ahora {{count}}).",
+    "bulkAudioNoCaption": "El audio se envía sin pie, así que este texto no se enviaría. Borra el mensaje o elige otro tipo.",
     "send": "Enviar mensaje",
     "sending": "Enviando...",
+    "sendingProgress": "Enviando {{current}}/{{total}}...",
     "viewOnly": "Solo lectura",
     "responseEmpty": "Envía un mensaje para ver la respuesta de la API",
     "successLabel": "Éxito",
     "failedLabel": "Fallido",
+    "groupsSentSummary": "{{sent}}/{{total}} enviados",
+    "groupSendCancelled": "{{count}}, cancelados",
+    "groupSendStopped": "{{count}}, detenido tras HTTP {{status}}",
     "response": {
       "timestamp": "Fecha/Hora",
       "messageId": "ID de mensaje",
       "batchId": "ID del lote",
-      "error": "Error"
+      "error": "Error",
+      "groups": "Grupos",
+      "notSent": "No enviados"
     },
     "sendFailed": "Error al enviar el mensaje",
     "notOnWhatsApp": "Este número no está registrado en WhatsApp",

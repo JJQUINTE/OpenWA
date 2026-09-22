@@ -76,7 +76,8 @@ describe('resolveMcpReadOnly (secure-by-default MCP read-only flag)', () => {
 // after key validation, so a missing/invalid-key flood would otherwise reach a DB lookup unthrottled.
 // createIpThrottle gates by resolved client IP BEFORE auth and answers with a JSON-RPC 429.
 describe('createIpThrottle (pre-auth per-IP MCP throttle)', () => {
-  const makeReq = (ip: string): Request => ({ socket: { remoteAddress: ip }, headers: {} }) as unknown as Request;
+  const makeReq = (ip: string, body?: unknown): Request =>
+    ({ socket: { remoteAddress: ip }, headers: {}, body }) as unknown as Request;
 
   type ResMock = { status: jest.Mock; json: jest.Mock; statusCode?: number; body?: unknown };
   const makeRes = (): ResMock => {
@@ -114,6 +115,44 @@ describe('createIpThrottle (pre-auth per-IP MCP throttle)', () => {
     const next = jest.fn();
     throttle(makeReq('2.2.2.2'), makeRes() as unknown as Response, next);
     expect(next).toHaveBeenCalledWith();
+  });
+
+  // Every element of a JSON-RPC batch is dispatched (and each tools/call runs its own key lookup and
+  // auth-failure audit), so the budget is charged per message, not per HTTP request.
+  const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'SessionFindAll', arguments: {} } };
+
+  it('rejects a batch larger than the remaining per-IP budget', () => {
+    const throttle = createIpThrottle(new KeyRateLimiter(2, 60_000));
+    const next = jest.fn();
+    const res = makeRes();
+    throttle(makeReq('1.2.3.4', [call, call, call]), res as unknown as Response, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect((res.body as { error?: { code?: number } }).error?.code).toBe(-32000);
+  });
+
+  it('charges each batch element, so the next request after a full batch is throttled', () => {
+    const throttle = createIpThrottle(new KeyRateLimiter(2, 60_000));
+    const next1 = jest.fn();
+    throttle(makeReq('1.2.3.4', [call, call]), makeRes() as unknown as Response, next1);
+    expect(next1).toHaveBeenCalledWith();
+
+    const next2 = jest.fn();
+    const res2 = makeRes();
+    throttle(makeReq('1.2.3.4', call), res2 as unknown as Response, next2);
+    expect(next2).not.toHaveBeenCalled();
+    expect(res2.status).toHaveBeenCalledWith(429);
+  });
+
+  it('charges an empty batch as one message', () => {
+    const throttle = createIpThrottle(new KeyRateLimiter(1, 60_000));
+    const next1 = jest.fn();
+    throttle(makeReq('1.2.3.4', []), makeRes() as unknown as Response, next1);
+    expect(next1).toHaveBeenCalledWith();
+
+    const next2 = jest.fn();
+    throttle(makeReq('1.2.3.4', call), makeRes() as unknown as Response, next2);
+    expect(next2).not.toHaveBeenCalled();
   });
 });
 
@@ -202,6 +241,7 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
     tool: AnyToolDescriptor;
     authService: { validateApiKey: jest.Mock; hasPermission: jest.Mock };
     auditService: { logWarn: jest.Mock };
+    adapter: { post: jest.Mock; get: jest.Mock; delete: jest.Mock };
   }
 
   const mount = (): Harness => {
@@ -221,6 +261,8 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
       post: jest.fn((_path: string, ...handlers: unknown[]) => {
         routeHandlers = handlers;
       }),
+      get: jest.fn(),
+      delete: jest.fn(),
     };
     mountMcpServer(
       adapter as unknown as Parameters<typeof mountMcpServer>[0],
@@ -231,10 +273,10 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
       { readOnly: false },
       auditService as unknown as AuditService,
     );
-    // adapter.post received [createIpThrottle(...), express.json(...), mcpHandler]; the tests drive
+    // adapter.post received [express.json(...), createIpThrottle(...), mcpHandler]; the tests drive
     // the terminal handler directly with a pre-parsed body, as the file's middleware harness does.
     const routeHandler = routeHandlers[routeHandlers.length - 1] as Harness['routeHandler'];
-    return { routeHandler, tool, authService, auditService };
+    return { routeHandler, tool, authService, auditService, adapter };
   };
 
   type ResMock = { on: jest.Mock; status: jest.Mock; json: jest.Mock; headersSent: boolean };
@@ -267,6 +309,32 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
     expect(mockRegisteredTools).toHaveLength(1);
     return mockRegisteredTools[0].callback;
   };
+
+  it('answers GET and DELETE with a JSON-RPC 405 carrying Allow: POST (stateless, no SSE stream)', () => {
+    const h = mount();
+    for (const verb of ['get', 'delete'] as const) {
+      expect(h.adapter[verb]).toHaveBeenCalledWith('/mcp', expect.any(Function));
+      const refuse = (h.adapter[verb].mock.calls[0] as unknown[])[1] as (req: Request, res: Response) => void;
+      const res = { status: jest.fn(), set: jest.fn(), json: jest.fn() };
+      res.status.mockReturnValue(res);
+      res.set.mockReturnValue(res);
+      refuse({} as Request, res as unknown as Response);
+      expect(res.status).toHaveBeenCalledWith(405);
+      expect(res.set).toHaveBeenCalledWith('Allow', 'POST');
+      expect(res.json).toHaveBeenCalledWith({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed.' },
+        id: null,
+      });
+    }
+  });
+
+  it('parses the body before the per-IP throttle so a batch is charged per message', () => {
+    const h = mount();
+    const [path, parser] = h.adapter.post.mock.calls[0] as unknown[];
+    expect(path).toBe('/mcp');
+    expect((parser as { name?: string }).name).toBe('jsonParser');
+  });
 
   it('dispatches the request to transport.handleRequest with the parsed body', async () => {
     const h = mount();

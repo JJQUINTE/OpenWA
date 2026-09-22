@@ -35,6 +35,19 @@ describe('profile DTO validation', () => {
     expect(await errorsFor(SetProfilePictureDto, { url: 'not-a-url', base64: 'QUJD' })).toHaveLength(0);
   });
 
+  it('accepts only an absolute http(s) url, the only form the engines fetch', async () => {
+    for (const url of ['example.com/a.jpg', 'ftp://example.com/a.jpg']) {
+      expect((await errorsFor(SetProfilePictureDto, { url })).length).toBeGreaterThan(0);
+    }
+    for (const url of ['https://example.com/a.jpg', 'HTTPS://example.com/a.jpg', 'http://example.com/a.jpg']) {
+      expect(await errorsFor(SetProfilePictureDto, { url })).toHaveLength(0);
+    }
+    expect(await errorsFor(SetProfilePictureDto, { url: 'example.com/a.jpg', base64: 'QUJD' })).toHaveLength(0);
+    // A base64 that is only a data-URI prefix strips to nothing, so the url is what would be sent.
+    const prefixOnly = { url: 'cdn/avatar.jpg', base64: 'data:image/jpeg;base64,', mimetype: 'image/jpeg' };
+    expect((await errorsFor(SetProfilePictureDto, prefixOnly)).length).toBeGreaterThan(0);
+  });
+
   it('rejects a non-image mimetype fast (400) — a profile picture is an image by definition', async () => {
     expect(
       (await errorsFor(SetProfilePictureDto, { base64: 'QUJD', mimetype: 'application/pdf' })).length,

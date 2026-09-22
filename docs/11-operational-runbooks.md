@@ -477,6 +477,14 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/messages/send-text \
 > `image: ghcr.io/rmyndharis/openwa:<tag>` — replace steps 5-6 with editing that tag and running
 > `docker compose pull`.
 
+> On Kubernetes with the chart in `charts/openwa`, back up the persistent volume and take the step 3
+> export first, then replace steps 4-8 with checking out the new release and running
+> `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults to the chart's
+> `appVersion`, so the checkout moves it, unless `image.tag` was set at install: `--reuse-values` keeps
+> that value, so pass `--set image.tag=<new-version>` in that case.
+> Run steps 9-12 through `kubectl port-forward` to the release's Service. `helm rollback` keeps the
+> volume, so read the notes on restoring `sessions/` below before relying on it.
+
 **Verification:**
 
 ```bash
@@ -581,6 +589,18 @@ OPENWA_DATA_DIR=/srv/openwa/data \
 > The data directory is a Docker **named volume** (`openwa-data`) in the production
 > compose. Run the script where that volume is mounted — e.g. point `OPENWA_DATA_DIR`
 > at the volume's mountpoint, or run it inside a container with `/app/data` mounted.
+>
+> The shipped compose file and Helm chart mount the container root read-only, so the default
+> `./backups` (`/app/backups`) cannot be created there and the script refuses to start. Inside the
+> container, write to the data volume and then copy the archive off it, since an archive on the same
+> volume as the data does not survive losing that volume:
+>
+> ```bash
+> docker exec -e BACKUP_DIR=/app/data/backups openwa-api ./scripts/backup.sh
+> docker cp openwa-api:/app/data/backups/. ./backups/
+> # Helm: kubectl exec <pod> -- env BACKUP_DIR=/app/data/backups ./scripts/backup.sh
+> #       kubectl cp <pod>:/app/data/backups ./backups
+> ```
 >
 > The scripts resolve every other path the way the application does: an explicit environment value
 > first, then `./.env`, then `<data dir>/.env.generated`. Settings made through Dashboard >

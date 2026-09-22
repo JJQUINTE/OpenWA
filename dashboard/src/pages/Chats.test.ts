@@ -303,6 +303,9 @@ function installFetchStub(): void {
       const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
     }
+    if (method === 'GET' && path.startsWith('/api/search?')) {
+      return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
+    }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/status/send-text`) {
       return Promise.resolve(jsonResponse({ success: true }));
     }
@@ -583,6 +586,100 @@ test('Escape closes the open room, and is left alone while a dialog owns it', as
   await waitFor(() =>
     assert.equal(screen.queryByRole('button', { name: 'Back' }), null, 'Escape did not close the room'),
   );
+});
+
+test('Escape dismisses the message search results instead of the conversation behind them', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+
+  const search = container.querySelector('.global-search-input') as HTMLInputElement;
+  search.focus();
+  fireEvent.change(search, { target: { value: 'invoice' } });
+  await screen.findByRole('listbox');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  // assert.ok, not assert.equal(node, null): formatting a live jsdom node into the failure message spins.
+  assert.ok(!screen.queryByRole('listbox'), 'Escape left the search results open');
+  assert.ok(screen.queryByRole('button', { name: 'Back' }), 'Escape closed the room while the results owned it');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  await waitFor(() => assert.ok(!screen.queryByRole('button', { name: 'Back' }), 'Escape did not close the room'));
+});
+
+test('a read-only key is offered no status compose trigger', async () => {
+  const { screen, fireEvent } = rtl;
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+    // Reading statuses stays open to a viewer; only posting one is withheld.
+    await screen.findByText('No contacts have an active status.');
+    assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
+test('a writer key opening a chat clears its unread badge', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  const { container } = renderChats();
+  await screen.findByText('Main (15551234567)');
+  assert.ok(await screen.findByLabelText('2 unread messages'), 'the fixture chat shows no unread badge');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  await waitFor(() => assert.ok(!screen.queryByLabelText('2 unread messages'), 'opening the chat kept its badge'));
+});
+
+test('a read-only key opening a chat sends no mark-as-read', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+    // Past the mark-as-read quiet window, so a queued call would have gone out.
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+    assert.ok(!findFetchCall('POST', `/api/sessions/${SESSION.id}/chats/read`), 'a viewer key marked the chat read');
+    // The chat is still unread on the gateway, so the sidebar badge keeps its count.
+    assert.ok(
+      screen.queryByLabelText('2 unread messages'),
+      'the unread badge was cleared for a chat never marked read',
+    );
+    // A message arriving in the open chat is unread on the gateway too, so it counts.
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_002_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION.id,
+        data: {
+          id: 'wamid.live.viewer',
+          chatId: CHAT.id,
+          from: CHAT.id,
+          to: 'me',
+          body: 'second from alice',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_001_500,
+        },
+      },
+    });
+    await waitFor(() =>
+      assert.ok(screen.queryByLabelText('3 unread messages'), 'the open chat did not count the arrival'),
+    );
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
 });
 
 // Stage a file in the open room and wait for the preview banner. A non-image type is used on

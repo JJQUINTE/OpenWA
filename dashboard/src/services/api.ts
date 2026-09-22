@@ -537,6 +537,14 @@ export interface HealthStatus {
   };
 }
 
+/** GET /infra/update-check: the running version against the latest published release. */
+export interface UpdateCheck {
+  current: string;
+  latest: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+}
+
 export interface InfraStatus {
   // `builtIn` = OpenWA's own bundled container is actually running and backing this service (live),
   // not just the saved intent — falls back to the saved flag when Docker is unavailable. (#488)
@@ -818,7 +826,7 @@ export const sessionApi = {
     }),
   getStats: () => request<SessionStats>('/sessions/stats/overview'),
   getGroups: (id: string) =>
-    request<{ id: string; name: string; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
+    request<{ id: string; name?: string; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
   getChats: (id: string) => request<Chat[]>(`/sessions/${id}/chats`),
   markChatRead: (id: string, chatId: string) =>
     request<{ success: boolean }>(`/sessions/${id}/chats/read`, {
@@ -1126,6 +1134,7 @@ export const healthApi = {
 
 export const infraApi = {
   getStatus: () => request<InfraStatus>('/infra/status'),
+  getUpdateCheck: () => request<UpdateCheck>('/infra/update-check'),
   getConfig: () => request<SavedConfig>('/infra/config'),
   saveConfig: (config: SaveConfigPayload) =>
     request<{ message: string; saved: boolean; envPath: string; profiles: string[] }>('/infra/config', {

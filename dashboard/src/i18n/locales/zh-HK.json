@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} 已發佈",
     "loading": "正在載入...",
     "cancel": "取消",
     "delete": "刪除",
@@ -215,6 +216,7 @@
     "noSessions": "找不到工作階段。建立一個即可開始。",
     "view": "查看",
     "disconnect": "中斷連線",
+    "disconnectFailed": "無法中斷工作階段連線",
     "errorPrefix": "錯誤：{{message}}",
     "loadError": "載入資料失敗",
     "charts": {
@@ -225,6 +227,7 @@
         "30d": "30天"
       },
       "overTime": "訊息趨勢",
+      "overTimeUtcDays": "訊息趨勢（按 UTC 日期）",
       "byType": "按類型分類的訊息",
       "topChats": "熱門聊天",
       "sent": "已傳送",
@@ -344,7 +347,8 @@
       "actionRequiredTitle": "需要操作",
       "actionRequiredDesc": "此工作階段需要您的關注。開啟工作階段以查看需要做什麼。",
       "failedTitle": "工作階段失敗",
-      "failedDesc": "WhatsApp 工作階段啟動失敗。開啟該工作階段以查看原因。"
+      "failedDesc": "WhatsApp 工作階段啟動失敗。開啟該工作階段以查看原因。",
+      "stopFailedTitle": "停止失敗"
     },
     "card": {
       "phone": "電話",
@@ -463,7 +467,10 @@
     },
     "empty": {
       "title": "尚未設定 Webhook",
-      "description": "新增 Webhook 以接收即時事件通知"
+      "description": "新增 Webhook 以接收即時事件通知",
+      "loadErrorTitle": "無法載入 Webhook",
+      "forbiddenTitle": "無權存取 Webhook",
+      "forbiddenDesc": "Webhook 需要具有操作員或管理員角色的 API 金鑰。"
     },
     "toasts": {
       "created": "Webhook 建立成功",
@@ -484,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "收到訊息時",
       "message.sent": "傳送訊息時",
-      "session.connected": "工作階段連線時",
-      "session.disconnected": "工作階段中斷連線時",
+      "message.ack": "訊息的送達或已讀狀態變更時",
+      "message.failed": "發出的訊息傳送失敗時",
+      "message.revoked": "訊息被收回時",
+      "message.reaction": "新增、變更或移除回應時",
+      "message.edited": "訊息被編輯時",
+      "session.status": "工作階段狀態變更時",
       "session.qr": "產生 QR 碼時",
+      "session.authenticated": "工作階段完成配對並就緒時",
+      "session.disconnected": "工作階段中斷連線時",
+      "session.reconnect_loop": "工作階段反覆重新連線失敗時",
+      "session.restriction": "WhatsApp 限制帳戶或解除限制時",
+      "presence.update": "已訂閱的聊天上線、正在輸入或離線時",
+      "group.join": "有成員加入或被加入群組時",
+      "group.leave": "有成員退出或被移出群組時",
+      "group.update": "群組名稱、描述或設定變更時",
+      "group.join_request": "有人申請加入此工作階段管理的群組時",
+      "call.received": "來電開始響鈴時",
+      "call.accepted": "來電被接聽時",
+      "call.rejected": "來電被拒接時",
+      "call.missed": "來電未接聽時",
+      "status.received": "聯絡人發佈狀態時",
       "all": "所有事件"
     }
   },
@@ -644,6 +669,12 @@
     "loadingGroups": "正在載入群組...",
     "noGroupsFound": "找不到群組",
     "selectGroupHint": "從你的 WhatsApp 選擇一個群組",
+    "selectAllGroups": "全選",
+    "selectMatchingGroups": "選擇相符項目",
+    "clearGroupSelection": "清除",
+    "groupsSelectedCount": "已選擇：{{count}}/{{max}}",
+    "noGroupsMatch": "沒有與搜尋相符的群組",
+    "forwardUsesFirstGroup": "轉寄只會使用第一個選取的群組，作為轉寄來源對話。",
     "phoneHint": "使用不含空格的國際格式",
     "messageType": "訊息類型",
     "types": {
@@ -701,17 +732,29 @@
     "bulkRecipientsCount": "收件人：{{count}}",
     "bulkDelay": "訊息之間的延遲（毫秒）",
     "bulkDelayHint": "1000–60000 毫秒（預設 3000）",
+    "bulkMediaKind": "傳送為",
+    "bulkMediaHint": "加入附件後，訊息會成為附件的說明文字。所選檔案會隨請求一併傳送，因此向大量收件人傳送大型檔案時，請改用公開的媒體 URL。",
+    "bulkMediaTooLarge": "此檔案太大，無法直接傳送給 {{count}} 位收件人：以這個人數計，每個檔案最大只能為 {{size}}。請改用公開的媒體 URL，或減少收件人數目。",
+    "bulkMediaUrlInvalid": "請輸入以 http:// 或 https:// 開頭的完整地址，例如 https://example.com/file.pdf。",
+    "bulkCaptionTooLong": "加入附件後，訊息會作為附件的說明文字傳送，說明文字最多 {{max}} 個字元（目前 {{count}} 個）。",
+    "bulkAudioNoCaption": "音訊傳送時不附說明文字，因此這段文字不會被傳送。請清除訊息或選擇其他類型。",
     "send": "傳送訊息",
     "sending": "正在傳送...",
+    "sendingProgress": "正在傳送 {{current}}/{{total}}...",
     "viewOnly": "僅檢視",
     "responseEmpty": "傳送訊息後即可查看 API 回應",
     "successLabel": "成功",
     "failedLabel": "失敗",
+    "groupsSentSummary": "已傳送 {{sent}}/{{total}}",
+    "groupSendCancelled": "{{count}} 個，已取消",
+    "groupSendStopped": "{{count}} 個，在 HTTP {{status}} 後停止",
     "response": {
       "timestamp": "時間戳記",
       "messageId": "訊息 ID",
       "batchId": "批次 ID",
-      "error": "錯誤"
+      "error": "錯誤",
+      "groups": "群組",
+      "notSent": "未傳送"
     },
     "sendFailed": "傳送訊息失敗",
     "notOnWhatsApp": "此號碼未在 WhatsApp 註冊",

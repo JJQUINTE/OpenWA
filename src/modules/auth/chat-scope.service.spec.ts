@@ -8,7 +8,7 @@ const LID = '555000111';
 function fakeStore(): LidMappingStoreService {
   return {
     resolveLidPersisted: jest.fn((lid: string) => Promise.resolve(lid === LID ? PHONE : null)),
-    lidsForPhonePersisted: jest.fn((phone: string) => Promise.resolve(phone === PHONE ? [LID] : [])),
+    findLidsForPhone: jest.fn((phone: string) => Promise.resolve(phone === PHONE ? [LID] : [])),
     phonesForLidsPersisted: jest.fn((lids: string[]) =>
       Promise.resolve(Object.fromEntries(lids.map(lid => [lid, lid === LID ? PHONE : null]))),
     ),

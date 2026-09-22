@@ -11,7 +11,8 @@ export class IngressUrl {
 }
 
 // Absolute URL from BASE_URL when set (trailing slash trimmed), else a relative path the operator
-// prepends with their own host. Never throws.
+// prepends with their own host. The route is percent-encoded: a URL parser strips a trailing space
+// and the router decodes the segment back to the declared route. Never throws.
 export function buildIngressUrls(
   baseUrl: string | undefined,
   pluginId: string,
@@ -21,6 +22,6 @@ export function buildIngressUrls(
   const base = (baseUrl ?? '').replace(/\/+$/, '');
   return routes.map(route => ({
     route,
-    url: `${base}/api/ingress/${pluginId}/${instanceId}/${route}`,
+    url: `${base}/api/ingress/${pluginId}/${instanceId}/${encodeURIComponent(route)}`,
   }));
 }

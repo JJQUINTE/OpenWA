@@ -18,6 +18,7 @@ import { SsrfBlockedError, SSRF_BLOCKED_CLIENT_MESSAGE } from '../../common/secu
 import { resolveFeatureFlags } from '../../config/feature-flags';
 import { isUniqueViolation } from '../../common/utils/db-errors';
 import { ChatMediaArchiveService } from '../chat-media/chat-media-archive.service';
+import { isMediaUrl, MEDIA_URL_MESSAGE } from '../../common/media/media-url';
 
 /** Default cap on a rendered template's final text; overridable via TEMPLATE_RENDER_MAX_CHARS. */
 export const DEFAULT_TEMPLATE_RENDER_MAX_CHARS = 64 * 1024;
@@ -186,6 +187,15 @@ export class MessageSendService {
     // requests trip the breaker on a healthy session.
     if (countsTowardSendBreaker(error)) {
       this.pacing.recordSendFailure(sessionId);
+      // The same classification picks the failures worth a log line. Otherwise an engine-side failure
+      // leaves only Nest's generic `[ExceptionsHandler]` line, with no session, chat or message type to
+      // correlate it with; a minified page error reads as `t: t` there.
+      this.logger.warn(`Send failed in the engine (${type})`, {
+        sessionId,
+        chatId: message.chatId,
+        messageId: message.id,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
     }
     await this.saveFailedMessage(message);
     // Sanitize the hook payload: an SSRF block's raw .message names the resolved internal address
@@ -818,6 +828,11 @@ export class MessageSendService {
     if (!dto.url && !base64) {
       throw new BadRequestException('Either url or base64 must be provided');
     }
+    // The DTO checks this too, but a plugin send and a message:sending rewrite reach here without it,
+    // and both engines decode anything that is not an http(s) URL as base64.
+    if (!base64 && !isMediaUrl(dto.url)) {
+      throw new BadRequestException(MEDIA_URL_MESSAGE);
+    }
 
     if (base64 && !dto.mimetype) {
       throw new BadRequestException('mimetype is required when using base64 data');
@@ -831,8 +846,8 @@ export class MessageSendService {
       mimetype: dto.mimetype || 'application/octet-stream',
       // base64 wins over url when both are present: it is the explicit local payload, and a stale
       // `url` (e.g. a Swagger/example default left in the body) must not be fetched in its place.
-      // Aligns the send selection with the base64-first persisted metadata and the url field's
-      // `@ValidateIf((o) => !o.base64)` (which skips @IsUrl when base64 is present) — #670.
+      // Aligns the send selection with the base64-first persisted metadata and the url field's check,
+      // which is skipped only when base64 holds data after its data-URI prefix is stripped (#670).
       data: base64 || dto.url!,
       filename: dto.filename,
       caption: dto.caption,

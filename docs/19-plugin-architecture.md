@@ -404,7 +404,11 @@ still has its `data` applied.
 or left, WhatsApp, so the gateway still persists it and still dispatches `message.received` /
 `message.sent` to webhooks and the websocket. This is the flag an auto-reply plugin uses to claim a
 message ("I answered this, don't let another bot answer it too"); it is not a way to hide a message from
-the operator's own history.
+the operator's own history. For the same reason the gateway only keeps a returned `data` on these two
+events while it is still a message (an object with a string `id` and `chatId`): `data: null`, a
+primitive or `{}` is logged and skipped, and the chain carries on with the last message it held, so an
+earlier handler's rewrite (a redaction) still applies. `webhook:before` treats a result without a
+plain-object `payload` the same way.
 
 On a **pre-action** event it is a veto, because the action has not been taken yet: `false` on
 `message:sending` blocks the send (the caller gets a `400`), and on `webhook:before` it cancels that one
@@ -456,6 +460,10 @@ export type HookEvent =
   | 'ingress:error';
 ```
 
+`session:created` carries the new session in the shape the REST API returns it (`id`, `name`, `status`,
+timestamps and so on), never the stored `proxyUrl` or `config`; `session:deleted` carries
+`{ id, name, phone, pushName }`.
+
 ### Hook context and result
 
 ```typescript
@@ -479,7 +487,10 @@ export type HookHandler<T = unknown> = (ctx: HookContext<T>) => Promise<HookResu
 ### Hook Manager behavior
 
 `HookManager` (`src/core/hooks/hook-manager.service.ts`) is a NestJS provider. Handlers are stored per
-event and run in **priority order** (lower `priority` first; default `100`). On `execute(event, data,
+event and run in **priority order** (lower `priority` first; default `100`; a priority that is not a
+finite number runs at `100`). A sandboxed plugin's handlers for one event share a single host-side
+registration at the lowest priority among them, so relative to other plugins they all run at that point,
+and among themselves in their own order. On `execute(event, data,
 { sessionId, source })` it walks the chain, threading each handler's returned `data` into the next; a
 handler that returns `{ continue: false }` stops the chain. A handler that **throws** is logged and the
 chain continues with the previous data (one bad plugin can't break the chain). Same-event re-entrancy

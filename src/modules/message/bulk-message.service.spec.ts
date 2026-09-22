@@ -399,6 +399,50 @@ describe('BulkMessageService.processBatch', () => {
     expect(finalPartial.results[0].status).not.toBe(BatchMessageStatus.FAILED);
   });
 
+  // The engines fetch only http(s) URLs and decode any other string as base64, so a media url is
+  // checked for its scheme; after rendering, because `variables` may supply the whole URL.
+  const imageBatch = (url: string, variables?: Record<string, string>): MessageBatch => ({
+    ...makeBatch(1),
+    messages: [{ chatId: 'c0@c.us', type: 'image', content: { image: { url } }, variables }],
+  });
+
+  it('sends a rendered media url whose variable holds a space', async () => {
+    repo.findOne.mockResolvedValue(imageBatch('https://cdn.example.com/{{name}}.jpg', { name: 'John Doe' }));
+
+    await runProcessBatch();
+
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ data: 'https://cdn.example.com/John Doe.jpg' }),
+    );
+  });
+
+  it('sends a media url that variables fill in whole', async () => {
+    repo.findOne.mockResolvedValue(imageBatch('{{imageUrl}}', { imageUrl: 'https://cdn.example.com/a.jpg' }));
+
+    await runProcessBatch();
+
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ data: 'https://cdn.example.com/a.jpg' }),
+    );
+  });
+
+  it.each([
+    ['a rendered ftp url', '{{u}}', { u: 'ftp://example.com/a.jpg' }],
+    ['an unfilled placeholder', '{{u}}', undefined],
+    ['a scheme-less url', 'example.com/a.jpg', undefined],
+  ])('fails an item with %s instead of sending it', async (_label, url, variables) => {
+    repo.findOne.mockResolvedValue(imageBatch(url, variables));
+
+    await runProcessBatch();
+
+    expect(engine.sendImageMessage).not.toHaveBeenCalled();
+    const finalPartial = (repo.update.mock.calls as Array<[unknown, { results: BatchMessageResult[] }]>).at(-1)![1];
+    expect(finalPartial.results[0].status).toBe(BatchMessageStatus.FAILED);
+    expect(finalPartial.results[0].error?.message).toMatch(/absolute http\(s\) URL/);
+  });
+
   it('fails an item whose rendered text exceeds the cap instead of sending it', async () => {
     // Comfortably over the 64 KiB default the un-configured service falls back to.
     const huge = 'x'.repeat(70 * 1024);
@@ -528,6 +572,40 @@ describe('BulkMessageService.processBatch', () => {
         type: 'text',
         status: MessageStatus.SENT,
       }),
+    );
+  });
+
+  it('persists the media and caption the item type sent, not a stray key on the same item', async () => {
+    engine.sendVideoMessage = jest.fn().mockResolvedValue({ id: 'wa1', timestamp: 111 });
+    const batch = makeBatch(2);
+    batch.messages = [
+      {
+        chatId: 'c0@c.us',
+        type: 'video',
+        content: {
+          text: 'not sent',
+          caption: 'clip',
+          image: { url: 'https://x/y.jpg', mimetype: 'image/jpeg' },
+          video: { base64: 'AAAA', mimetype: 'video/mp4' },
+        },
+      },
+      { chatId: 'c1@c.us', type: 'text', content: { text: 'hi', image: { url: 'https://x/y.jpg' } } },
+    ];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        chatId: 'c0@c.us',
+        body: 'clip',
+        metadata: { media: { mimetype: 'video/mp4', data: 'AAAA', filename: undefined } },
+      }),
+    );
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ chatId: 'c1@c.us', body: 'hi', metadata: undefined }),
     );
   });
 
@@ -1112,6 +1190,17 @@ describe('BulkMessageService.createBatch base64 media cap', () => {
     }
   });
 
+  it('refuses a non-http(s) media url at batch creation but lets a templated one through', async () => {
+    const create = (url: string) =>
+      service.createBatch('s1', {
+        messages: [{ chatId: 'c0@c.us', type: 'image' as const, content: { image: { url } } }],
+      });
+
+    await expect(create('ftp://example.com/a.jpg')).rejects.toThrow(/absolute http\(s\) URL/);
+    expect(repo.save).not.toHaveBeenCalled();
+    await expect(create('https://{{host}}/a.jpg')).resolves.toBeDefined();
+  });
+
   it('reserves the cap before awaiting persistence so concurrent creates cannot overshoot it', async () => {
     const previous = process.env.BULK_MAX_CONCURRENT_BATCHES;
     process.env.BULK_MAX_CONCURRENT_BATCHES = '1';
@@ -1194,6 +1283,17 @@ describe('BulkMessageService.createBatch base64 media cap', () => {
     await expect(create).rejects.toBeInstanceOf(BadRequestException);
     await expect(create).rejects.toThrow("Batch ID 'campaign-42' already exists");
     expect((service as unknown as { inFlightBatches: number }).inFlightBatches).toBe(0);
+  });
+
+  it.each(['.', '..'])('rejects the dot-segment batchId %p, which no URL can address', async batchId => {
+    const create = service.createBatch('s1', {
+      batchId,
+      messages: [{ chatId: 'c0@c.us', type: 'text', content: { text: 'hi' } }],
+    } as unknown as SendBulkMessageDto);
+
+    await expect(create).rejects.toBeInstanceOf(BadRequestException);
+    await expect(create).rejects.toThrow(`Batch ID '${batchId}' is not allowed`);
+    expect(repo.save).not.toHaveBeenCalled();
   });
 
   it('scopes the batchId uniqueness check to the session (no cross-session collision/oracle)', async () => {

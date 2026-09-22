@@ -37,15 +37,20 @@ describe('ackContentType', () => {
     expect(ackContentType({ 'x-ack': '1' })).toBe('text/plain');
   });
 
-  it('honors an allowlisted type, keeping the declared value verbatim', () => {
+  it('honors an allowlisted type, returning the bare media type', () => {
     expect(ackContentType({ 'content-type': 'application/json' })).toBe('application/json');
-    expect(ackContentType({ 'content-type': 'application/json; charset=utf-8' })).toBe(
-      'application/json; charset=utf-8',
-    );
+    expect(ackContentType({ 'content-type': 'application/json; charset=utf-8' })).toBe('application/json');
+  });
+
+  it('drops a parameter list Express could not parse', () => {
+    expect(ackContentType({ 'content-type': 'application/json;' })).toBe('application/json');
+    expect(ackContentType({ 'content-type': 'application/json; charset=utf-8;' })).toBe('application/json');
+    expect(ackContentType({ 'content-type': 'application/json; foo' })).toBe('application/json');
+    expect(ackContentType({ 'content-type': 'text/plain;' })).toBe('text/plain');
   });
 
   it('matches the header name and the media type case-insensitively', () => {
-    expect(ackContentType({ 'Content-Type': 'Application/JSON' })).toBe('Application/JSON');
+    expect(ackContentType({ 'Content-Type': 'Application/JSON' })).toBe('application/json');
   });
 
   it('forces text/plain for anything a browser could execute', () => {

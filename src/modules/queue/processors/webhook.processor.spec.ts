@@ -8,6 +8,7 @@ import { HookManager } from '../../../core/hooks';
 import { WebhookJobData } from '../../webhook/webhook.service';
 import { getWebhookDeliveryFailuresTotal } from '../../../common/metrics/webhook-delivery-metrics';
 import { fetch as undiciFetch } from 'undici';
+import { createHmac } from 'crypto';
 
 // Delivery goes through undici's fetch (via the SSRF-pinning helper), so mock that, not global fetch.
 jest.mock('undici', () => {
@@ -22,7 +23,7 @@ jest.mock('undici', () => {
  */
 describe('WebhookProcessor', () => {
   let processor: WebhookProcessor;
-  let repo: { update: jest.Mock };
+  let repo: { update: jest.Mock; findOne: jest.Mock };
   let failureRepo: { insert: jest.Mock; count: jest.Mock };
   let hookManager: { execute: jest.Mock };
   let configService: { get: jest.Mock };
@@ -53,7 +54,11 @@ describe('WebhookProcessor', () => {
     }) as unknown as Job<WebhookJobData>;
 
   beforeEach(() => {
-    repo = { update: jest.fn().mockResolvedValue({ affected: 1 }) };
+    repo = {
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      // The live row matches makeJob()'s snapshot unless a test says otherwise.
+      findOne: jest.fn().mockResolvedValue({ id: 'wh-1', active: true, url: 'https://8.8.8.8/hook', events: ['*'] }),
+    };
     // Stateful like the real table: the recorder counts existing rows for the delivery before it
     // inserts, so a constant would leave that guard unexercised here and let a duplicated row pass.
     const insertedFailures: Array<{ webhookId?: string; idempotencyKey?: string | null }> = [];
@@ -141,6 +146,7 @@ describe('WebhookProcessor', () => {
 
   it('persists a durable delivery-failure record on the final attempt (with parsed HTTP status)', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
+    repo.findOne.mockResolvedValue({ id: 'wh-x', active: true, url: 'https://8.8.8.8/h', events: ['*'] });
 
     await expect(
       processor.process(makeJob({ maxRetries: 3, webhookId: 'wh-x', url: 'https://8.8.8.8/h' }, 2)),
@@ -180,6 +186,7 @@ describe('WebhookProcessor', () => {
   // message — the resolved internal IP is a recon oracle. The server-side logger.error keeps full detail.
   it('redacts the resolved internal IP from the webhook:error payload and DLQ row on an SSRF block', async () => {
     process.env.WEBHOOK_SSRF_PROTECT = 'true';
+    repo.findOne.mockResolvedValue({ id: 'wh-1', active: true, url: 'https://169.254.169.254/h', events: ['*'] });
     // final attempt (attemptsMade=0, maxRetries=1 → 1 >= 1) so the hook + DLQ fire
     await expect(processor.process(makeJob({ url: 'https://169.254.169.254/h', maxRetries: 1 }, 0))).rejects.toThrow();
 
@@ -214,15 +221,81 @@ describe('WebhookProcessor', () => {
     expect(hookManager.execute).not.toHaveBeenCalledWith('webhook:error', expect.anything(), expect.anything());
   });
 
+  // The job is a snapshot from enqueue time; the operator may have changed the webhook since.
+  describe('stale snapshot', () => {
+    const live = { id: 'wh-1', active: true, url: 'https://8.8.8.8/hook', events: ['*'] };
+
+    it.each([
+      ['deleted', null],
+      ['disabled', { ...live, active: false }],
+      ['unsubscribed', { ...live, events: ['message.sent'] }],
+    ])('does not POST, retry or dead-letter a job for a %s webhook', async (_label, row) => {
+      repo.findOne.mockResolvedValue(row);
+      mockFetch.mockResolvedValue({ ok: true, status: 200 });
+
+      // Final attempt, so a failure path would file a dead-letter row.
+      const result = await processor.process(makeJob({ maxRetries: 3 }, 2));
+
+      expect(result.success).toBe(false);
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(failureRepo.insert).not.toHaveBeenCalled();
+      expect(hookManager.execute).not.toHaveBeenCalled();
+    });
+
+    it('treats a failed webhook read as a failed attempt: retried, and dead-lettered on the last one', async () => {
+      repo.findOne.mockRejectedValue(new Error('db down'));
+
+      await expect(processor.process(makeJob({ maxRetries: 3 }, 0))).rejects.toThrow('db down');
+      expect(failureRepo.insert).not.toHaveBeenCalled();
+
+      await expect(processor.process(makeJob({ maxRetries: 3 }, 2))).rejects.toThrow('db down');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(failureRepo.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('delivers to the current URL with the current headers and secret, not the enqueue-time ones', async () => {
+      repo.findOne.mockResolvedValue({
+        ...live,
+        url: 'https://8.8.4.4/new',
+        events: ['message.received'],
+        headers: { Authorization: 'Bearer new' },
+        secret: 'rotated',
+      });
+      mockFetch.mockResolvedValue({ ok: true, status: 200 });
+      const job = makeJob({
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer old',
+          'X-OpenWA-Signature': 'sha256=old',
+        },
+      });
+
+      const result = await processor.process(job);
+
+      expect(result.success).toBe(true);
+      const [url, init] = mockFetch.mock.calls[0] as unknown as [
+        string,
+        { headers: Record<string, string>; body: string },
+      ];
+      expect(url).toBe('https://8.8.4.4/new');
+      expect(init.headers.Authorization).toBe('Bearer new');
+      const expected = `sha256=${createHmac('sha256', 'rotated').update(init.body).digest('hex')}`;
+      expect(init.headers['X-OpenWA-Signature']).toBe(expected);
+      expect(init.body).toBe(JSON.stringify(job.data.payload));
+    });
+  });
+
   // BullMQ fails a job that stalls more than maxStalledCount (default 1) WITHOUT calling process():
   // the worker emits 'failed' with "job stalled more than allowable limit". Those failures must land
   // in the same dead-letter/metric/hook channels as an ordinary final-attempt failure.
   describe('stall exhaustion (worker failed event)', () => {
     it('records a dead-letter row, metric, and webhook:error for a job failed by a double stall', async () => {
       const failuresBefore = getWebhookDeliveryFailuresTotal();
+      // Re-pointed since enqueue: the row names the URL a retry would have used, not the snapshot's.
+      repo.findOne.mockResolvedValue({ id: 'wh-stall', active: true, url: 'https://8.8.8.8/s', events: ['*'] });
 
       await processor.onWorkerFailed(
-        makeJob({ webhookId: 'wh-stall', url: 'https://8.8.8.8/s' }, 1),
+        makeJob({ webhookId: 'wh-stall', url: 'https://8.8.8.8/old' }, 1),
         new Error('job stalled more than allowable limit'),
       );
 
@@ -243,6 +316,26 @@ describe('WebhookProcessor', () => {
         expect.anything(),
       );
       expect(getWebhookDeliveryFailuresTotal()).toBe(failuresBefore + 1);
+    });
+
+    it.each([
+      ['deleted', null],
+      ['disabled', { id: 'wh-1', active: false, url: 'https://8.8.8.8/hook', events: ['*'] }],
+    ])('files nothing for a job whose webhook was %s', async (_label, row) => {
+      repo.findOne.mockResolvedValue(row);
+
+      await processor.onWorkerFailed(makeJob({}, 1), new Error('job stalled more than allowable limit'));
+
+      expect(failureRepo.insert).not.toHaveBeenCalled();
+      expect(hookManager.execute).not.toHaveBeenCalled();
+    });
+
+    it('still records the stall against the enqueue-time URL when the webhook row cannot be read', async () => {
+      repo.findOne.mockRejectedValue(new Error('db down'));
+
+      await processor.onWorkerFailed(makeJob({}, 1), new Error('job stalled more than allowable limit'));
+
+      expect(failureRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://8.8.8.8/hook' }));
     });
 
     it('ignores ordinary delivery failures — process() already records those on the final attempt', async () => {

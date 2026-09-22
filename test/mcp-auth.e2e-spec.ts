@@ -147,6 +147,22 @@ describe('MCP server (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // 4b. GET / DELETE: the stateless transport offers no SSE stream and no session,
+  //     so both answer 405 (an SDK client treats anything else as an error)
+  // ---------------------------------------------------------------------------
+  it('GET and DELETE /mcp answer 405 with Allow: POST', async () => {
+    const server = app.getHttpServer();
+    const get = await request(server).get('/mcp').set('Accept', 'text/event-stream');
+    expect(get.status).toBe(405);
+    expect(get.headers['allow']).toBe('POST');
+    expect(get.body).toEqual({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
+
+    const del = await request(server).delete('/mcp');
+    expect(del.status).toBe(405);
+    expect(del.headers['allow']).toBe('POST');
+  });
+
+  // ---------------------------------------------------------------------------
   // 5. MCP_READONLY mode — write tools hidden from catalogue
   //    Tested at integration level: the `readOnly` flag path in mcp.server.ts
   //    calls registry.list({ readOnly: true }), which is unit-tested in

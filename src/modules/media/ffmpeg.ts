@@ -25,18 +25,64 @@ export interface FfmpegRunOptions {
 }
 
 /**
+ * Input demuxers conversion accepts, by ffmpeg name. A name matches any demuxer that registers it,
+ * so `mov` covers mp4, m4a and 3gp, `matroska` covers webm, and `mpeg` is MPEG-PS (.mpg, .vob).
+ * Every one of them reads its input and nothing else.
+ */
+export const INPUT_FORMATS = [
+  'mov',
+  'matroska',
+  'ogg',
+  'mp3',
+  'wav',
+  'w64',
+  'aac',
+  'ac3',
+  'eac3',
+  'flac',
+  'wv',
+  'au',
+  'amr',
+  'avi',
+  'mpeg',
+  'mpegts',
+  'asf',
+  'flv',
+  'caf',
+  'aiff',
+  'gif',
+  'h264',
+  'hevc',
+].join(',');
+
+/**
  * The arguments every conversion starts with, before any codec choice.
  *
- * `-protocol_whitelist file` is the load-bearing one. ffmpeg treats its input as a URL, and given an
- * `http://` one it will happily make the request — verified against this project's own image, where
- * it reached for the link-local metadata address. The input here is always a file this process just
- * wrote, so restricting ffmpeg to the file protocol costs nothing and removes the whole class:
- * neither the input path nor anything a crafted container might reference can become a request.
+ * `-protocol_whitelist file` is the load-bearing one for the network. ffmpeg treats its input as a URL,
+ * and given an `http://` one it will happily make the request (verified against this project's own
+ * image, where it reached for the link-local metadata address). The input here is always a file this
+ * process just wrote, so restricting ffmpeg to the file protocol costs nothing, and neither the input
+ * path nor anything a crafted container might reference can become a network request.
+ *
+ * The file protocol still reaches every local file, though, and some demuxers (playlists, manifests,
+ * concatenation scripts) open the files their input names. `-format_whitelist` restricts the input
+ * demuxers to the single-file media containers conversion supports, so the input is decoded as
+ * itself and never as a pointer to something else on disk.
  *
  * `-nostdin` stops a prompt (an existing output file, a missing codec) from blocking forever on a
  * stdin nobody is attached to, and `-y` means there is nothing to prompt about in the first place.
  */
-const BASE_ARGS = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-y', '-protocol_whitelist', 'file'] as const;
+const BASE_ARGS = [
+  '-hide_banner',
+  '-nostdin',
+  '-loglevel',
+  'error',
+  '-y',
+  '-protocol_whitelist',
+  'file',
+  '-format_whitelist',
+  INPUT_FORMATS,
+] as const;
 
 /**
  * The full argument list for one conversion. Split out from the spawn so the security-relevant

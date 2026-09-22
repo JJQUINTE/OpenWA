@@ -290,7 +290,12 @@ describe('MessageProjector (inbound projection)', () => {
   let engines: EngineRegistry;
   let messageRepository: { create: jest.Mock; insert: jest.Mock; findOne: jest.Mock; update: jest.Mock };
   let sessionRepository: { update: jest.Mock; findOne: jest.Mock };
-  let eventsGateway: { emitMessage: jest.Mock; emitMessageAck: jest.Mock; emitMessageRevoked: jest.Mock };
+  let eventsGateway: {
+    emitMessage: jest.Mock;
+    emitMessageSent: jest.Mock;
+    emitMessageAck: jest.Mock;
+    emitMessageRevoked: jest.Mock;
+  };
   let webhookService: { dispatch: jest.Mock };
   let hookManager: { execute: jest.Mock };
   let statusStore: { ingest: jest.Mock };
@@ -325,7 +330,12 @@ describe('MessageProjector (inbound projection)', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     sessionRepository = { update: jest.fn().mockResolvedValue(undefined), findOne: jest.fn().mockResolvedValue(null) };
-    eventsGateway = { emitMessage: jest.fn(), emitMessageAck: jest.fn(), emitMessageRevoked: jest.fn() };
+    eventsGateway = {
+      emitMessage: jest.fn(),
+      emitMessageSent: jest.fn(),
+      emitMessageAck: jest.fn(),
+      emitMessageRevoked: jest.fn(),
+    };
     webhookService = { dispatch: jest.fn() };
     // Mirrors the real HookManager contract (hook-manager.service.ts `execute`/`runHandlers`): resolves
     // `{ continue, data }`, passing `data` through unchanged when no hooks are registered — exactly
@@ -429,6 +439,55 @@ describe('MessageProjector (inbound projection)', () => {
       );
     });
 
+    // HookManager threads any defined `data`, so a handler returning `data: null` ("I consumed it")
+    // or an object that is not a message reaches the projector. It must still record and dispatch
+    // the engine's message, not throw and erase it.
+    it.each([
+      ['null', null],
+      ['a primitive', 'consumed'],
+      ['an object without the message identity', {}],
+    ])('still persists and dispatches the message when a hook returns %s', async (_label, data) => {
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+      hookManager.execute.mockResolvedValueOnce({ continue: true, data });
+      const incoming = makeIncoming();
+
+      projector.handleInboundMessage(SESSION_ID, engine, incoming);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(messageRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ waMessageId: incoming.id, chatId: incoming.chatId }),
+      );
+      expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.received', incoming);
+      expect(eventsGateway.emitMessage).toHaveBeenCalledWith(SESSION_ID, incoming);
+    });
+
+    it('lets HookManager skip a handler result that is not a message', async () => {
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+
+      projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+      await new Promise(resolve => setImmediate(resolve));
+
+      const [, , options] = hookManager.execute.mock.calls[0] as [string, unknown, { accept: (d: unknown) => boolean }];
+      expect(options.accept(null)).toBe(false);
+      expect(options.accept('consumed')).toBe(false);
+      expect(options.accept({})).toBe(false);
+      expect(options.accept({ id: 'm', chatId: 'c@c.us' })).toBe(true);
+    });
+
+    it('keeps a rewritten message a hook returns', async () => {
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+      const rewritten = { ...makeIncoming(), body: '[redacted]' };
+      hookManager.execute.mockResolvedValueOnce({ continue: true, data: rewritten });
+
+      projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.received', rewritten);
+    });
+
     it('routes a status broadcast to the status store instead of the message table', async () => {
       const engine = makeEngine();
       engines.set(SESSION_ID, engine);
@@ -509,6 +568,24 @@ describe('MessageProjector (inbound projection)', () => {
         expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.received', expect.anything());
         expect(eventsGateway.emitMessage).toHaveBeenCalledWith(SESSION_ID, expect.anything());
       });
+    });
+  });
+
+  describe('handleOwnSendEcho', () => {
+    it('still persists and dispatches the send when a message:sent hook returns null', async () => {
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+      hookManager.execute.mockResolvedValueOnce({ continue: true, data: null });
+      const sent = makeIncoming({ fromMe: true, to: '15550001111@c.us' });
+
+      projector.handleOwnSendEcho(SESSION_ID, engine, sent);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(messageRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ waMessageId: sent.id, chatId: sent.chatId }),
+      );
+      expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.sent', sent);
+      expect(eventsGateway.emitMessageSent).toHaveBeenCalledWith(SESSION_ID, sent);
     });
   });
 });

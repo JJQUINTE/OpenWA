@@ -7,6 +7,7 @@
   },
   "common": {
     "appName": "OpenWA",
+    "updateAvailable": "v{{version}} 已发布",
     "loading": "正在加载...",
     "cancel": "取消",
     "delete": "删除",
@@ -215,6 +216,7 @@
     "noSessions": "未找到会话。创建一个即可开始。",
     "view": "查看",
     "disconnect": "断开连接",
+    "disconnectFailed": "无法断开会话连接",
     "errorPrefix": "错误：{{message}}",
     "loadError": "加载数据失败",
     "charts": {
@@ -225,6 +227,7 @@
         "30d": "30天"
       },
       "overTime": "消息趋势",
+      "overTimeUtcDays": "消息趋势（按 UTC 日期）",
       "byType": "按类型分类的消息",
       "topChats": "热门聊天",
       "sent": "已发送",
@@ -344,7 +347,8 @@
       "actionRequiredTitle": "需要操作",
       "actionRequiredDesc": "此会话需要您的关注。打开会话以查看需要做什么。",
       "failedTitle": "会话失败",
-      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。"
+      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。",
+      "stopFailedTitle": "停止失败"
     },
     "card": {
       "phone": "电话",
@@ -463,7 +467,10 @@
     },
     "empty": {
       "title": "尚未配置 Webhook",
-      "description": "添加 Webhook 以接收实时事件通知"
+      "description": "添加 Webhook 以接收实时事件通知",
+      "loadErrorTitle": "无法加载 Webhook",
+      "forbiddenTitle": "无权访问 Webhook",
+      "forbiddenDesc": "Webhook 需要具有操作员或管理员角色的 API 密钥。"
     },
     "toasts": {
       "created": "Webhook 创建成功",
@@ -484,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "收到消息时",
       "message.sent": "发送消息时",
-      "session.connected": "会话连接时",
-      "session.disconnected": "会话断开时",
+      "message.ack": "消息的送达或已读状态变化时",
+      "message.failed": "发出的消息投递失败时",
+      "message.revoked": "消息被撤回时",
+      "message.reaction": "添加、更改或移除回应时",
+      "message.edited": "消息被编辑时",
+      "session.status": "会话状态变化时",
       "session.qr": "生成 QR 码时",
+      "session.authenticated": "会话完成配对并就绪时",
+      "session.disconnected": "会话断开时",
+      "session.reconnect_loop": "会话反复重连失败时",
+      "session.restriction": "WhatsApp 限制账号或解除限制时",
+      "presence.update": "已订阅的聊天上线、正在输入或下线时",
+      "group.join": "有成员加入或被添加到群组时",
+      "group.leave": "有成员退出或被移出群组时",
+      "group.update": "群组名称、描述或设置变化时",
+      "group.join_request": "有人申请加入此会话管理的群组时",
+      "call.received": "来电开始响铃时",
+      "call.accepted": "来电被接听时",
+      "call.rejected": "来电被拒接时",
+      "call.missed": "来电未接听时",
+      "status.received": "联系人发布状态时",
       "all": "所有事件"
     }
   },
@@ -644,6 +669,12 @@
     "loadingGroups": "正在加载群组...",
     "noGroupsFound": "未找到群组",
     "selectGroupHint": "从你的 WhatsApp 中选择一个群组",
+    "selectAllGroups": "全选",
+    "selectMatchingGroups": "选择匹配项",
+    "clearGroupSelection": "清除",
+    "groupsSelectedCount": "已选择：{{count}}/{{max}}",
+    "noGroupsMatch": "没有与搜索匹配的群组",
+    "forwardUsesFirstGroup": "转发只使用第一个选中的群组，作为转发来源聊天。",
     "phoneHint": "使用无空格的国际格式",
     "messageType": "消息类型",
     "types": {
@@ -701,17 +732,29 @@
     "bulkRecipientsCount": "接收者：{{count}}",
     "bulkDelay": "消息间隔延迟（毫秒）",
     "bulkDelayHint": "1000–60000 毫秒（默认 3000）",
+    "bulkMediaKind": "发送为",
+    "bulkMediaHint": "添加附件后，消息将作为附件的说明文字。所选文件会随请求一起发送，因此向大量接收者发送大文件时，请改用公开的媒体 URL。",
+    "bulkMediaTooLarge": "此文件太大，无法直接发送给 {{count}} 位接收者：在这个人数下，每个文件最大只能为 {{size}}。请改用公开的媒体 URL，或减少接收者数量。",
+    "bulkMediaUrlInvalid": "请输入以 http:// 或 https:// 开头的完整地址，例如 https://example.com/file.pdf。",
+    "bulkCaptionTooLong": "添加附件后，消息将作为附件的说明文字发送，说明文字最多 {{max}} 个字符（当前 {{count}} 个）。",
+    "bulkAudioNoCaption": "音频发送时不带说明文字，因此这段文字不会被发送。请清空消息或选择其他类型。",
     "send": "发送消息",
     "sending": "正在发送...",
+    "sendingProgress": "正在发送 {{current}}/{{total}}...",
     "viewOnly": "仅查看",
     "responseEmpty": "发送消息后即可查看 API 响应",
     "successLabel": "成功",
     "failedLabel": "失败",
+    "groupsSentSummary": "已发送 {{sent}}/{{total}}",
+    "groupSendCancelled": "{{count}} 个，已取消",
+    "groupSendStopped": "{{count}} 个，在 HTTP {{status}} 后停止",
     "response": {
       "timestamp": "时间戳",
       "messageId": "消息 ID",
       "batchId": "批次 ID",
-      "error": "错误"
+      "error": "错误",
+      "groups": "群组",
+      "notSent": "未发送"
     },
     "sendFailed": "发送消息失败",
     "notOnWhatsApp": "该号码未在 WhatsApp 注册",

@@ -193,7 +193,8 @@ curl -X POST 'http://localhost:2785/api/infra/import-data' \
 > UTC pin ([05 - Database Design](./05-database-design.md#timestamps-on-postgresql-are-utc)), not a
 > property of the host: a gateway restoring under `TZ=Asia/Jakarta` writes the same rows as one on UTC.
 > An archive taken by 0.23.5 or earlier from a PostgreSQL gateway that ran off UTC carries that host's
-> offset in its stamps; read the 0.23.6 upgrade notes in `CHANGELOG.md` before restoring one.
+> offset in its `DEFAULT now()` stamps, and one more offset in every stamp for each restore the table
+> had been through; read the 0.23.6 upgrade notes in `CHANGELOG.md` before restoring one.
 
 ### Storage Migration (Local ↔ S3/MinIO)
 

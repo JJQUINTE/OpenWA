@@ -6907,21 +6907,27 @@ describe('probeOnboardingModal (in-page onboarding modal detection)', () => {
     parentElement: FakeEl | null;
     offsetParent: unknown;
     getBoundingClientRect: () => { width: number; height: number };
+    getAttribute: (name: string) => string | null;
     click: jest.Mock;
   };
 
   const el = (
     textContent: string,
-    opts: { button?: boolean; roleButton?: boolean; hidden?: boolean } = {},
-  ): FakeEl => ({
-    tagName: opts.button ? 'BUTTON' : 'DIV',
-    role: opts.roleButton ? 'button' : null,
-    textContent,
-    parentElement: null,
-    offsetParent: opts.hidden ? null : {},
-    getBoundingClientRect: () => (opts.hidden ? { width: 0, height: 0 } : { width: 200, height: 40 }),
-    click: jest.fn(),
-  });
+    opts: { button?: boolean; roleButton?: boolean; hidden?: boolean; dialog?: boolean; ariaModal?: boolean } = {},
+  ): FakeEl => {
+    const role = opts.roleButton ? 'button' : opts.dialog ? 'dialog' : null;
+    return {
+      tagName: opts.button ? 'BUTTON' : 'DIV',
+      role,
+      textContent,
+      parentElement: null,
+      offsetParent: opts.hidden ? null : {},
+      getBoundingClientRect: () => (opts.hidden ? { width: 0, height: 0 } : { width: 200, height: 40 }),
+      getAttribute: (name: string) =>
+        name === 'role' ? role : name === 'aria-modal' && opts.ariaModal ? 'true' : null,
+      click: jest.fn(),
+    };
+  };
 
   /** Wire children to a parent and return the parent, so ancestor walks have something to walk. */
   const nest = (parent: FakeEl, ...children: FakeEl[]): FakeEl => {
@@ -7047,7 +7053,7 @@ describe('probeOnboardingModal (in-page onboarding modal detection)', () => {
 
   it('clicks a localised confirm button when the operator supplied its label', () => {
     const button = el('Continuar', { button: true });
-    nest(el('Novedades de WhatsApp Web'), button);
+    nest(el('Novedades de WhatsApp Web', { dialog: true }), button);
     install([button]);
 
     const result = probeOnboardingModal({
@@ -7057,6 +7063,33 @@ describe('probeOnboardingModal (in-page onboarding modal detection)', () => {
 
     expect(result).toEqual({ modalPresent: true, dismissed: true });
     expect(button.click).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an aria-modal container as the dialog around an operator label', () => {
+    const button = el('Continuar', { button: true });
+    nest(el('Novidades do WhatsApp Web', { ariaModal: true }), nest(el('footer'), button));
+    install([button]);
+
+    expect(probeOnboardingModal({ labels: ['Continue', 'Continuar'], headingOptionalFor: ['Continuar'] })).toEqual({
+      modalPresent: true,
+      dismissed: true,
+    });
+    expect(button.click).toHaveBeenCalledTimes(1);
+  });
+
+  // The operator label skips the heading check, so the dialog is its only anchor: the same word on a
+  // button anywhere else on the page must not be clicked, since every click counts toward the limit
+  // that moves a ready session to action_required.
+  it('does not click an operator label that sits outside any dialog', () => {
+    const button = el('Continuar', { button: true });
+    nest(el('Novedades de WhatsApp Web'), button);
+    install([button]);
+
+    expect(probeOnboardingModal({ labels: ['Continue', 'Continuar'], headingOptionalFor: ['Continuar'] })).toEqual({
+      modalPresent: false,
+      dismissed: false,
+    });
+    expect(button.click).not.toHaveBeenCalled();
   });
 
   // The loosening is scoped to the operator's own labels: the default label keeps its heading guard, so
