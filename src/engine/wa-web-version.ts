@@ -198,9 +198,11 @@ export async function resolveWebVersionPin(fetcher: typeof fetch = fetch): Promi
 }
 
 /**
- * The WhatsApp Web build the engine is effectively using, for the dashboard to display (#488). This
- * is distinct from the whatsapp-web.js library version. `source`: `pinned` = operator-set exact
- * version; `auto` = resolved from the wa-version registry; `native` = whatsapp-web.js auto-select.
+ * The WhatsApp Web build sessions request as their pin, for the dashboard to display (#488). This is
+ * what was asked for, not a read-back: a page can still run another build, which each session logs at
+ * READY (./adapters/wwebjs-running-build). It is distinct from the whatsapp-web.js library version.
+ * `source`: `pinned` = operator-set exact version; `auto` = resolved from the wa-version registry;
+ * `native` = whatsapp-web.js auto-select.
  */
 export function getEffectiveWebVersionInfo(): { version: string | null; source: 'pinned' | 'auto' | 'native' } {
   const raw = process.env.WWEBJS_WEB_VERSION?.trim();

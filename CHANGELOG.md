@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On the dashboard Chats page, Escape closes the open chat, channel or status viewer and returns to the list. It leaves the key alone while a dialog, a menu or the media viewer is open, since those handle Escape themselves. Thanks @C24212.
 - The dashboard Message Tester's Bulk mode can attach a file or a media URL, sent as image, video, audio or document, with the message text as the caption of an image, video or document; audio carries none, so text next to audio is refused. An inline file too large to repeat for every recipient is refused before sending. Thanks @C24212.
 - The dashboard sidebar tells admins when a newer OpenWA release exists, as a link to its release notes next to the version. `GET /api/infra/update-check` (ADMIN) reads the latest published GitHub release through the SSRF-guarded fetch and caches it for six hours, and a failed check never surfaces as an error; `UPDATE_CHECK_ENABLED=false` turns the request off ([#988](https://github.com/rmyndharis/OpenWA/issues/988), [#1678](https://github.com/rmyndharis/OpenWA/issues/1678)). Thanks @voosam and @OneArmArmy for the request.
+- whatsapp-web.js sessions log the WhatsApp Web build their page actually runs when they reach `ready` (`web_version_running`), and warn with both builds when it is not the pinned one (`web_version_pin_not_applied`), since a pin is not guaranteed to hold ([#1679](https://github.com/rmyndharis/OpenWA/issues/1679)). Thanks @DavidgFernandes for the report.
 
 ### Changed
 

@@ -648,7 +648,7 @@ with zero OpenWA surface. Baileys-only; whatsapp-web.js has no community API at 
 | `constructor`              | — class plumbing (not a capability)                                                               |
 | `destroy`                  | ✅ `initialize`, `destroy`, `forceDestroy`, `disconnect`, `logout`                                |
 | `getState`                 | ⚙️ internal wiring                                                                                |
-| `getWWebVersion`           | ❌ **not exposed** — pinned from `wa-web-version.ts`; captured send errors name the running build |
+| `getWWebVersion`           | ❌ **not exposed** — read off the page at ready in `wwebjs-running-build.ts`; send errors name it |
 | `initialize`               | ✅ `initialize`                                                                                   |
 | `logout`                   | ✅ `logout`                                                                                       |
 | `on`                       | ⚙️ EventEmitter surface — the adapter's event wiring (29.5.4)                                     |
