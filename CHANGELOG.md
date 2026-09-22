@@ -33,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The rate limiter masks IPv6 client addresses to their /64 subnet prefix (or the configured `ipv6SubnetPrefix`), so a client cannot evade per-client rate limits by rotating addresses within its IPv6 allocation ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)).
 - whatsapp-web.js chat history resolves each message's sender through `getContact()`, as the live `message` handler already does, so a group participant outside the account's contacts gets a sender label in history too. Thanks @TanmayChachra.
 - A WebSocket client that emits without an ack callback now receives command replies at all. The gateway answered by returning a frame, which Socket.IO delivers through the ack callback and nowhere else, so a client written to the documented `message` event saw no subscribe confirmation, no pong, and none of the refusals, including the session-scope denial. Replies now go out on `message` as well as through the ack.
 - A Baileys message the account sent from its phone is no longer lost when the message store cannot be read. The repeat-delivery check threw on a locked database or an unparseable row and the message was dropped with it, and WhatsApp does not re-deliver one it has already acked; the check now fails open, so at worst such a message is reported twice rather than never.
@@ -181,6 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A proxy password no longer reaches the log. A failed SOCKS connect carries the whole proxy config as the error's only property, and `BAILEYS_LOG_LEVEL=debug` wrote it to stdout verbatim. Logs written at that level by an earlier release may hold the password; rotate it.
 - Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
 - The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one unauthenticated request can no longer write an audit row per batch element.
+- Per-client rate limits key an IPv6 client on its /64, so rotating addresses inside one allocation no longer escapes them ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)). Thanks @Saksham-official.
 
 ## [0.23.5] - 2026-09-15
 
