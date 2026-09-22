@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Template } from './entities/template.entity';
+import { Session } from '../session/entities/session.entity';
 import { CreateTemplateDto, UpdateTemplateDto } from './dto';
 import { createLogger } from '../../common/services/logger.service';
 import { isUniqueViolation } from '../../common/utils/db-errors';
@@ -13,9 +14,16 @@ export class TemplateService {
   constructor(
     @InjectRepository(Template, 'data')
     private readonly templateRepository: Repository<Template>,
+    @InjectRepository(Session, 'data')
+    private readonly sessionRepository: Repository<Session>,
   ) {}
 
   async create(sessionId: string, dto: CreateTemplateDto): Promise<Template> {
+    // The templates.sessionId FK turns a missing session into a driver error (500) at save time;
+    // check first so the caller gets a truthful 404.
+    if (!(await this.sessionRepository.exists({ where: { id: sessionId } }))) {
+      throw new NotFoundException(`Session with id '${sessionId}' not found`);
+    }
     const template = this.templateRepository.create({
       sessionId,
       name: dto.name,

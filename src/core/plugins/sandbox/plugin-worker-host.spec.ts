@@ -723,9 +723,17 @@ describe('PluginWorkerHost', () => {
       const firstHooks = ch.sent.filter(m => m.kind === 'hook');
       expect(firstHooks).toHaveLength(1);
       const hookId = firstHooks[0].id;
+      expect(firstHooks[0].inFlight).toEqual(['message:sending']);
 
-      // The worker, mid-handler, issues a capability that re-fires message:sending on the host.
-      ch.reply({ kind: 'cap', id: 99, verb: 'messages.sendText', args: ['s1', 'c1', 'hi'] });
+      // The worker, mid-handler, issues a capability that re-fires message:sending on the host. A call
+      // made inside a hook handler echoes that dispatch's chain (WorkerCapabilityClient does this).
+      ch.reply({
+        kind: 'cap',
+        id: 99,
+        verb: 'messages.sendText',
+        args: ['s1', 'c1', 'hi'],
+        inFlight: firstHooks[0].inFlight,
+      });
       await flush();
       await flush();
 
@@ -735,6 +743,78 @@ describe('PluginWorkerHost', () => {
       // The worker completes the original hook; the chain resolves normally.
       ch.reply({ kind: 'hook-result', id: hookId, continue: true });
       await expect(exec).resolves.toEqual({ continue: true, data: { n: 1 } });
+    });
+  });
+
+  describe('hook re-entrancy guard is scoped to the causal chain, not the worker', () => {
+    const flush = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
+    const SENDING = 'message:sending' as HookEvent;
+
+    // A worker with a message:sending dispatch still pending, plus an in-process moderation hook that
+    // vetoes every send. The cap dispatcher reports what the veto chain decided for its send.
+    const setup = (pendingEvent = 'message:sending') => {
+      const hm = new HookManager();
+      const ch = new FakeChannel();
+      hm.register('moderation', SENDING, () => Promise.resolve({ continue: false }));
+      const capDispatcher = async (): Promise<unknown> => (await hm.execute(SENDING, {}, { source: 'cap' })).continue;
+      const host = new PluginWorkerHost(ch, capDispatcher, undefined, undefined, undefined, (events, run) =>
+        hm.runInFlight(events as HookEvent[], run),
+      );
+      void host.dispatchHook({ event: pendingEvent, data: {}, source: 'test', timeoutMs: 60_000 });
+      const result = async (id: number): Promise<unknown> => {
+        await flush();
+        await flush();
+        const reply = ch.sent.find(m => m.kind === 'cap-result' && m.id === id);
+        return reply && reply.kind === 'cap-result' && reply.ok ? reply.result : reply;
+      };
+      return { ch, result };
+    };
+
+    it('a capability call outside any hook handler still runs every message:sending veto', async () => {
+      const { ch, result } = setup();
+      // e.g. an ingress handler sending while the worker's own message:sending hook is pending.
+      ch.reply({ kind: 'cap', id: 1, verb: 'messages.sendText', args: [] });
+      await expect(result(1)).resolves.toBe(false); // vetoed, not short-circuited to continue:true
+      ch.crash(); // drains the pending dispatch and its timer
+    });
+
+    it('a capability call carrying the pending dispatch chain is still short-circuited', async () => {
+      const { ch, result } = setup();
+      ch.reply({ kind: 'cap', id: 2, verb: 'messages.sendText', args: [], inFlight: ['message:sending'] });
+      await expect(result(2)).resolves.toBe(true);
+      ch.crash(); // drains the pending dispatch and its timer
+    });
+
+    it('ignores a claimed event the host never dispatched to this worker', async () => {
+      // Only message:sent is pending; the worker claims message:sending, the chain the send would skip.
+      const { ch, result } = setup('message:sent');
+      ch.reply({ kind: 'cap', id: 3, verb: 'messages.sendText', args: [], inFlight: ['message:sending'] });
+      await expect(result(3)).resolves.toBe(false);
+      ch.crash(); // drains the pending dispatch and its timer
+    });
+
+    it('forwards the host ancestor chain on the hook message and honours it on the way back', async () => {
+      const hm = new HookManager();
+      const ch = new FakeChannel();
+      hm.register('moderation', SENDING, () => Promise.resolve({ continue: false }));
+      const capDispatcher = async (): Promise<unknown> => (await hm.execute(SENDING, {}, { source: 'cap' })).continue;
+      const host = new PluginWorkerHost(ch, capDispatcher, undefined, undefined, undefined, (events, run) =>
+        hm.runInFlight(events as HookEvent[], run),
+      );
+      void host.dispatchHook({
+        event: 'message:sent',
+        data: {},
+        source: 'test',
+        inFlight: ['message:sending', 'message:sent'],
+        timeoutMs: 60_000,
+      });
+      const hook = ch.sent.find(m => m.kind === 'hook');
+      expect(hook && hook.kind === 'hook' && hook.inFlight).toEqual(['message:sending', 'message:sent']);
+      ch.reply({ kind: 'cap', id: 4, verb: 'messages.sendText', args: [], inFlight: ['message:sending'] });
+      await flush();
+      await flush();
+      expect(ch.sent).toContainEqual({ kind: 'cap-result', id: 4, ok: true, result: true });
+      ch.crash(); // drains the pending dispatch and its timer
     });
   });
 

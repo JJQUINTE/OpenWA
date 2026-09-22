@@ -39,8 +39,10 @@ group management — so an agent can drive WhatsApp through the same business lo
 REST API uses.
 
 Set `MCP_ENABLED=true` to mount a stateless Streamable-HTTP transport at **`POST /mcp`**
-on the existing server (same port, no extra process). When `MCP_ENABLED` is unset, the
-MCP module and the `@modelcontextprotocol/sdk` package are never loaded.
+on the existing server (same port, no extra process). The transport offers no SSE stream
+and no sessions, so `GET /mcp` and `DELETE /mcp` answer `405` with `Allow: POST`. When
+`MCP_ENABLED` is unset, the MCP module and the `@modelcontextprotocol/sdk` package are
+never loaded.
 
 ## 24.2 Design Goals
 
@@ -176,7 +178,11 @@ only when an agent genuinely needs to send messages / mutate state.
   missing/invalid key would otherwise reach a DB lookup unthrottled). It keys on the
   resolved client IP (honoring `TRUSTED_PROXIES`) and is tuned with `MCP_IP_RATE_LIMIT_MAX`
   (default `120`) and `MCP_IP_RATE_LIMIT_WINDOW_MS` (default `60000`), with the same
-  fallback rules — independent of the per-key vars.
+  fallback rules, independent of the per-key vars. It counts JSON-RPC messages, not HTTP
+  requests: each element of a batch spends one unit, and a batch larger than the
+  remaining budget is refused whole with a `429`. None of its messages run, but the
+  refusal still spends whatever budget was left, so the IP is at the cap until the
+  window slides.
 - **Response parity.** Tools reuse the REST response DTOs, so sensitive fields the REST
   API strips (e.g. webhook HMAC secrets and custom headers, session proxy URLs and engine
   config) are **not** exposed over MCP.
@@ -192,7 +198,7 @@ MCP_ENABLED=true npm run start:prod   # or set MCP_ENABLED in your .env / compos
 MCP_READONLY=false                    # expose write tools (default is read-only when unset)
 MCP_RATE_LIMIT_MAX=60                 # max tool calls per key per window (default 60)
 MCP_RATE_LIMIT_WINDOW_MS=60000        # sliding window in ms (default 60000 = 1 min)
-MCP_IP_RATE_LIMIT_MAX=120             # pre-auth per-IP request cap per window (default 120)
+MCP_IP_RATE_LIMIT_MAX=120             # pre-auth per-IP message cap per window (default 120)
 MCP_IP_RATE_LIMIT_WINDOW_MS=60000     # per-IP window in ms (default 60000 = 1 min)
 ```
 

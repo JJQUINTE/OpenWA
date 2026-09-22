@@ -17,8 +17,9 @@ export interface ProxyDispatcherOptions {
    * dialled in order, because it is family-mixed: a dual-stack host commonly resolves AAAA first,
    * and neither a SOCKS4 proxy (which has no IPv6 form) nor an IPv4-only SOCKS5 proxy can reach
    * that first entry, while the direct path just falls through to the next address. An HTTP/HTTPS
-   * proxy is asked for the destination by NAME in the CONNECT line and resolves it itself, so there
-   * the value is ignored: pinning through such a proxy is not expressible in the protocol.
+   * proxy is asked for the destination by NAME (in the CONNECT line for an https destination, in the
+   * absolute-form request line for an http one) and resolves it itself, so there the value is
+   * ignored: pinning through such a proxy is not expressible in the protocol.
    */
   pinnedAddresses?: string[];
 }

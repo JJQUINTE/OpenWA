@@ -213,7 +213,8 @@ export interface IngressSignatureSpec {
   timestampHeader?: string;
   // Replay window for the declared timestampHeader. When absent, the host default applies
   // (INGRESS_TIMESTAMP_TOLERANCE_SEC, default 300) — freshness is enforced either way; an explicit
-  // value only narrows/widens the window. When present, must be > 0 (see validateIngressManifest).
+  // value only narrows/widens the window. When present, must be a finite number > 0 (see
+  // validateIngressManifest).
   toleranceSec?: number;
   dedupHeader?: string;
 }
@@ -243,14 +244,14 @@ export interface IngressResponseContract {
   ack?: {
     status?: number; // default 202
     body?: string; // literal, or a '{rawBody}'/'{timestamp}'/'{id}' template rendered host-side
-    headers?: Record<string, string>; // static; validated at load (HTTP-token name, no CR/LF value)
+    headers?: Record<string, string>; // static; validated at load (HTTP-token name, a value Node can write)
   };
   deadlineMs?: number; // documented provider ack budget (advisory; not enforced)
 }
 
 /** One inbound webhook route a plugin claims. Requires the `webhook:ingress` permission. */
 export interface PluginIngressRoute {
-  route: string; // host prefixes it; the plugin never binds a port
+  route: string; // one URL path segment (no '/'); host prefixes it; the plugin never binds a port
   /**
    * @deprecated 'sync-reply' is inert dead code since the P0 substrate (#568) and is NOT wired to the
    * HTTP response — the pipeline is always async + fast-ack. Declare synchronous response behavior via
@@ -309,17 +310,30 @@ export interface ConversationSendEnvelope {
 /** Integration SDK major version this host supports. A plugin whose `sdkVersion` major differs is refused. */
 export const SUPPORTED_SDK_MAJOR = 1;
 
-// ack header guards: name must be an RFC 7230 token (no spaces/separators), value must contain no
-// CR/LF (header-injection guard). The header source is the static manifest, validated once at load.
+// ack header guards: name must be an RFC 7230 token (no spaces/separators), value must be one Node's
+// setHeader accepts (HTAB, visible ASCII, space, and 0x80-0xFF; so no CR/LF and no other control
+// character or anything above U+00FF). A value Node refuses throws at write time, after the delivery
+// was persisted, and answers every attempt with a 500. The header source is the static manifest,
+// validated once at load.
 const HTTP_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const HTTP_HEADER_VALUE_NO_CRLF = /^[^\r\n]*$/;
+const HTTP_HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
+// An ingress route must survive as one URL path segment. The controller matches the first decoded
+// segment after the instance id, so '/' (and '\\', which a WHATWG URL parser turns into '/') splits
+// it, '?' and '#' end the path, a bare '%' is a malformed escape, and a URL parser strips tab and
+// newline (so control characters are refused outright). Anything else, a space or a non-ASCII letter
+// included, is percent-encoded in the minted ingress URL and decoded back before the match. A lone
+// UTF-16 surrogate has no UTF-8 form: encodeURIComponent throws on it and no URL decodes to it.
+// eslint-disable-next-line no-control-regex
+const INGRESS_ROUTE_SEGMENT = /^[^/\\?#%\x00-\x1f\x7f\p{Cs}]+$/u;
 
 /**
  * Validates a manifest's `ingress` declarations: SDK major compatibility, the `webhook:ingress`
- * permission, route uniqueness, that a declared `toleranceSec` is usable (> 0 — a replay window
- * of zero or less would make the tolerance check a no-op), and that no route declares
- * `signature.scheme: 'none'` unless the operator has explicitly opted in via
- * `ALLOW_UNSIGNED_INGRESS=true`. A `none`-scheme route is a fully-unauthenticated `@Public()`
+ * permission, route uniqueness, that each route is a single URL path segment the controller can
+ * match, that a declared `toleranceSec` is a finite number > 0 (a replay window of zero or less, or
+ * NaN, would make the tolerance check a no-op), that `dedupOn` is 'header' or 'body', that a
+ * declared ack is a final status (200-599) with a string body and header names and values Node can
+ * write, and that no route declares `signature.scheme: 'none'` unless the operator has explicitly
+ * opted in via `ALLOW_UNSIGNED_INGRESS=true`. A `none`-scheme route is a fully-unauthenticated `@Public()`
  * endpoint — once an instance is provisioned, anyone who can reach the host can POST a forged
  * payload that triggers outbound WhatsApp sends. Rejecting it at load (rather than only warning)
  * keeps that surface from lighting up silently. A manifest with no `ingress` entries is a no-op.
@@ -346,6 +360,12 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
       throw new Error(`Plugin ${manifest.id}: duplicate or empty ingress route '${r.route}'`);
     }
     seen.add(r.route);
+    if (typeof r.route !== 'string' || !INGRESS_ROUTE_SEGMENT.test(r.route) || r.route === '.' || r.route === '..') {
+      throw new Error(
+        `Plugin ${manifest.id}: ingress route '${String(r.route)}' must be a single URL path segment ` +
+          `(no '/', '\\', '?', '#', '%', control character or lone surrogate, and not '.' or '..')`,
+      );
+    }
     if (r.signature.scheme === 'none' && !allowUnsignedIngress) {
       throw new Error(
         `Plugin ${manifest.id}: ingress route '${r.route}' declares signature.scheme 'none', which is an ` +
@@ -353,10 +373,18 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
           `opt in (and front the route with a network/reverse-proxy ACL).`,
       );
     }
-    if (r.signature.toleranceSec !== undefined && r.signature.toleranceSec <= 0) {
-      throw new Error(
-        `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be > 0 (a replay guard would be a no-op)`,
-      );
+    // A manifest is third-party JSON, so the field is only a number by declaration. The verifier's
+    // `skew > tolerance` compares against NaN for a value like "5m" or {}, which is always false, so the
+    // replay window silently disappeared. A quoted number ("300") coerces correctly there and still loads.
+    const tol: unknown = r.signature.toleranceSec;
+    if (tol !== undefined) {
+      const n = typeof tol === 'number' ? tol : typeof tol === 'string' && tol.trim() !== '' ? Number(tol) : Number.NaN;
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new Error(
+          `Plugin ${manifest.id}: route '${r.route}' toleranceSec must be a positive number of seconds ` +
+            `(a replay guard would be a no-op)`,
+        );
+      }
     }
     if (r.dedupOn !== undefined && r.dedupOn !== 'header' && r.dedupOn !== 'body') {
       throw new Error(
@@ -365,9 +393,11 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
     }
     if (r.response) {
       const ackStatus = r.response.ack?.status;
-      if (ackStatus !== undefined && (!Number.isInteger(ackStatus) || ackStatus < 100 || ackStatus > 599)) {
+      // A 1xx is an informational response: Node writes it with no final response after it, so the
+      // provider waits until it times out.
+      if (ackStatus !== undefined && (!Number.isInteger(ackStatus) || ackStatus < 200 || ackStatus > 599)) {
         throw new Error(
-          `Plugin ${manifest.id}: route '${r.route}' response.ack.status must be a valid HTTP status (100-599)`,
+          `Plugin ${manifest.id}: route '${r.route}' response.ack.status must be a final HTTP status (200-599)`,
         );
       }
       const ackBody = r.response.ack?.body;
@@ -381,14 +411,15 @@ export function validateIngressManifest(manifest: PluginManifest, allowUnsignedI
               `Plugin ${manifest.id}: route '${r.route}' response.ack header name '${name}' is not a valid HTTP token`,
             );
           }
-          // Before the CR/LF guard: RegExp.test coerces its argument, so a number would pass it and
+          // Before the character guard: RegExp.test coerces its argument, so a number would pass it and
           // then be dropped at render time, leaving the header silently absent from every ack.
           if (typeof value !== 'string') {
             throw new Error(`Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' must be a string`);
           }
-          if (!HTTP_HEADER_VALUE_NO_CRLF.test(value)) {
+          if (!HTTP_HEADER_VALUE.test(value)) {
             throw new Error(
-              `Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' has invalid characters (CR/LF forbidden)`,
+              `Plugin ${manifest.id}: route '${r.route}' response.ack header '${name}' has invalid characters ` +
+                `(control characters and characters above U+00FF cannot be written in a header)`,
             );
           }
         }

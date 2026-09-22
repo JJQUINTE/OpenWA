@@ -96,3 +96,33 @@ describe('SendVideoStatusDto recipients validation', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+// Both engines fetch only a string that starts with http(s):// and decode anything else as base64.
+describe('status media url', () => {
+  it('accepts only an absolute http(s) url', async () => {
+    for (const url of ['example.com/a.jpg', 'ftp://example.com/a.jpg']) {
+      const errors = await validate(plainToInstance(SendImageStatusDto, { image: { url } }));
+      expect(errors.some(e => e.property === 'image')).toBe(true);
+    }
+    for (const url of [
+      'https://example.com/a.jpg',
+      'HTTPS://example.com/a.jpg',
+      'http://media-store/a.jpg',
+      'http://media_server:8080/a.jpg',
+      `https://bucket.s3.amazonaws.com/k.mp4?X-Amz-Security-Token=${'a'.repeat(2100)}`,
+    ]) {
+      expect(await validate(plainToInstance(SendVideoStatusDto, { video: { url } }))).toHaveLength(0);
+    }
+  });
+
+  it('ignores a url sent next to base64, which wins', async () => {
+    const both = { image: { base64: 'AAAA', mimetype: 'image/jpeg', url: 'cdn/banner.jpg' } };
+    expect(await validate(plainToInstance(SendImageStatusDto, both))).toHaveLength(0);
+    const alone = await validate(plainToInstance(SendImageStatusDto, { image: { url: 'cdn/banner.jpg' } }));
+    expect(alone.some(e => e.property === 'image')).toBe(true);
+    // A base64 that is only a data-URI prefix strips to nothing, so the url is what would be sent.
+    const emptyBase64 = { image: { base64: 'data:image/jpeg;base64,', mimetype: 'image/jpeg', url: 'cdn/banner.jpg' } };
+    const refused = await validate(plainToInstance(SendImageStatusDto, emptyBase64));
+    expect(refused.some(e => e.property === 'image')).toBe(true);
+  });
+});

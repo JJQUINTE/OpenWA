@@ -1,8 +1,12 @@
 import { StreamableFile } from '@nestjs/common';
 import { RESPONSE_PASSTHROUGH_METADATA } from '@nestjs/common/constants';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import type { Server } from 'http';
 import { MessageController } from './message.controller';
-import type { MessageService } from './message.service';
-import type { BulkMessageService } from './bulk-message.service';
+import { MessageService } from './message.service';
+import { BulkMessageService } from './bulk-message.service';
+import type { SendBulkMessageDto } from './dto/bulk-message.dto';
 import type { Response } from 'express';
 
 /**
@@ -110,5 +114,49 @@ describe('MessageController - inlineMedia is opt-out', () => {
   it('passes a real cursor through, trimmed', async () => {
     expect(await afterFor('db-42')).toBe('db-42');
     expect(await afterFor('  db-42  ')).toBe('db-42');
+  });
+});
+
+/**
+ * A caller may pick its own batchId. 'history' shares the two-segment shape of ':chatId/history',
+ * and an id with a reserved character must survive the statusUrl handed back on creation.
+ */
+describe('MessageController - caller-supplied batch ids', () => {
+  const bulk = {
+    getBatchStatus: jest.fn().mockResolvedValue({ batchId: 'history', status: 'processing' }),
+    createBatch: jest.fn().mockResolvedValue({ batchId: 'run/1?x', status: 'pending', messages: [] }),
+  };
+  const messages = { getChatHistory: jest.fn().mockResolvedValue([]) };
+
+  it("routes GET batch/history to the batch status, not the history of chat 'batch'", async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [MessageController],
+      providers: [
+        { provide: MessageService, useValue: messages },
+        { provide: BulkMessageService, useValue: bulk },
+      ],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+    try {
+      await request(app.getHttpServer() as Server)
+        .get('/sessions/s1/messages/batch/history')
+        .expect(200);
+      expect(bulk.getBatchStatus).toHaveBeenCalledWith('s1', 'history');
+      expect(messages.getChatHistory).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('percent-encodes the batch id in the returned statusUrl', async () => {
+    const controller = new MessageController(
+      messages as unknown as MessageService,
+      bulk as unknown as BulkMessageService,
+    );
+
+    const res = await controller.sendBulk('s1', {} as SendBulkMessageDto);
+
+    expect(res.statusUrl).toBe('/api/sessions/s1/messages/batch/run%2F1%3Fx');
   });
 });

@@ -16,7 +16,8 @@ export class SettingsGeneralDto {
   @ApiProperty({
     description:
       'Always true: the engine auto-reconnects on a transient disconnect and there is no global off ' +
-      'switch — reconnection is bounded per session by RECONNECT_MAX_ATTEMPTS.',
+      'switch. Attempts are unlimited by default; cap them per session with config.maxReconnectAttempts ' +
+      '(0-20, PATCH /api/sessions/{sessionId}/config).',
     example: true,
   })
   autoReconnect!: boolean;

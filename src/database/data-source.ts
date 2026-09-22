@@ -2,7 +2,7 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import * as path from 'path';
 import { loadCliEnv } from './load-cli-env';
 import { postgresUtcExtra } from './postgres-utc';
-import { sqliteDataMainPathCollision } from '../config/env.validation';
+import { postgresSchemaError, sqliteDataMainPathCollision } from '../config/env.validation';
 
 // Load env with the same precedence as the app (process.env > .env > data/.env.generated), so the
 // migration CLI targets the SAME database the dashboard configured — not the default SQLite DB.
@@ -19,6 +19,15 @@ if (sqlitePathCollision) {
 }
 
 const dbType = process.env.DATABASE_TYPE || 'sqlite';
+
+// Same POSTGRES_SCHEMA rule as boot: a mixed-case name is quoted by TypeORM (ledger) but folded to
+// lower case in the unquoted search_path (raw migration DDL), splitting one migration run across two
+// schemas.
+const pgSchemaError =
+  dbType === 'postgres' && process.env.POSTGRES_SCHEMA ? postgresSchemaError(process.env.POSTGRES_SCHEMA) : null;
+if (pgSchemaError) {
+  throw new Error(pgSchemaError);
+}
 
 const sourceGlob = (...segments: string[]): string => path.join(__dirname, ...segments).replace(/\\/g, '/');
 

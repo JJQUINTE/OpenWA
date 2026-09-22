@@ -216,6 +216,7 @@
     "noSessions": "Keine Sitzungen gefunden. Erstelle eine, um zu beginnen.",
     "view": "Ansehen",
     "disconnect": "Trennen",
+    "disconnectFailed": "Sitzung konnte nicht getrennt werden",
     "errorPrefix": "Fehler: {{message}}",
     "loadError": "Daten konnten nicht geladen werden",
     "charts": {
@@ -226,6 +227,7 @@
         "30d": "30 Tage"
       },
       "overTime": "Nachrichten im Zeitverlauf",
+      "overTimeUtcDays": "Nachrichten im Zeitverlauf (Tage in UTC)",
       "byType": "Nachrichten nach Typ",
       "topChats": "Top-Chats",
       "sent": "Gesendet",
@@ -345,7 +347,8 @@
       "actionRequiredTitle": "Handlung erforderlich",
       "actionRequiredDesc": "Diese Sitzung braucht deine Aufmerksamkeit. Öffne die Sitzung, um zu sehen, was zu tun ist.",
       "failedTitle": "Sitzung fehlgeschlagen",
-      "failedDesc": "Die WhatsApp-Sitzung konnte nicht gestartet werden. Öffne die Sitzung, um den Grund anzuzeigen."
+      "failedDesc": "Die WhatsApp-Sitzung konnte nicht gestartet werden. Öffne die Sitzung, um den Grund anzuzeigen.",
+      "stopFailedTitle": "Stoppen fehlgeschlagen"
     },
     "card": {
       "phone": "Telefon",
@@ -464,7 +467,10 @@
     },
     "empty": {
       "title": "Keine Webhooks konfiguriert",
-      "description": "Füge einen Webhook hinzu, um Ereignisbenachrichtigungen in Echtzeit zu erhalten"
+      "description": "Füge einen Webhook hinzu, um Ereignisbenachrichtigungen in Echtzeit zu erhalten",
+      "loadErrorTitle": "Webhooks konnten nicht geladen werden",
+      "forbiddenTitle": "Kein Zugriff auf Webhooks",
+      "forbiddenDesc": "Webhooks erfordern einen API-Schlüssel mit der Rolle Operator oder Admin."
     },
     "toasts": {
       "created": "Webhook wurde erfolgreich erstellt",
@@ -485,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "Wenn eine Nachricht empfangen wird",
       "message.sent": "Wenn eine Nachricht gesendet wird",
-      "session.connected": "Wenn eine Sitzung verbunden wird",
-      "session.disconnected": "Wenn eine Sitzung getrennt wird",
+      "message.ack": "Wenn sich der Zustell- oder Lesestatus einer Nachricht ändert",
+      "message.failed": "Wenn eine ausgehende Nachricht nicht zugestellt werden kann",
+      "message.revoked": "Wenn eine Nachricht für alle gelöscht wird",
+      "message.reaction": "Wenn eine Reaktion hinzugefügt, geändert oder entfernt wird",
+      "message.edited": "Wenn eine Nachricht bearbeitet wird",
+      "session.status": "Wenn sich der Status einer Sitzung ändert",
       "session.qr": "Wenn ein QR-Code erstellt wird",
+      "session.authenticated": "Wenn eine Sitzung gekoppelt und bereit ist",
+      "session.disconnected": "Wenn eine Sitzung getrennt wird",
+      "session.reconnect_loop": "Wenn eine Sitzung wiederholt nicht neu verbinden kann",
+      "session.restriction": "Wenn WhatsApp das Konto einschränkt oder eine Einschränkung aufhebt",
+      "presence.update": "Wenn ein abonnierter Chat online geht, tippt oder offline geht",
+      "group.join": "Wenn Teilnehmer einer Gruppe beitreten oder hinzugefügt werden",
+      "group.leave": "Wenn Teilnehmer eine Gruppe verlassen oder entfernt werden",
+      "group.update": "Wenn sich Name, Beschreibung oder Einstellungen einer Gruppe ändern",
+      "group.join_request": "Wenn jemand den Beitritt zu einer Gruppe anfragt, die diese Sitzung verwaltet",
+      "call.received": "Wenn ein eingehender Anruf zu klingeln beginnt",
+      "call.accepted": "Wenn ein Anruf angenommen wird",
+      "call.rejected": "Wenn ein Anruf abgelehnt wird",
+      "call.missed": "Wenn ein Anruf unbeantwortet bleibt",
+      "status.received": "Wenn ein Kontakt einen Status veröffentlicht",
       "all": "Alle Ereignisse"
     }
   },

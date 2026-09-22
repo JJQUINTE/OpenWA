@@ -77,6 +77,22 @@ describe('ffmpeg invocation shape', () => {
     expect(args[args.indexOf('-protocol_whitelist') + 1]).toBe('file');
   });
 
+  // The file protocol still reaches local files, and playlist or manifest demuxers open the files
+  // their input names. Only single-file containers may decode the input, and the whitelist has to be
+  // an input option, so it must precede -i.
+  it('restricts the input demuxers to single-file media containers', () => {
+    const at = args.indexOf('-format_whitelist');
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(args.indexOf('-i'));
+    const formats = args[at + 1].split(',');
+    expect(formats).toEqual(
+      expect.arrayContaining(['mov', 'matroska', 'ogg', 'mp3', 'wav', 'gif', 'mpeg', 'ac3', 'eac3']),
+    );
+    for (const referencing of ['hls', 'dash', 'concat', 'image2', 'segment', 'tee', 'lavfi']) {
+      expect(formats).not.toContain(referencing);
+    }
+  });
+
   it('never waits on stdin, and never prompts about an existing output', () => {
     expect(args).toContain('-nostdin');
     expect(args).toContain('-y');

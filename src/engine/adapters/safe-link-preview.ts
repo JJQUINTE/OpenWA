@@ -26,10 +26,12 @@ export interface SafeUrlInfo {
  * request — so that generator is never reached: Baileys spreads the caller's send options last
  * (messages-send.js:1086), so passing this as `getUrlInfo` there wins over its hardcoded one.
  *
- * `withSafeFetch` validates the destination and then PINS the connection to the vetted addresses, so
- * a hostname that resolves publicly once and to `127.0.0.1` a moment later cannot be used to reach
- * the loopback interface — the rebinding window that a validate-then-hand-off approach would leave
- * open. It also honours the deployment's own `WEBHOOK_SSRF_PROTECT` / `SSRF_ALLOWED_HOSTS` settings,
+ * `withSafeFetch` validates the destination and then PINS a direct or SOCKS-proxied connection to the
+ * vetted addresses, so a hostname that resolves publicly once and to `127.0.0.1` a moment later cannot
+ * be used to reach the loopback interface, the rebinding window that a validate-then-hand-off
+ * approach would leave open. Behind an HTTP/HTTPS session proxy the proxy resolves the name itself,
+ * so that window stays open there (SESSION_PROXY_URL_FETCH=false or a SOCKS proxy closes it).
+ * It also honours the deployment's own `WEBHOOK_SSRF_PROTECT` / `SSRF_ALLOWED_HOSTS` settings,
  * so an operator who intentionally allows an internal host keeps that behaviour here too.
  *
  * Returns undefined rather than throwing on any failure: a preview is decoration, and a site that is

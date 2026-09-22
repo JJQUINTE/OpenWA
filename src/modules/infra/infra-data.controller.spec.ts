@@ -458,6 +458,53 @@ describe('InfraDataController.importData round-trips export-data (no silent mess
     expect(stored.nodeId).toBe('node-a');
   });
 
+  it('answers imported:false with the real row error when PostgreSQL aborts the transaction', async () => {
+    await seedSession('s1');
+    await seedSession('s2');
+    const dump = await controller.exportData();
+
+    // PostgreSQL semantics on the SQLite harness: the first sessions INSERT fails, and from then on
+    // every statement except ROLLBACK fails with 25P02, as it would on an aborted PG transaction.
+    // The type flip is what the service keys its PostgreSQL handling on.
+    const realOptions = ds.options;
+    Object.defineProperty(ds, 'options', { value: { ...realOptions, type: 'postgres' }, configurable: true });
+    // better-sqlite3 hands out one runner per DataSource, so the patch is undone on that instance.
+    const runner = ds.createQueryRunner();
+    const realQuery = runner.query.bind(runner);
+    jest.spyOn(ds, 'createQueryRunner').mockImplementation(() => {
+      let aborted = false;
+      runner.query = ((...callArgs: Parameters<typeof realQuery>) => {
+        const sql = callArgs[0];
+        if (aborted && sql !== 'ROLLBACK') {
+          return Promise.reject(
+            new Error('current transaction is aborted, commands ignored until end of transaction block'),
+          );
+        }
+        if (/INSERT INTO sessions/.test(sql)) {
+          aborted = true;
+          return Promise.reject(new Error('duplicate key value violates unique constraint "PK_sessions"'));
+        }
+        return realQuery(...callArgs);
+      }) as typeof runner.query;
+      return runner;
+    });
+
+    let res: Awaited<ReturnType<typeof controller.importData>>;
+    try {
+      res = await controller.importData({ tables: dump.tables });
+    } finally {
+      jest.restoreAllMocks();
+      runner.query = realQuery;
+      Object.defineProperty(ds, 'options', { value: realOptions, configurable: true });
+    }
+
+    expect(res.imported).toBe(false);
+    expect(res.warnings).toEqual([
+      'Failed to import session s1: duplicate key value violates unique constraint "PK_sessions"',
+    ]);
+    expect((await ds.getRepository(Session).find()).map(s => s.id).sort()).toEqual(['s1', 's2']);
+  });
+
   it('leaves a session that had no claim unclaimed rather than inventing one', async () => {
     await seedSession('s1');
 

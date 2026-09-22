@@ -1191,6 +1191,22 @@ describe('MessageSendService', () => {
   // ── buildMediaInput (via sendImage) ───────────────────────────────
 
   describe('buildMediaInput validation', () => {
+    // A plugin send and a message:sending rewrite never pass the DTO, and both engines decode anything
+    // that is not an http(s) URL as base64.
+    it('refuses a url that is not absolute http(s), including one a hook rewrote', async () => {
+      await expect(service.sendImage('sess-1', { chatId: 'test@c.us', url: '/files/x.png' })).rejects.toThrow(
+        'url must be an absolute http(s) URL',
+      );
+      (hookManager.execute as jest.Mock).mockResolvedValueOnce({
+        continue: true,
+        data: { sessionId: 'sess-1', type: 'image', input: { chatId: 'test@c.us', url: 's3://bucket/key' } },
+      });
+      await expect(service.sendImage('sess-1', { chatId: 'test@c.us', url: 'https://e.com/i.jpg' })).rejects.toThrow(
+        'url must be an absolute http(s) URL',
+      );
+      expect(mockEngine.sendImageMessage).not.toHaveBeenCalled();
+    });
+
     it('should throw when neither url nor base64 is provided', async () => {
       await expect(service.sendImage('sess-1', { chatId: 'test@c.us' })).rejects.toThrow(
         'Either url or base64 must be provided',

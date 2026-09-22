@@ -54,6 +54,8 @@ import {
   ENGINE_NOT_READY_409,
   ENGINE_NOT_SUPPORTED_501,
   MEDIA_TOO_LARGE_413,
+  BULK_MEDIA_TOO_LARGE_413,
+  MEDIA_URL_PROXY_503,
   MESSAGE_NOT_FOUND_404,
   RECIPIENT_UNREACHABLE_400,
 } from '../../common/openapi/engine-status-responses';
@@ -189,11 +191,12 @@ export class MessageController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Session not active or invalid request',
+    description: 'Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: CHANNEL_MEDIA_501 })
   @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 503, description: MEDIA_URL_PROXY_503 })
   async sendImage(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendMediaMessageDto,
@@ -213,11 +216,12 @@ export class MessageController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Session not active or invalid request',
+    description: 'Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: CHANNEL_MEDIA_501 })
   @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 503, description: MEDIA_URL_PROXY_503 })
   async sendVideo(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendMediaMessageDto,
@@ -237,11 +241,12 @@ export class MessageController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Session not active or invalid request',
+    description: 'Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: CHANNEL_MEDIA_501 })
   @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 503, description: MEDIA_URL_PROXY_503 })
   async sendAudio(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendAudioMessageDto,
@@ -261,11 +266,12 @@ export class MessageController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Session not active or invalid request',
+    description: 'Session not active, invalid request, or a url that answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: CHANNEL_MEDIA_501 })
   @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 503, description: MEDIA_URL_PROXY_503 })
   async sendDocument(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendMediaMessageDto,
@@ -321,6 +327,7 @@ export class MessageController {
   @ApiResponse({ status: 400, description: RECIPIENT_UNREACHABLE_400 })
   @ApiResponse({ status: 501, description: CHANNEL_MEDIA_501 })
   @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 503, description: MEDIA_URL_PROXY_503 })
   async sendSticker(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendMediaMessageDto,
@@ -433,6 +440,61 @@ export class MessageController {
   async react(@Param('sessionId') sessionId: string, @Body() dto: ReactMessageDto): Promise<{ success: boolean }> {
     await this.messageService.reactToMessage(sessionId, dto);
     return { success: true };
+  }
+
+  // Declared before ':chatId/history': Express takes the first matching route, so a batch whose
+  // caller-supplied id is 'history' would otherwise be read as the chat history of chat 'batch'.
+  @Get('batch/:batchId')
+  @ApiOperation({ summary: 'Get batch processing status' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'batchId', description: 'Batch ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch status and progress',
+    type: BatchStatusResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Batch not found',
+  })
+  async getBatchStatus(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
+    const batch = await this.bulkMessageService.getBatchStatus(sessionId, batchId);
+    return {
+      batchId: batch.batchId,
+      status: batch.status,
+      progress: batch.progress,
+      results: batch.results,
+      startedAt: batch.startedAt,
+      completedAt: batch.completedAt,
+    };
+  }
+
+  @Post('batch/:batchId/cancel')
+  @RequireRole(ApiKeyRole.OPERATOR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel a running batch' })
+  @ApiParam({ name: 'sessionId', description: 'Session ID' })
+  @ApiParam({ name: 'batchId', description: 'Batch ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Batch cancelled',
+    type: BatchCancelResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Batch already completed, cancelled, or failed (terminal statuses are exclusive)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Batch not found',
+  })
+  async cancelBatch(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
+    const batch = await this.bulkMessageService.cancelBatch(sessionId, batchId);
+    return {
+      batchId: batch.batchId,
+      status: batch.status,
+      progress: batch.progress,
+    };
   }
 
   @Get(':chatId/history')
@@ -750,7 +812,7 @@ export class MessageController {
     status: 400,
     description: 'Session not active or invalid request',
   })
-  @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
+  @ApiResponse({ status: 413, description: BULK_MEDIA_TOO_LARGE_413 })
   async sendBulk(
     @Param('sessionId') sessionId: string,
     @Body() dto: SendBulkMessageDto,
@@ -763,60 +825,7 @@ export class MessageController {
       status: batch.status,
       totalMessages: batch.messages.length,
       estimatedCompletionTime: estimatedTime.toISOString(),
-      statusUrl: `/api/sessions/${sessionId}/messages/batch/${batch.batchId}`,
-    };
-  }
-
-  @Get('batch/:batchId')
-  @ApiOperation({ summary: 'Get batch processing status' })
-  @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiParam({ name: 'batchId', description: 'Batch ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Batch status and progress',
-    type: BatchStatusResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Batch not found',
-  })
-  async getBatchStatus(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
-    const batch = await this.bulkMessageService.getBatchStatus(sessionId, batchId);
-    return {
-      batchId: batch.batchId,
-      status: batch.status,
-      progress: batch.progress,
-      results: batch.results,
-      startedAt: batch.startedAt,
-      completedAt: batch.completedAt,
-    };
-  }
-
-  @Post('batch/:batchId/cancel')
-  @RequireRole(ApiKeyRole.OPERATOR)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel a running batch' })
-  @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiParam({ name: 'batchId', description: 'Batch ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Batch cancelled',
-    type: BatchCancelResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Batch already completed, cancelled, or failed (terminal statuses are exclusive)',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Batch not found',
-  })
-  async cancelBatch(@Param('sessionId') sessionId: string, @Param('batchId') batchId: string) {
-    const batch = await this.bulkMessageService.cancelBatch(sessionId, batchId);
-    return {
-      batchId: batch.batchId,
-      status: batch.status,
-      progress: batch.progress,
+      statusUrl: `/api/sessions/${encodeURIComponent(sessionId)}/messages/batch/${encodeURIComponent(batch.batchId)}`,
     };
   }
 }

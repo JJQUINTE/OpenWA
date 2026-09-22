@@ -35,6 +35,7 @@ import {
   deliveryStatusToAck,
   ackStatusTransitionFrom,
 } from '../message/message-status.util';
+import { isMessagePayload } from '../../core/hooks/hook-results';
 
 /**
  * Projects engine message events into the `messages` table and out to webhooks/WebSocket.
@@ -143,9 +144,40 @@ export class MessageProjector {
       .execute('message:received', messageData, {
         sessionId: id,
         source: 'Engine',
+        accept: isMessagePayload,
       })
-      .then(({ data: finalMessage }) => this.projectInboundMessage(id, engine, finalMessage))
+      .then(({ data }) =>
+        this.projectInboundMessage(id, engine, this.messageOrEngineCopy(id, 'message:received', data, message)),
+      )
       .catch(err => this.logger.error(`onMessage handler failed for ${id}`, String(err)));
+  }
+
+  /**
+   * The message a `message:received` / `message:sent` hook chain handed back, or a fresh copy of the
+   * engine's message when it is not one: null, a primitive, or an object without the `id` and `chatId`
+   * every row and dispatch keys on. HookManager already skips such a result per handler
+   * ({@link isMessagePayload}), keeping an earlier handler's rewrite; this is the last guard. A plugin
+   * returning `data: null` to mean "I consumed it" used to throw below and erase the message from
+   * history, webhooks and the websocket. A plugin may rewrite a message; it cannot make the gateway
+   * forget it (see projectInboundMessage).
+   */
+  private messageOrEngineCopy(
+    id: string,
+    event: 'message:received' | 'message:sent',
+    data: unknown,
+    message: IncomingMessage,
+  ): InboundMessageData {
+    const candidate = data as Partial<IncomingMessage> | null;
+    if (isMessagePayload(candidate)) {
+      return candidate as InboundMessageData;
+    }
+    this.logger.warn(`A ${event} hook returned a payload that is not a message; using the engine's copy`, {
+      sessionId: id,
+      messageId: message.id,
+      received: candidate === null ? 'null' : typeof candidate,
+      action: 'hook_message_discarded',
+    });
+    return { ...message };
   }
 
   /** `isStatusBroadcast` arm of {@link handleInboundMessage}: ingest into the status store, not the message pipeline. */
@@ -371,8 +403,10 @@ export class MessageProjector {
       .execute('message:sent', messageData, {
         sessionId: id,
         source: 'Engine',
+        accept: isMessagePayload,
       })
-      .then(async ({ data: finalMessage }) => {
+      .then(async ({ data }) => {
+        const finalMessage = this.messageOrEngineCopy(id, 'message:sent', data, message);
         // `continue: false` is not read here, for the same reason as the message:received path
         // above: the send has already happened, so a plugin can stop the handler chain but cannot
         // un-send it. Skipping the persist below dropped the operator's own outgoing message from

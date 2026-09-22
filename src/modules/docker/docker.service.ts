@@ -38,8 +38,11 @@ export class DockerService implements OnModuleInit {
   }
 
   /**
-   * Bootstrap orchestration: start built-in containers based on saved config
-   * This runs on application startup to ensure containers match saved configuration
+   * Bootstrap orchestration: start built-in containers based on saved config.
+   * Runs from onModuleInit, which Nest calls only after the data connection is up. When that
+   * connection is the built-in database (DATABASE_TYPE=postgres), the postgres profile is a no-op
+   * here: a stopped container was already started by prestartBuiltinDatabase in main.ts. With
+   * POSTGRES_BUILTIN=true on any other DATABASE_TYPE, this is what starts or creates it.
    */
   private async bootstrapOrchestration(): Promise<void> {
     if (!this.isAvailable) {
@@ -73,6 +76,12 @@ export class DockerService implements OnModuleInit {
     } else {
       this.logger.warn(`[Bootstrap Orchestration] Issues: ${result.errors.join('; ')}`);
     }
+  }
+
+  /** Start the built-in PostgreSQL container, creating it if absent. Never throws. */
+  async startBuiltinDatabase(): Promise<void> {
+    await this.initializeDocker();
+    if (this.isAvailable) await this.startService('database');
   }
 
   private async initializeDocker(): Promise<void> {
@@ -606,5 +615,35 @@ export class DockerService implements OnModuleInit {
       this.logger.error('Failed to get Docker info', error);
       return { available: false };
     }
+  }
+}
+
+/**
+ * Start the built-in PostgreSQL container before Nest builds the module graph. The data connection
+ * dials the database while providers are instantiated, before any onModuleInit runs, so a stopped
+ * openwa-postgres would otherwise fail every boot before DockerService could start it. Bounded
+ * because dockerode sets no connect timeout; never throws, so on any failure boot proceeds as it
+ * would without it and the data connection's retries decide.
+ */
+export async function prestartBuiltinDatabase(
+  env: NodeJS.ProcessEnv = process.env,
+  service: Pick<DockerService, 'startBuiltinDatabase'> = new DockerService(),
+  timeoutMs = 15_000,
+): Promise<void> {
+  if (env.DATABASE_TYPE !== 'postgres' || env.POSTGRES_BUILTIN !== 'true') return;
+  const logger = new Logger('DockerService');
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<void>(resolve => {
+    timer = setTimeout(() => {
+      logger.warn(`Built-in PostgreSQL start did not finish within ${timeoutMs}ms; continuing boot`);
+      resolve();
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([service.startBuiltinDatabase(), deadline]);
+  } catch (error) {
+    logger.warn(`Could not start built-in PostgreSQL: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    clearTimeout(timer);
   }
 }

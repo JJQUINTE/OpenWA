@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { webhookApi, type Webhook, type WebhookFilters, type WebhookFilterCondition } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { availableEventNames } from '../utils/webhookEvents';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import {
@@ -86,40 +87,11 @@ function FilterBadge({ filters }: { filters: WebhookFilters }) {
   );
 }
 
-// Must stay aligned with the backend WEBHOOK_EVENTS: the API now rejects unknown
-// event names, so offering e.g. the never-emitted 'session.connected' would 400 on save.
-const availableEventNames = [
-  'message.received',
-  'message.sent',
-  'message.ack',
-  'message.failed',
-  'message.revoked',
-  'message.reaction',
-  'message.edited',
-  'session.status',
-  'session.qr',
-  'session.authenticated',
-  'session.disconnected',
-  'session.reconnect_loop',
-  'session.restriction',
-  'presence.update',
-  'group.join',
-  'group.leave',
-  'group.update',
-  'group.join_request',
-  'call.received',
-  'call.accepted',
-  'call.rejected',
-  'call.missed',
-  'status.received',
-  '*',
-] as const;
-
 export function Webhooks() {
   const { t } = useTranslation();
   useDocumentTitle(t('webhooks.title'));
   const { canWrite } = useRole();
-  const { data: webhooks = [], isLoading: loadingWebhooks, isError: webhooksError } = useWebhooksQuery();
+  const { data: webhooks = [], isLoading: loadingWebhooks, error: webhooksError } = useWebhooksQuery();
   const { data: sessions = [] } = useSessionsQuery();
   const loading = loadingWebhooks;
   const createMutation = useCreateWebhookMutation();
@@ -285,7 +257,9 @@ export function Webhooks() {
         }
       />
 
-      {webhooksError && (
+      {/* With nothing cached the list area itself explains the failure; this banner covers a failed
+          background refetch that keeps the cached list on screen. */}
+      {webhooksError && webhooks.length > 0 && (
         <div className="error-banner" role="alert">
           <AlertCircle size={20} />
           <span className="error-banner-text">{t('dashboard.loadError')}</span>
@@ -462,7 +436,24 @@ export function Webhooks() {
 
       <div className="webhooks-content">
         <div className="webhooks-list-container">
-          {webhooks.length === 0 ? (
+          {webhooksError && webhooks.length === 0 ? (
+            // A failed read is not an empty list: a viewer key always gets 403 here (the route is
+            // OPERATOR-only), and a gateway error would otherwise read as "no webhooks configured".
+            <div className="empty-table-state" role="alert">
+              <AlertCircle size={48} strokeWidth={1} />
+              {(webhooksError as { status?: number }).status === 403 ? (
+                <>
+                  <h3>{t('webhooks.empty.forbiddenTitle')}</h3>
+                  <p>{t('webhooks.empty.forbiddenDesc')}</p>
+                </>
+              ) : (
+                <>
+                  <h3>{t('webhooks.empty.loadErrorTitle')}</h3>
+                  <p>{webhooksError.message}</p>
+                </>
+              )}
+            </div>
+          ) : webhooks.length === 0 ? (
             <div className="empty-table-state">
               <WebhookIcon size={48} strokeWidth={1} />
               <h3>{t('webhooks.empty.title')}</h3>

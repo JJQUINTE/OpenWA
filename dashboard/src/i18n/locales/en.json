@@ -216,6 +216,7 @@
     "noSessions": "No sessions found. Create one to get started.",
     "view": "View",
     "disconnect": "Disconnect",
+    "disconnectFailed": "Could not disconnect the session",
     "errorPrefix": "Error: {{message}}",
     "loadError": "Failed to load data",
     "charts": {
@@ -226,6 +227,7 @@
         "30d": "30d"
       },
       "overTime": "Messages over time",
+      "overTimeUtcDays": "Messages over time (days in UTC)",
       "byType": "Messages by type",
       "topChats": "Top chats",
       "sent": "Sent",
@@ -350,7 +352,8 @@
       "actionRequiredTitle": "Action required",
       "actionRequiredDesc": "This session needs your attention. Open the session to see what to do.",
       "failedTitle": "Session Failed",
-      "failedDesc": "The WhatsApp session failed to start. Open the session to see the reason."
+      "failedDesc": "The WhatsApp session failed to start. Open the session to see the reason.",
+      "stopFailedTitle": "Stop Failed"
     },
     "card": {
       "phone": "Phone",
@@ -464,7 +467,10 @@
     },
     "empty": {
       "title": "No webhooks configured",
-      "description": "Add a webhook to receive real-time event notifications"
+      "description": "Add a webhook to receive real-time event notifications",
+      "loadErrorTitle": "Could not load webhooks",
+      "forbiddenTitle": "No access to webhooks",
+      "forbiddenDesc": "Webhooks require an API key with the operator or admin role."
     },
     "toasts": {
       "created": "Webhook created successfully",
@@ -485,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "When a message is received",
       "message.sent": "When a message is sent",
-      "session.connected": "When a session connects",
-      "session.disconnected": "When a session disconnects",
+      "message.ack": "When a message's delivery or read status changes",
+      "message.failed": "When an outgoing message fails to deliver",
+      "message.revoked": "When a message is deleted for everyone",
+      "message.reaction": "When a reaction is added, changed or removed",
+      "message.edited": "When a message is edited",
+      "session.status": "When a session's status changes",
       "session.qr": "When QR code is generated",
+      "session.authenticated": "When a session is paired and ready",
+      "session.disconnected": "When a session disconnects",
+      "session.reconnect_loop": "When a session keeps failing to reconnect",
+      "session.restriction": "When WhatsApp restricts the account or lifts a restriction",
+      "presence.update": "When a subscribed chat comes online, types or goes offline",
+      "group.join": "When participants join or are added to a group",
+      "group.leave": "When participants leave or are removed from a group",
+      "group.update": "When a group's name, description or settings change",
+      "group.join_request": "When someone asks to join a group this session administers",
+      "call.received": "When an incoming call starts ringing",
+      "call.accepted": "When a call is answered",
+      "call.rejected": "When a call is declined",
+      "call.missed": "When a call goes unanswered",
+      "status.received": "When a contact posts a status",
       "all": "All events"
     }
   },

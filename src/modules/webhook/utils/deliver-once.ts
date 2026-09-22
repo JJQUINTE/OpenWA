@@ -1,8 +1,59 @@
+import * as crypto from 'crypto';
 import { Repository } from 'typeorm';
 import { withSafeFetch, redactSsrfError, isSsrfProtectionEnabled } from '../../../common/security/ssrf-guard';
 import { type LoggerService } from '../../../common/services/logger.service';
 import { WebhookDeliveryFailure } from '../entities/webhook-delivery-failure.entity';
 import { recordWebhookDeliveryFailure, statusCodeFromError } from './record-delivery-failure';
+
+/**
+ * Drop operator-supplied custom headers that target reserved names (Content-Type or any
+ * X-OpenWA-* header) so a webhook config cannot forge the signature/event/idempotency
+ * headers. Spread the result BEFORE the system headers so system always wins.
+ */
+export function sanitizeCustomHeaders(custom: Record<string, string> | null | undefined): Record<string, string> {
+  const safe: Record<string, string> = {};
+  for (const [key, value] of Object.entries(custom ?? {})) {
+    if (!/^(content-type|x-openwa-)/i.test(key)) {
+      safe[key] = value;
+    }
+  }
+  return safe;
+}
+
+/** HMAC-SHA256 over the exact pre-serialized body, prefixed for receiver-side verification. */
+export function generateSignature(payload: string, secret: string): string {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payload);
+  return `sha256=${hmac.digest('hex')}`;
+}
+
+/**
+ * The headers of one delivery attempt: the webhook's custom headers first, then the system headers
+ * (which always win), then the signature over `body` when the webhook has a secret. Built from the
+ * webhook row in hand, so a caller holding a fresh row sends its current headers and secret.
+ */
+export function buildDeliveryHeaders(
+  webhook: { headers?: Record<string, string> | null; secret?: string | null },
+  event: string,
+  idempotencyKey: string,
+  deliveryId: string,
+  body: string,
+  retryCount = 0,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    ...sanitizeCustomHeaders(webhook.headers),
+    'Content-Type': 'application/json',
+    'User-Agent': 'OpenWA-Webhook/1.0.0',
+    'X-OpenWA-Event': event,
+    'X-OpenWA-Idempotency-Key': idempotencyKey,
+    'X-OpenWA-Delivery-Id': deliveryId,
+    'X-OpenWA-Retry-Count': String(retryCount),
+  };
+  if (webhook.secret) {
+    headers['X-OpenWA-Signature'] = generateSignature(body, webhook.secret);
+  }
+  return headers;
+}
 
 /**
  * One SSRF-guarded POST + response classification: a non-ok status throws `HTTP <status>: <statusText>`,

@@ -6,7 +6,9 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 
-const pending = new Map<string, (hits: string[]) => void>();
+const pending = new Map<string, (hits: string[], total?: number) => void>();
+const offsets: string[] = [];
+const scopes: string[] = [];
 
 function installFetchStub(): void {
   globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
@@ -15,19 +17,22 @@ function installFetchStub(): void {
       'http://localhost',
     );
     const q = url.searchParams.get('q') ?? '';
+    const offset = url.searchParams.get('offset') ?? '0';
+    offsets.push(offset);
+    scopes.push(url.searchParams.get('sessionId') ?? '');
     return new Promise(resolve => {
-      pending.set(q, texts =>
+      pending.set(q, (texts, total = texts.length) =>
         resolve(
           new Response(
             JSON.stringify({
               hits: texts.map((text, i) => ({
-                messageId: `${q}-${i}`,
+                messageId: `${q}-${offset}-${i}`,
                 sessionId: 'sess-1',
                 chatId: 'chat-1@c.us',
                 timestamp: 1_767_225_600,
                 snippet: text,
               })),
-              total: texts.length,
+              total,
             }),
             { headers: { 'Content-Type': 'application/json' } },
           ),
@@ -53,6 +58,8 @@ before(async () => {
 afterEach(() => {
   rtl.cleanup();
   pending.clear();
+  offsets.length = 0;
+  scopes.length = 0;
 });
 
 async function typeAndWaitForRequest(input: HTMLElement, value: string): Promise<void> {
@@ -89,4 +96,216 @@ test('a response for a query the user cleared does not fill the list', async () 
   rtl.fireEvent.focus(input);
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(rtl.screen.queryByText('refund issued') === null, true, 'the cleared query filled the list');
+});
+
+test('Escape during a pending keystroke keeps the dismissed results closed', async () => {
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = rtl.screen.getByRole('textbox');
+
+  await typeAndWaitForRequest(input, 'refund');
+  await rtl.act(async () => pending.get('refund')!(['refund issued']));
+  await rtl.screen.findByRole('listbox');
+
+  rtl.fireEvent.change(input, { target: { value: 'refunds' } });
+  rtl.fireEvent.keyDown(input, { key: 'Escape' });
+  assert.ok(!rtl.screen.queryByRole('listbox'), 'Escape left the results open');
+  // Past the debounce: the keystroke typed before Escape must not reopen them.
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.ok(!rtl.screen.queryByRole('listbox'), 'the pending debounce reopened the dismissed results');
+});
+
+test('Escape that cancels a search before any results opened is consumed', async () => {
+  const { screen, fireEvent } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+
+  fireEvent.change(input, { target: { value: 'refund' } });
+  // Inside the debounce window: nothing has opened yet, but the key cancels the pending search, so a
+  // page-level Escape handler (the Chats page closes the open conversation) must leave it alone.
+  assert.equal(fireEvent.keyDown(input, { key: 'Escape' }), false, 'the cancelling Escape was not consumed');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.ok(!pending.has('refund'), 'the cancelled search still ran');
+  assert.ok(!screen.queryByRole('listbox'), 'the cancelled search opened results');
+  // With nothing pending and nothing open, Escape is not the widget's to keep.
+  assert.equal(fireEvent.keyDown(input, { key: 'Escape' }), true, 'an idle Escape was swallowed');
+});
+
+test("refocusing after Escape cancelled a search does not show the previous query's results", async () => {
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = rtl.screen.getByRole('textbox');
+
+  await typeAndWaitForRequest(input, 'refund');
+  await rtl.act(async () => pending.get('refund')!(['refund issued']));
+  await rtl.screen.findByRole('listbox');
+
+  rtl.fireEvent.change(input, { target: { value: 'refunds' } });
+  rtl.fireEvent.keyDown(input, { key: 'Escape' });
+  rtl.fireEvent.focus(input);
+  assert.ok(!rtl.screen.queryByText('refund issued'), 'refocus showed results for the old query');
+  await rtl.waitFor(() => assert.ok(pending.has('refunds'), 'refocus did not search the query the input shows'));
+  await rtl.act(async () => pending.get('refunds')!(['refunds batch']));
+  await rtl.screen.findByText('refunds batch');
+});
+
+const page = (from: number): string[] => Array.from({ length: 20 }, (_, i) => `refund ${from + i}`);
+
+test('a mouse click on "more" keeps the results open and appends the next page', async () => {
+  const { screen, fireEvent, act, waitFor } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(page(0), 40));
+  const more = await screen.findByRole('button', { name: '40 results' });
+
+  // A real mousedown moves focus off the input; cancelling it is what keeps the input focused.
+  assert.equal(fireEvent.mouseDown(more), false, 'mousedown on "more" was not cancelled');
+  fireEvent.click(more);
+  await waitFor(() => assert.deepEqual(offsets, ['0', '20']));
+  await act(async () => pending.get('refund')!(page(20), 40));
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(screen.queryByRole('listbox'), 'the results closed after "more"');
+  assert.equal(screen.getAllByRole('option').length, 40);
+});
+
+test('Tab then Enter on "more" keeps the results open and returns focus to the input', async () => {
+  const { screen, fireEvent, act, waitFor } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(page(0), 40));
+  const more = await screen.findByRole('button', { name: '40 results' });
+
+  // Tabbing moves focus from the input to the button; the results must outlive the close timer.
+  act(() => more.focus());
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(screen.queryByRole('listbox'), 'moving focus to "more" closed the results');
+
+  // Enter and Space activate a focused button through click.
+  fireEvent.click(more);
+  await waitFor(() => assert.deepEqual(offsets, ['0', '20']));
+  assert.equal(document.activeElement, input, 'focus was left on the replaced button');
+  await act(async () => pending.get('refund')!(page(20), 40));
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(screen.queryByRole('listbox'), 'the results closed after "more"');
+  assert.equal(screen.getAllByRole('option').length, 40);
+});
+
+test('focus leaving the widget still closes the results', async () => {
+  const { screen, act } = rtl;
+  const outside = document.createElement('button');
+  document.body.appendChild(outside);
+  try {
+    rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+    const input = screen.getByRole('textbox');
+    input.focus();
+    await typeAndWaitForRequest(input, 'refund');
+    await act(async () => pending.get('refund')!(['refund issued']));
+    await screen.findByRole('listbox');
+    act(() => outside.focus());
+    await new Promise(resolve => setTimeout(resolve, 200));
+    assert.ok(!screen.queryByRole('listbox'), 'the results stayed open after focus left');
+  } finally {
+    outside.remove();
+  }
+});
+
+test('picking a hit with the mouse closes the results', async () => {
+  const { screen, act, fireEvent } = rtl;
+  const picked: string[] = [];
+  rtl.render(createElement(GlobalSearch, { onHit: (h: { messageId: string }) => picked.push(h.messageId) }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(['refund issued']));
+  const hit = await screen.findByRole('option');
+  // A browser moves focus to the pressed button on mousedown, then fires click.
+  act(() => {
+    fireEvent.mouseDown(hit);
+    hit.focus();
+  });
+  fireEvent.click(hit);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(picked.length, 1);
+  assert.ok(!screen.queryByRole('listbox'), 'the results stayed open after picking a hit');
+});
+
+test('clicking the input after a pick or Escape shows the results again', async () => {
+  const { screen, act, fireEvent } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(['refund issued']));
+  // A mouse pick keeps focus in the input, so the click back fires no focus event.
+  const hit = await screen.findByRole('option');
+  fireEvent.mouseDown(hit);
+  fireEvent.click(hit);
+  assert.ok(!screen.queryByRole('listbox'), 'picking a hit left the results open');
+  fireEvent.click(input);
+  assert.ok(await screen.findByRole('listbox'), 'clicking the input after a pick did not reopen the results');
+
+  fireEvent.keyDown(input, { key: 'Escape' });
+  assert.ok(!screen.queryByRole('listbox'), 'Escape left the results open');
+  fireEvent.click(input);
+  assert.ok(await screen.findByRole('listbox'), 'clicking the input after Escape did not reopen the results');
+});
+
+test('a click on the input while a keystroke search is pending sends that search once', async () => {
+  const { screen, fireEvent } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  fireEvent.change(input, { target: { value: 'refund' } });
+  fireEvent.click(input); // before the 300 ms debounce fires
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.deepEqual(offsets, ['0'], 'the same search went out twice');
+});
+
+test('clicking the input after Escape cancelled a scope change searches the scope shown', async () => {
+  const { screen, act, fireEvent, waitFor } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined, currentSessionId: 'sess-1' }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(['refund issued']));
+  await screen.findByRole('listbox');
+
+  const scope = screen.getByRole('checkbox');
+  fireEvent.click(scope);
+  fireEvent.keyDown(scope, { key: 'Escape' }); // cancels the scoped search before it goes out
+  fireEvent.click(input);
+  await waitFor(() => assert.deepEqual(scopes, ['', 'sess-1']));
+});
+
+test('a hit reached with Tab is picked with Enter or Space', async () => {
+  const { screen, act, fireEvent } = rtl;
+  const picked: string[] = [];
+  rtl.render(createElement(GlobalSearch, { onHit: (h: { messageId: string }) => picked.push(h.messageId) }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(['refund issued']));
+  const hit = await screen.findByRole('option');
+  act(() => hit.focus());
+  // Enter and Space activate a focused button through click, with no mousedown.
+  fireEvent.click(hit);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(picked.length, 1);
+  assert.ok(!screen.queryByRole('listbox'), 'the results stayed open after picking a hit');
+});
+
+test('Escape with focus on "more" closes the results and is consumed', async () => {
+  const { screen, act, fireEvent } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(page(0), 40));
+  const more = await screen.findByRole('button', { name: '40 results' });
+  act(() => more.focus());
+  // Unconsumed, the key would reach the Chats page handler and close the open conversation instead.
+  assert.equal(fireEvent.keyDown(more, { key: 'Escape' }), false, 'Escape on "more" was not consumed');
+  assert.ok(!screen.queryByRole('listbox'), 'Escape on "more" left the results open');
 });

@@ -8,6 +8,7 @@ jest.mock('archiver', () => ({ default: jest.fn() }));
 
 import { StorageService } from '../../common/storage/storage.service';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { userPart } from '../../engine/identity/wa-id';
 import { StatusUpdate } from './entities/status-update.entity';
 import { StatusStoreService } from './status-store.service';
@@ -413,11 +414,14 @@ describe('StatusStoreService contact identity (read-time lid resolution)', () =>
     const getCached = (lid: string): string | null | undefined => (lid in mappings ? mappings[lid] : undefined);
     return {
       getCached,
+      findPhoneForLid: (lid: string) => Promise.resolve(getCached(lid) ?? null),
       resolveLid: (jid: string) => getCached(userPart(jid)) ?? null,
-      lidsForPhone: (phone: string) =>
-        Object.entries(mappings)
-          .filter(([, p]) => p === phone)
-          .map(([l]) => l),
+      findLidsForPhone: (phone: string) =>
+        Promise.resolve(
+          Object.entries(mappings)
+            .filter(([, p]) => p === phone)
+            .map(([l]) => l),
+        ),
     } as unknown as LidMappingStoreService;
   };
 
@@ -458,6 +462,55 @@ describe('StatusStoreService contact identity (read-time lid resolution)', () =>
     const out = await svc.listByContact('sess', '111@lid');
     expect(out).toHaveLength(1);
     expect(out[0].contact.id).toBe('628111@c.us');
+  });
+
+  it.each(['111@hosted.lid', '111@LID', ' 111@lid '])(
+    'listByContact treats %p as a lid, matching its phone and lid rows',
+    async query => {
+      const svc = new StatusStoreService(
+        repository,
+        storageService,
+        fakeConfigService(),
+        lidStore({ '111': '628111' }),
+      );
+      const now = Date.now();
+      await svc.ingest('sess', { waStatusId: 'h1', contactJid: '628111@c.us', type: 'text', postedAt: now });
+      await svc.ingest('sess', { waStatusId: 'h2', contactJid: '111@lid', type: 'text', postedAt: now + 1 });
+
+      const out = await svc.listByContact('sess', query);
+      expect(out).toHaveLength(2);
+    },
+  );
+
+  it("listByContact never reads a lid's digits as a phone", async () => {
+    // Lid 111 is 628111. A phone 111 and the lid 999 mapped to that phone are someone else.
+    const svc = new StatusStoreService(
+      repository,
+      storageService,
+      fakeConfigService(),
+      lidStore({ '111': '628111', '999': '111' }),
+    );
+    const now = Date.now();
+    await svc.ingest('sess', { waStatusId: 'own-lid', contactJid: '111@lid', type: 'text', postedAt: now });
+    await svc.ingest('sess', { waStatusId: 'own-phone', contactJid: '628111@c.us', type: 'text', postedAt: now + 1 });
+    await svc.ingest('sess', { waStatusId: 'other-phone', contactJid: '111@c.us', type: 'text', postedAt: now + 2 });
+    await svc.ingest('sess', { waStatusId: 'other-lid', contactJid: '999@lid', type: 'text', postedAt: now + 3 });
+
+    const ids = (await svc.listByContact('sess', '111@lid')).map(s => s.id).sort();
+    expect(ids).toEqual(['own-lid', 'own-phone']);
+  });
+
+  it('listByContact forward-resolves a lid the store only holds in its table, not its cache', async () => {
+    const table = [{ lid: '111', phone: '628111' }];
+    const store = new LidMappingStoreService({
+      find: () => Promise.resolve([]),
+      findOne: ({ where }: { where: { lid: string } }) => Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+    } as unknown as Repository<LidMapping>);
+    const svc = new StatusStoreService(repository, storageService, fakeConfigService(), store);
+    await svc.ingest('sess', { waStatusId: 'l6', contactJid: '628111@c.us', type: 'text', postedAt: Date.now() });
+
+    const out = await svc.listByContact('sess', '111@lid');
+    expect(out).toHaveLength(1);
   });
 
   it('never resolves phone-shaped JIDs through the lid map (digit-collision guard)', async () => {

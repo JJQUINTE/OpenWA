@@ -138,10 +138,22 @@ describe('wa-id', () => {
       expect(toParticipantWid('628123456789')).toBe('628123456789@c.us');
     });
 
-    it('leaves an already-qualified id untouched', () => {
+    it('leaves an already-neutral id untouched', () => {
       expect(toParticipantWid('628123456789@c.us')).toBe('628123456789@c.us');
       expect(toParticipantWid('12345678901234567890@lid')).toBe('12345678901234567890@lid');
-      expect(toParticipantWid('628123456789@s.whatsapp.net')).toBe('628123456789@s.whatsapp.net');
+    });
+
+    it.each([
+      [' 628123456789:3@C.US ', '628123456789@c.us'],
+      ['628123456789@s.whatsapp.net', '628123456789@c.us'],
+      ['628123456789@hosted', '628123456789@c.us'],
+      ['12345678901234567890:5@LID', '12345678901234567890@lid'],
+      ['12345678901234567890@hosted.lid', '12345678901234567890@lid'],
+    ])('reduces the accepted variant %s to the neutral id %s, keeping a lid a lid', (value, expected) => {
+      // isIndividualWid accepts every one of these, so forwarding the raw string would hand the
+      // engine an id the group's participant list is not keyed by.
+      expect(isIndividualWid(value)).toBe(true);
+      expect(toParticipantWid(value)).toBe(expected);
     });
 
     it.each([['abc@weird'], ['abc'], ['NOT A USER'], ['']])(

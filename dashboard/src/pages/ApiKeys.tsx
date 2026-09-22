@@ -14,8 +14,6 @@ import {
   Copy,
   RefreshCw,
   Trash2,
-  Eye,
-  EyeOff,
   Loader2,
   Check,
   KeyRound,
@@ -72,7 +70,6 @@ export function ApiKeys() {
   const updateMutation = useUpdateApiKeyMutation();
   const deleteMutation = useDeleteApiKeyMutation();
   const revokeMutation = useRevokeApiKeyMutation();
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [showModal, setShowModal] = useState(false);
   const [newKey, setNewKey] = useState(emptyKeyForm);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -166,15 +163,6 @@ export function ApiKeys() {
     setConfirmAction(null);
   };
 
-  const toggleKeyVisibility = (id: string) => {
-    setVisibleKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const handleCopy = async (text: string, id: string) => {
     if (await copyToClipboard(text)) {
       setCopied(id);
@@ -192,21 +180,12 @@ export function ApiKeys() {
         columnHelper.accessor('keyPrefix', {
           id: 'key',
           header: () => t('apiKeys.columns.key'),
-          cell: info => {
-            const apiKey = info.row.original;
-            return (
-              <span className="key-cell">
-                <code>{visibleKeys.has(apiKey.id) ? apiKey.keyPrefix + '...' : apiKey.keyPrefix + '****'}</code>
-                <button
-                  className="icon-btn-sm"
-                  onClick={() => toggleKeyVisibility(apiKey.id)}
-                  aria-label={visibleKeys.has(apiKey.id) ? t('common.hideApiKey') : t('common.showApiKey')}
-                >
-                  {visibleKeys.has(apiKey.id) ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </span>
-            );
-          },
+          // The list carries only the prefix: the full key exists once, in the post-creation modal.
+          cell: info => (
+            <span className="key-cell">
+              <code>{info.getValue()}****</code>
+            </span>
+          ),
         }),
         columnHelper.accessor('role', {
           header: () => t('apiKeys.columns.role'),
@@ -282,7 +261,7 @@ export function ApiKeys() {
           },
         }),
       ]),
-    [visibleKeys, t, sessions],
+    [t, sessions],
   );
 
   const table = useTable({

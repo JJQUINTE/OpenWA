@@ -1,6 +1,8 @@
 import { fetch as undiciFetch } from 'undici';
 import { loadRemoteMediaBuffer } from './load-remote-media';
+import { BadRequestException, PayloadTooLargeException, ServiceUnavailableException } from '@nestjs/common';
 import { SsrfBlockedError } from '../security/ssrf-guard';
+import { countsTowardSendBreaker } from '../../modules/message/send-pacing.service';
 
 // Media download goes through undici's fetch (via the SSRF-pinning helper); mock it, not global fetch.
 jest.mock('undici', () => {
@@ -54,5 +56,137 @@ describe('loadRemoteMediaBuffer', () => {
     process.env.MEDIA_DOWNLOAD_MAX_BYTES = '2';
     (undiciFetch as jest.Mock).mockResolvedValue(fakeResponse([1, 2, 3], { 'content-type': 'image/png' }));
     await expect(loadRemoteMediaBuffer('http://8.8.8.8/x.png', undefined)).rejects.toThrow(/exceeds/i);
+  });
+
+  /**
+   * A URL that cannot be fetched is a fault in the caller's input. As a plain Error it left every
+   * send path as a 500 and counted toward the send-pacing breaker, so a client with a dead link
+   * could trip the breaker on a healthy session.
+   */
+  describe('maps a failed fetch to a client error', () => {
+    const failureOf = async (): Promise<unknown> =>
+      loadRemoteMediaBuffer('http://8.8.8.8/x.png', undefined).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    it('answers 400 for a non-2xx response', async () => {
+      (undiciFetch as jest.Mock).mockResolvedValue({ ...fakeResponse([], {}), ok: false, status: 404 });
+      const error = await failureOf();
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe('Media fetch failed with status 404');
+      expect(countsTowardSendBreaker(error)).toBe(false);
+    });
+
+    it('answers 413 for a declared or streamed size over the cap', async () => {
+      process.env.MEDIA_DOWNLOAD_MAX_BYTES = '2';
+      (undiciFetch as jest.Mock).mockResolvedValue(fakeResponse([1], { 'content-length': '3' }));
+      const declared = await failureOf();
+      expect(declared).toBeInstanceOf(PayloadTooLargeException);
+      expect(countsTowardSendBreaker(declared)).toBe(false);
+
+      (undiciFetch as jest.Mock).mockResolvedValue(fakeResponse([1, 2, 3], {}));
+      expect(await failureOf()).toBeInstanceOf(PayloadTooLargeException);
+    });
+
+    it('answers 400 for a response without a body', async () => {
+      (undiciFetch as jest.Mock).mockResolvedValue({ ...fakeResponse([], {}), body: null });
+      expect(await failureOf()).toBeInstanceOf(BadRequestException);
+    });
+
+    it('answers 400 for a timeout', async () => {
+      (undiciFetch as jest.Mock).mockRejectedValue(new DOMException('aborted', 'TimeoutError'));
+      const error = await failureOf();
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toMatch(/^Media fetch timed out after \d+ ms$/);
+    });
+
+    it('answers 400 for a failed connection without echoing its cause', async () => {
+      (undiciFetch as jest.Mock).mockRejectedValue(
+        new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.0.5:443') }),
+      );
+      const error = await failureOf();
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(JSON.stringify((error as BadRequestException).getResponse())).not.toContain('10.0.0.5');
+      expect(countsTowardSendBreaker(error)).toBe(false);
+    });
+
+    it('answers 400 for a body cut off mid-read', async () => {
+      const reader = { read: () => Promise.reject(new TypeError('terminated')), cancel: () => Promise.resolve() };
+      const response = fakeResponse([], {});
+      (undiciFetch as jest.Mock).mockResolvedValue({
+        ...response,
+        body: { ...response.body, getReader: () => reader },
+      });
+      expect(await failureOf()).toBeInstanceOf(BadRequestException);
+    });
+
+    // A malformed proxy URL or a fault in this code is a server fault: it stays a 500.
+    it('leaves any other TypeError unchanged', async () => {
+      const invalid = new TypeError('Invalid URL');
+      (undiciFetch as jest.Mock).mockRejectedValue(invalid);
+      expect(await failureOf()).toBe(invalid);
+    });
+
+    it('leaves any other error unchanged', async () => {
+      const boom = new Error('Unsupported proxy protocol: gopher:');
+      (undiciFetch as jest.Mock).mockRejectedValue(boom);
+      expect(await failureOf()).toBe(boom);
+    });
+  });
+
+  /**
+   * undici reports a session proxy that refuses the connection, cannot be resolved or fails its
+   * handshake with the same `fetch failed` as an unreachable target. Answering 400 there blamed the
+   * caller's URL for the operator's proxy outage.
+   */
+  describe('behind a session proxy', () => {
+    const PROXY = 'http://user:secret@proxy.example:3128';
+    const failureOf = async (): Promise<unknown> =>
+      loadRemoteMediaBuffer('http://8.8.8.8/x.png', PROXY).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    it('answers 503 for a failed connection, without the proxy or its credentials', async () => {
+      (undiciFetch as jest.Mock).mockRejectedValue(
+        new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 10.0.0.5:3128') }),
+      );
+      const error = await failureOf();
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      const body = JSON.stringify((error as ServiceUnavailableException).getResponse());
+      expect(body).not.toMatch(/10\.0\.0\.5|proxy\.example|secret/);
+      expect(countsTowardSendBreaker(error)).toBe(false);
+    });
+
+    it('answers 503 for a timeout before any response', async () => {
+      (undiciFetch as jest.Mock).mockRejectedValue(new DOMException('aborted', 'TimeoutError'));
+      const error = await failureOf();
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(countsTowardSendBreaker(error)).toBe(false);
+    });
+
+    it('keeps 400 once the target has answered', async () => {
+      (undiciFetch as jest.Mock).mockResolvedValue({ ...fakeResponse([], {}), ok: false, status: 404 });
+      expect(await failureOf()).toBeInstanceOf(BadRequestException);
+
+      const reader = { read: () => Promise.reject(new TypeError('terminated')), cancel: () => Promise.resolve() };
+      const response = fakeResponse([], {});
+      (undiciFetch as jest.Mock).mockResolvedValue({
+        ...response,
+        body: { ...response.body, getReader: () => reader },
+      });
+      expect(await failureOf()).toBeInstanceOf(BadRequestException);
+    });
+
+    it('keeps 400 when SESSION_PROXY_URL_FETCH=false sends the fetch direct', async () => {
+      process.env.SESSION_PROXY_URL_FETCH = 'false';
+      try {
+        (undiciFetch as jest.Mock).mockRejectedValue(new TypeError('fetch failed'));
+        expect(await failureOf()).toBeInstanceOf(BadRequestException);
+      } finally {
+        delete process.env.SESSION_PROXY_URL_FETCH;
+      }
+    });
   });
 });

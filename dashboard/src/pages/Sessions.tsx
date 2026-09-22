@@ -500,6 +500,7 @@ export function Sessions() {
       await applySessionResponse(updated);
     } catch (err) {
       console.error('Failed to stop:', err);
+      toast.error(t('sessions.toasts.stopFailedTitle'), err instanceof Error ? err.message : t('common.unknownError'));
       // The error response carries no Session body, so re-fetch the authoritative state — phone:null
       // and the real status come from the list endpoint, not the error envelope.
       await fetchSessions();

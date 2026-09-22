@@ -31,7 +31,7 @@ export function groupTools(group: GroupService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        groupId: z.string().describe('Group JID (e.g. 120363xxx@g.us)'),
+        groupId: z.string().min(1).describe('Group JID (e.g. 120363xxx@g.us)'),
       }),
       handler: input => group.getGroupInfo(input.sessionId, input.groupId),
     }),
@@ -45,7 +45,7 @@ export function groupTools(group: GroupService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        groupId: z.string().describe('Group JID (e.g. 120363xxx@g.us)'),
+        groupId: z.string().min(1).describe('Group JID (e.g. 120363xxx@g.us)'),
       }),
       handler: async input => {
         const inviteCode = await group.getGroupInviteCode(input.sessionId, input.groupId);
@@ -78,7 +78,7 @@ export function groupTools(group: GroupService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        groupId: z.string().describe('Group JID (e.g. 120363xxx@g.us)'),
+        groupId: z.string().min(1).describe('Group JID (e.g. 120363xxx@g.us)'),
         participants: z
           .array(z.string())
           .min(1)
@@ -110,7 +110,7 @@ export function groupTools(group: GroupService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        groupId: z.string().describe('Group JID (e.g. 120363xxx@g.us)'),
+        groupId: z.string().min(1).describe('Group JID (e.g. 120363xxx@g.us)'),
         subject: z.string().min(1).max(GROUP_NAME_MAX_LENGTH).describe('New group subject/name'),
       }),
       handler: async input => {
@@ -127,7 +127,7 @@ export function groupTools(group: GroupService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        groupId: z.string().describe('Group JID (e.g. 120363xxx@g.us)'),
+        groupId: z.string().min(1).describe('Group JID (e.g. 120363xxx@g.us)'),
         description: z
           .string()
           .max(GROUP_DESCRIPTION_MAX_LENGTH)

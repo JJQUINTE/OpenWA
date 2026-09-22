@@ -224,3 +224,30 @@ describe('SendMediaMessageDto mentions', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+// Both engines fetch only a string that starts with http(s):// and decode anything else as base64,
+// so any other url passed validation and then failed inside the engine.
+describe('SendMediaMessageDto url', () => {
+  it('accepts only an absolute http(s) url', async () => {
+    for (const url of ['example.com/a.jpg', 'ftp://example.com/a.jpg']) {
+      expect((await validateDto(SendMediaMessageDto, { chatId: 'c@c.us', url })).length).toBeGreaterThan(0);
+    }
+    for (const url of ['https://example.com/a.jpg', 'HTTPS://example.com/a.jpg', 'http://media_server:8080/a.jpg']) {
+      expect(await validateDto(SendMediaMessageDto, { chatId: 'c@c.us', url })).toHaveLength(0);
+    }
+  });
+
+  it('ignores a stale url next to base64', async () => {
+    expect(await validateDto(SendMediaMessageDto, { chatId: 'c@c.us', base64: 'AAAA', url: 'junk' })).toHaveLength(0);
+  });
+
+  it('checks the url when base64 is only a data-URI prefix, since the url is then what gets sent', async () => {
+    const errors = await validateDto(SendMediaMessageDto, {
+      chatId: 'c@c.us',
+      base64: 'data:image/jpeg;base64,',
+      mimetype: 'image/jpeg',
+      url: 'cdn/banner.jpg',
+    });
+    expect(errors.map(e => e.property)).toContain('url');
+  });
+});

@@ -38,6 +38,10 @@ export type HostToWorkerMessage =
       sessionId?: string;
       source: string;
       config?: Record<string, unknown>;
+      // The host's in-flight hook chain for this dispatch (this event plus any ancestor event whose
+      // handler led to it). The worker echoes it on every capability call the handler makes, so the
+      // host re-establishes the re-entrancy guard for that causal chain only.
+      inFlight?: string[];
     }
   // The plugin's config was updated: refresh ctx.config and invoke onConfigChange (fire-and-forget).
   | { kind: 'config-change'; config: Record<string, unknown> }
@@ -77,7 +81,9 @@ export type WorkerToHostMessage =
   | { kind: 'lifecycle-result'; id: number; ok: false; error: string }
   // Worker-initiated capability call (ctx.messages.* / ctx.engine.* / ctx.storage.*). The host
   // validates it (permission + session scope) before running the real verb and replying.
-  | { kind: 'cap'; id: number; verb: string; args: unknown[] }
+  // `inFlight` is the chain of the hook dispatch whose handler issued the call (absent outside a hook,
+  // e.g. an ingress handler or a timer); the host trusts only events it actually dispatched.
+  | { kind: 'cap'; id: number; verb: string; args: unknown[]; inFlight?: string[] }
   // The worker asks the host to dispatch `event` to it (registered a handler for it).
   | { kind: 'hook-subscribe'; event: string; priority?: number }
   // The worker's handler result for a dispatched hook (continue/modify/error).
