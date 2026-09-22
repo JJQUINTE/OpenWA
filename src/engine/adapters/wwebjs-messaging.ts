@@ -96,9 +96,10 @@ export async function loadRemoteMedia(url: string, sessionProxyUrl: string | und
 }
 
 /**
- * True when a send error is whatsapp-web.js's "recipient needs a LID we don't have" failure, raised
- * when sending to a `@c.us` for a contact WhatsApp has migrated to `@lid`.
- * Matched on the wwjs error text — there is no structured code; revisit if wwjs changes it.
+ * True when a send error is WhatsApp Web's "recipient needs a LID we don't have" failure, a bare
+ * Error its own bundle raises when sending to a `@c.us` for a contact WhatsApp has migrated to
+ * `@lid`. Matched on WhatsApp Web's error text — there is no structured code; revisit if WhatsApp
+ * Web changes it.
  */
 export function isNoLidForUserError(err: unknown): boolean {
   return err instanceof Error && err.message.includes('No LID for user');

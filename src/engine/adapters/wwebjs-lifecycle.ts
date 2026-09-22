@@ -69,6 +69,14 @@ export function isProtocolTimeout(error: unknown): boolean {
 }
 
 /**
+ * The start of a send failure that scripts/patch-wwebjs-send-error.js captured inside the page, where
+ * it summarises a thrown value puppeteer would otherwise hand over as `t: t`. The patcher builds the
+ * message from its own copy of this string (it runs at install time, before any of this is compiled),
+ * and wwebjs-send-page-error.spec.ts pins the two equal.
+ */
+export const CAPTURED_PAGE_ERROR_PREFIX = 'page threw ';
+
+/**
  * requestPairingCode retry budget. WhatsApp Web reloads the QR page while UNPAIRED, so a pairing
  * request can land mid-navigation and either reject fast ("Execution context was destroyed") or hang
  * until Puppeteer's protocol timeout. Each attempt is bounded, and only the navigation/timeout shapes
@@ -747,6 +755,12 @@ export class WwebjsLifecycle {
       return false;
     }
     const message = error instanceof Error ? error.message : String(error);
+    // A captured page error is never a dead page: the page was alive enough to run the catch that
+    // built it. Its summary quotes WhatsApp Web's own text, and that text can say "connection closed"
+    // about WhatsApp's socket, which the pattern would otherwise read as ours going down.
+    if (message.startsWith(CAPTURED_PAGE_ERROR_PREFIX)) {
+      return false;
+    }
     return WwebjsLifecycle.PAGE_TRANSPORT_ERROR_PATTERN.test(message);
   }
 
