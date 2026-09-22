@@ -451,7 +451,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build and optionally push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           # Fork pull requests receive a read-only token, so they validate both image architectures
@@ -481,7 +481,7 @@ jobs:
       # every gate above and reached `latest`. Loaded single-arch from the same gha cache the
       # multi-arch build just populated, so this reuses those layers rather than building twice.
       - name: Load a single-arch image for the runtime smoke test
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           load: true
