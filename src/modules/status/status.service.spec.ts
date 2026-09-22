@@ -204,6 +204,27 @@ describe('StatusService media validation and selection', () => {
     expect(engine.postImageStatus).not.toHaveBeenCalled();
   });
 
+  it('refuses a long whitespace run in linear time, without holding the event loop', async () => {
+    const started = Date.now();
+    await expect(
+      service.postImageStatus('s1', { base64: ' '.repeat(200_000) + '!' }, { recipients: ['1@c.us'] }),
+    ).rejects.toThrow('media must be an absolute http(s) URL or base64');
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  // Most real payloads end in padding (any file whose size is not a multiple of 3), and line-wrapped
+  // or URL-safe base64 is still base64, so the shape check must keep accepting all of them.
+  it.each(['QQ==', 'QUI=\n', 'QU\r\nJD', 'a-_b=='])('accepts padded, wrapped or URL-safe base64 %j', async base64 => {
+    await service.postImageStatus('s1', { base64, mimetype: 'image/png' }, { recipients: ['1@c.us'] });
+    expect(engine.postImageStatus).toHaveBeenCalledWith(expect.objectContaining({ data: base64 }), expect.anything());
+  });
+
+  it('refuses a character after the base64 padding', async () => {
+    await expect(
+      service.postImageStatus('s1', { base64: 'QQ==x', mimetype: 'image/png' }, { recipients: ['1@c.us'] }),
+    ).rejects.toThrow('media must be an absolute http(s) URL or base64');
+  });
+
   describe('voice status', () => {
     // Ogg/Opus is the only thing WhatsApp plays as a status voice note, and neither engine
     // transcodes — so the default has to be that, not a generic audio type.

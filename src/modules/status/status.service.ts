@@ -20,7 +20,10 @@ import { isMediaUrl } from '../../common/media/media-url';
 const SAFE_STATUS_MIMETYPE = /^(image|video|audio)\//;
 const SCRIPTABLE_SVG_MIMETYPE = /^image\/svg\+xml\s*(;|$)/;
 
-const BASE64_TEXT = /^[A-Za-z0-9+/_\-\s]*=*\s*$/;
+// The padding and its trailing whitespace are one optional group: a bare `=*\s*` after a class that
+// also matches whitespace let a long whitespace run followed by any other character backtrack
+// quadratically, and one request of padded spaces held the event loop for minutes.
+const BASE64_TEXT = /^[A-Za-z0-9+/_\-\s]*(?:=+\s*)?$/;
 
 @Injectable()
 export class StatusService {
