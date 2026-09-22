@@ -189,12 +189,15 @@ export class ApiKeyGuard implements CanActivate {
    * two lid-table lookups each), so a route that names no chat costs nothing.
    */
   private async assertChatsAllowed(request: Request, apiKey: ApiKey, context: ExecutionContext): Promise<void> {
+    // A bulk send repeats the same chat freely; each distinct id is expanded once.
+    const checked = new Set<string>();
     for (const [field, value] of this.chatIdsIn(request)) {
       if (value === undefined || value === null) continue;
       if (typeof value !== 'string') {
         throw new BadRequestException(`${field} must be a single chat id string`);
       }
-      if (value.length === 0) continue;
+      if (value.length === 0 || checked.has(value)) continue;
+      checked.add(value);
       if (!(await this.chatScope.allows(apiKey, value))) {
         throw new ForbiddenException('API key not authorized for this chat');
       }

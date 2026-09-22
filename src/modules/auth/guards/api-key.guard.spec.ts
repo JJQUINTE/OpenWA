@@ -589,6 +589,23 @@ describe('ApiKeyGuard', () => {
       expect(await guard.canActivate(context)).toBe(true);
     });
 
+    it('expands each distinct bulk recipient once, however often it repeats', async () => {
+      const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP, ALLOWED_CONTACT] });
+      (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
+      const allows = jest.spyOn(ChatScopeService.prototype, 'allows');
+      try {
+        const messages = Array.from({ length: 100 }, (_, i) => ({
+          chatId: i % 2 ? ALLOWED_GROUP : ALLOWED_CONTACT,
+          type: 'text',
+        }));
+        const context = createMockContext({ 'x-api-key': 'key' }, {}, '127.0.0.1', { messages });
+        expect(await guard.canActivate(context)).toBe(true);
+        expect(allows).toHaveBeenCalledTimes(2);
+      } finally {
+        allows.mockRestore();
+      }
+    });
+
     it('rejects an oversized bulk body before any per-entry lookup', async () => {
       const apiKey = createMockApiKey({ allowedChats: [ALLOWED_GROUP] });
       (authService.validateApiKey as jest.Mock).mockResolvedValue(apiKey);
