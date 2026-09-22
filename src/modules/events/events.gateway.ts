@@ -286,7 +286,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   /**
    * Tear down every active socket authenticated with `keyId`. Called by AuthService when a key is
-   * revoked, deleted, or has its authorization (role/allowedSessions/allowedIps/expiry) narrowed, and
+   * revoked, deleted, or has its authorization (role/allowedSessions/allowedChats/allowedIps/expiry) narrowed, and
    * by sweepApiKeyAuthorization for the same changes when they only reach this process through the
    * database, so the key's already-subscribed sockets stop receiving events immediately instead of
    * lingering until they disconnect on their own. Each socket gets a clean close (an `UNAUTHORIZED`

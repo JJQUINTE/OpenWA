@@ -1205,7 +1205,7 @@ curl -X DELETE "$BASE/api/sessions/$SESSION_ID/webhooks/f1e2d3c4-b5a6-7890-1234-
 
 ### 07.11 API Keys
 
-All `/api/auth/api-keys` routes require an **ADMIN** key. `POST /api/auth/validate` accepts any valid key. The plaintext key is returned only by the create call.
+All `/api/auth/api-keys` routes require an unscoped **ADMIN** key: one with `allowedSessions` or `allowedChats` set is refused with `403`. `POST /api/auth/validate` accepts any valid key except one restricted with `allowedChats`, which gets `403`. The plaintext key is returned only by the create call.
 
 #### GET /api/auth/api-keys
 
