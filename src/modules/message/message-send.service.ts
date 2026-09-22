@@ -189,7 +189,7 @@ export class MessageSendService {
       this.pacing.recordSendFailure(sessionId);
       // The same classification picks the failures worth a log line. Otherwise an engine-side failure
       // leaves only Nest's generic `[ExceptionsHandler]` line, with no session, chat or message type to
-      // correlate it with; a minified page error reads as `t: t` there.
+      // correlate it with.
       this.logger.warn(`Send failed in the engine (${type})`, {
         sessionId,
         chatId: message.chatId,
