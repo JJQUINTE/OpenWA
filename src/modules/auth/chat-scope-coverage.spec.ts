@@ -61,6 +61,15 @@ export const MUST_STAY_UNMARKED: ReadonlyArray<readonly [string, string]> = [
   ['group.controller.ts', 'removeParticipants'],
   ['group.controller.ts', 'promoteParticipants'],
   ['group.controller.ts', 'demoteParticipants'],
+  // A join request comes from a number outside the key's chats: listing the queue names them, and
+  // approving or rejecting decides whether they join, the same membership change refused above.
+  ['group.controller.ts', 'getMembershipRequests'],
+  ['group.controller.ts', 'approveMembershipRequests'],
+  ['group.controller.ts', 'rejectMembershipRequests'],
+  // An invite link admits anyone who holds it, no request to decide, and keeps working after the key
+  // is revoked; revoking returns a fresh link, so both routes hand the key the same capability.
+  ['group.controller.ts', 'getInviteCode'],
+  ['group.controller.ts', 'revokeInviteCode'],
   // A batch row has no key owner, so its status and cancel cannot be checked against an allowlist.
   ['message.controller.ts', 'getBatchStatus'],
   ['message.controller.ts', 'cancelBatch'],

@@ -293,7 +293,6 @@ export class GroupController {
     return { success: true, message: 'Participants demoted from admin', results };
   }
 
-  @ChatScoped('fenced')
   @Get(':groupId/membership-requests')
   @ApiOperation({
     summary: 'List pending join requests for a group',
@@ -313,7 +312,6 @@ export class GroupController {
     return this.groupService.getGroupMembershipRequests(sessionId, groupId);
   }
 
-  @ChatScoped('fenced')
   @Post(':groupId/membership-requests/approve')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -347,7 +345,6 @@ export class GroupController {
     return { success: true, message: 'Membership requests approved', results };
   }
 
-  @ChatScoped('fenced')
   @Post(':groupId/membership-requests/reject')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -535,7 +532,6 @@ export class GroupController {
 
   // The invite code is a bearer join capability, not read data: it works outside OpenWA and keeps
   // working after the key that fetched it is revoked. OPERATOR, like the QR endpoint.
-  @ChatScoped('fenced')
   @Get(':groupId/invite-code')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Get group invite code/link' })
@@ -554,7 +550,6 @@ export class GroupController {
     };
   }
 
-  @ChatScoped('fenced')
   @Post(':groupId/invite-code/revoke')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
