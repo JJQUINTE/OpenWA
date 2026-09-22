@@ -181,6 +181,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
 - The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one unauthenticated request can no longer write an audit row per batch element.
 - Per-client rate limits key an IPv6 client on its /64, so rotating addresses inside one allocation no longer escapes them ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)). Thanks @Saksham-official.
+- The MCP, Bull Board and WebSocket pre-auth limiters, the WebSocket rate-limit audit sampler, the per-client upload body budget and the health route's auth-failure audit limiter key an IPv6 client on its /64 as well ([#1695](https://github.com/rmyndharis/OpenWA/issues/1695)).
 
 ## [0.23.5] - 2026-09-15
 

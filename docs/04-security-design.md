@@ -269,6 +269,8 @@ All limits are **global and per client IP** (resolved through `TRUSTED_PROXIES`)
 
 TTL values are in milliseconds. The `/api/metrics` and `/api/health*` routes are exempt (`@SkipThrottle`). To enforce tighter per-route limits, lower the global windows or add a limiter at your reverse proxy.
 
+An IPv6 client is keyed on its /64, so rotating addresses inside one allocation does not mint fresh buckets. The same key is used by every other per-client limit: the MCP and Bull Board pre-auth throttles, the WebSocket limits below, the per-client share of the in-flight body budget, and the health route's auth-failure audit bound. `allowedIps` matching and audit rows still see the full address.
+
 ### Response on limit
 
 Exceeding a window returns `429 Too Many Requests`. Because the windows are **named** throttlers (`short` / `medium` / `long`), `@nestjs/throttler` suffixes every rate-limit header with the throttler name, so there are no unsuffixed `X-RateLimit-*` headers. `Retry-After` is the exception: on a `429` the guard emits the plain spelling too, because no HTTP client reads a suffixed one.
@@ -289,11 +291,11 @@ The API exposes the rate-limit headers via CORS (`exposedHeaders`) so browser cl
 
 Socket.IO frames never pass through the Nest enhancer pipeline, so the HTTP windows above do **not** apply to the WebSocket surface. `EventsGateway` enforces its own in-process limits instead (all keyed in-memory per process; any blank/non-positive/non-numeric env value falls back to the default):
 
-| Limit                                                               | Keyed on                                       | Default                                | Env overrides                                                       |
-| ------------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| Client frames (subscribe/unsubscribe/ping) — token bucket           | API key (IP before auth completes)             | 60 frames/s sustained, 120-frame burst | `WS_RATE_LIMIT_FRAME_PER_SECOND` / `WS_RATE_LIMIT_FRAME_BURST`      |
-| New handshakes — sliding window, enforced **before** key validation | client IP (resolved through `TRUSTED_PROXIES`) | 10 per 60 s                            | `WS_RATE_LIMIT_HANDSHAKE_MAX` / `WS_RATE_LIMIT_HANDSHAKE_WINDOW_MS` |
-| Simultaneous sockets                                                | API key                                        | 16                                     | `WS_MAX_SOCKETS_PER_KEY`                                            |
+| Limit                                                               | Keyed on                                                        | Default                                | Env overrides                                                       |
+| ------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| Client frames (subscribe/unsubscribe/ping) — token bucket           | API key (IP, IPv6 on its /64, before auth completes)            | 60 frames/s sustained, 120-frame burst | `WS_RATE_LIMIT_FRAME_PER_SECOND` / `WS_RATE_LIMIT_FRAME_BURST`      |
+| New handshakes — sliding window, enforced **before** key validation | client IP (resolved through `TRUSTED_PROXIES`, IPv6 on its /64) | 10 per 60 s                            | `WS_RATE_LIMIT_HANDSHAKE_MAX` / `WS_RATE_LIMIT_HANDSHAKE_WINDOW_MS` |
+| Simultaneous sockets                                                | API key                                                         | 16                                     | `WS_MAX_SOCKETS_PER_KEY`                                            |
 
 The frame budget is sized ~6x above legitimate traffic: the dashboard emits ~8 subscribe frames at page mount and only occasional ping/unsubscribe frames afterwards (server→client event fan-out is not limited). The handshake window stops an unauthenticated connection flood from forcing a DB `validateApiKey` per attempt; Socket.IO's exponential-backoff reconnect (~6 attempts/min per tab) stays under it. The socket cap covers multi-tab dashboards and SDK clients sharing one key. A rejected handshake or excess socket is answered with a `RATE_LIMITED` error frame and a clean disconnect; an over-budget frame gets a `RATE_LIMITED` error frame and is not dispatched. Violations are audited as `rate_limit_exceeded`, sampled to at most one row per subject+kind per minute (suppressed occurrences are counted into the next row) so the audit trail itself cannot become the flood.
 
