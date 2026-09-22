@@ -216,10 +216,11 @@ export function Chats() {
     return () => URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
-  // Drop a staged attachment when the user moves to a DIFFERENT chat. Closing the room
-  // (`activeChat` → null) deliberately keeps it, so close/reopen is a lossless round trip; only an
-  // actual change of conversation clears. The composer invalidates its in-flight FileReader on the
-  // same transition, so a late read cannot re-stage the file against the new chat.
+  // Drop a staged attachment and a staged reply when the user moves to a DIFFERENT chat. Closing the
+  // room (`activeChat` → null) deliberately keeps them, so close/reopen is a lossless round trip; only
+  // an actual change of conversation clears. A reply carried across would quote the previous chat's
+  // message, text and sender included, into the new one. The composer invalidates its in-flight
+  // FileReader on the same transition, so a late read cannot re-stage the file against the new chat.
   const lastRoomIdRef = useRef<string | null>(null);
   useEffect(() => {
     const current = activeChat?.id ?? null;
@@ -229,6 +230,7 @@ export function Chats() {
     if (previous === null || previous === current) return;
     setAttachment(null);
     setPreviewUrl(null);
+    setReplyingTo(null);
   }, [activeChat]);
 
   // Per-chat scroll-position memory + auto-scroll heuristic.
@@ -316,12 +318,13 @@ export function Chats() {
       setActiveChat(null);
       setActiveChannel(null);
       setActiveStatusContactId(null);
-      // A staged attachment belongs to a chat in the session being left, so it is dropped here
+      // A staged attachment or reply belongs to a chat in the session being left, so it is dropped here
       // rather than carried across — the close/reopen round trip that preserves it is scoped to a
       // single session. Clearing previewUrl runs the revoke effect's cleanup; the composer
       // unmounts with the closed room and invalidates its own in-flight FileReader.
       setAttachment(null);
       setPreviewUrl(null);
+      setReplyingTo(null);
       lastRoomIdRef.current = null;
     }
   }, [selectedSessionId, loadChats]);

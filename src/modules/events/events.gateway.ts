@@ -286,7 +286,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   /**
    * Tear down every active socket authenticated with `keyId`. Called by AuthService when a key is
-   * revoked, deleted, or has its authorization (role/allowedSessions/allowedIps/expiry) narrowed, and
+   * revoked, deleted, or has its authorization (role/allowedSessions/allowedChats/allowedIps/expiry) narrowed, and
    * by sweepApiKeyAuthorization for the same changes when they only reach this process through the
    * database, so the key's already-subscribed sockets stop receiving events immediately instead of
    * lingering until they disconnect on their own. Each socket gets a clean close (an `UNAUTHORIZED`
@@ -308,11 +308,14 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // Resolve the client IP once here so the handshake throttle, the validation, and the
     // audit trail all use the same trusted-proxy-aware value (parity with the REST guard / MCP mount).
     const clientIp = this.resolveClientIp(client);
+    // The handshake bucket key: an IPv6 client is charged on its /64. The refund below must name the
+    // same bucket, or an authenticated IPv6 handshake is never given back.
+    const handshakeKey = limiterKeyForIp(clientIp);
 
     // Pre-auth, per-IP handshake throttle. This must run BEFORE any credential handling: an
     // unauthenticated handshake flood otherwise reaches the DB validateApiKey below on every
     // attempt (same gap the MCP pre-auth IP throttle covers for the /mcp mount).
-    if (!this.handshakeLimiter.allow(limiterKeyForIp(clientIp))) {
+    if (!this.handshakeLimiter.allow(handshakeKey)) {
       this.logger.warn(`Client ${client.id} rejected: handshake rate limit exceeded (ip: ${clientIp})`);
       this.noteRateLimitViolation('handshake', { ipAddress: clientIp });
       client.emit('message', this.createError('RATE_LIMITED', 'Too many connection attempts, retry later'));
@@ -387,7 +390,7 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       // handshakes, and authenticated connections stay bounded by maxSocketsPerKey above. Without
       // this, every client behind one NAT/proxy IP shares a 10/min budget and normal dashboard
       // re-mounts lock each other out.
-      this.handshakeLimiter.refund(clientIp);
+      this.handshakeLimiter.refund(handshakeKey);
       // The transport can close while validateApiKey is in flight, and Nest runs the disconnect
       // handler before this one returns. That untrack found no key on client.data yet and did
       // nothing, so the socket just tracked would stay in the per-key set for the life of the

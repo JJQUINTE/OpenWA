@@ -596,11 +596,18 @@ OPENWA_DATA_DIR=/srv/openwa/data \
 > volume as the data does not survive losing that volume:
 >
 > ```bash
-> docker exec -e BACKUP_DIR=/app/data/backups openwa-api ./scripts/backup.sh
+> docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
 > docker cp openwa-api:/app/data/backups/. ./backups/
 > # Helm: kubectl exec <pod> -- env BACKUP_DIR=/app/data/backups ./scripts/backup.sh
 > #       kubectl cp <pod>:/app/data/backups ./backups
 > ```
+>
+> The script stages a full copy of the data in `TMPDIR` before archiving it. The compose file mounts
+> `/tmp` as a tmpfs charged to the container's memory limit, so the compose line points `TMPDIR` at
+> the data volume, which then needs free space for about the size of the data plus the archive;
+> staging in the tmpfs gets the running gateway OOM-killed. The Helm chart's `/tmp` is an `emptyDir`
+> on node disk, so the Helm lines leave it alone. A run killed outright, such as by a container
+> restart mid-backup, leaves its `tmp.*` staging directory behind in `TMPDIR`; delete it.
 >
 > The scripts resolve every other path the way the application does: an explicit environment value
 > first, then `./.env`, then `<data dir>/.env.generated`. Settings made through Dashboard >

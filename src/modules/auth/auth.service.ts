@@ -226,7 +226,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       (normalizeChatAllowList(dto.allowedChats)?.length ?? 0) > 0;
 
     // Capture the authorization-relevant fields BEFORE applying the change. Only a change to role,
-    // allowedIps, allowedSessions, or expiry can widen or restrict what an already-connected WebSocket
+    // allowedIps, allowedSessions, allowedChats, or expiry can widen or restrict what an already-connected WebSocket
     // socket may see, so only those trigger eviction of live /events sockets — a benign rename must
     // NOT disconnect clients. REST enforces the new state immediately; without eviction a live socket
     // keeps streaming events for sessions/IPs the key just lost until it resubscribes or drops.

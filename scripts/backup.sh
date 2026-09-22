@@ -79,12 +79,15 @@ log() { echo "[backup] $*"; }
 
 # Check the destination before staging anything. The shipped container's root filesystem is
 # read-only, so the default ./backups (/app/backups) cannot be created there; failing only at the
-# end would first copy every database, session and media file into the memory-backed /tmp.
+# end would first copy every database, session and media file into the staging directory.
 if ! mkdir -p "$BACKUP_DIR" 2>/dev/null || [ ! -w "$BACKUP_DIR" ]; then
-  log "ERROR: BACKUP_DIR=$BACKUP_DIR is not writable; point BACKUP_DIR at a writable, persistent directory (inside the read-only container use BACKUP_DIR=/app/data/backups)"
+  log "ERROR: BACKUP_DIR=$BACKUP_DIR is not writable; point BACKUP_DIR at a writable, persistent directory (inside the container use BACKUP_DIR=/app/data/backups, and under docker compose also TMPDIR=/app/data/backups: its /tmp is a tmpfs charged to the container's memory)"
   exit 1
 fi
 
+# The staging copy goes to TMPDIR. Under docker compose that is a tmpfs charged to the container's
+# memory limit, so an in-container run there points TMPDIR at the data volume (docs/11); staging the
+# data in the tmpfs gets the running gateway OOM-killed once the data outgrows its headroom.
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
