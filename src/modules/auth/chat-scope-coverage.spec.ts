@@ -49,6 +49,29 @@ export const QUOTED_ALLOWED_GRANTS: ReadonlyArray<readonly [string, string]> = [
   ['message.controller.ts', 'reply'],
 ];
 
+/**
+ * Handlers that must stay UNMARKED, so default-deny keeps refusing them. The group routes would pass
+ * the category checks if marked 'fenced' (`:groupId` counts as a chat param), which is why they are
+ * pinned; the batch routes are pinned so that marking them stays a deliberate decision.
+ */
+export const MUST_STAY_UNMARKED: ReadonlyArray<readonly [string, string]> = [
+  // Adding a participant can DM them an invite (whatsapp-web.js autoSendInviteV4), a chat the
+  // guard never sees; the other three change who belongs to a group outside the key's own chats.
+  ['group.controller.ts', 'addParticipants'],
+  ['group.controller.ts', 'removeParticipants'],
+  ['group.controller.ts', 'promoteParticipants'],
+  ['group.controller.ts', 'demoteParticipants'],
+  // A batch row has no key owner, so its status and cancel cannot be checked against an allowlist.
+  ['message.controller.ts', 'getBatchStatus'],
+  ['message.controller.ts', 'cancelBatch'],
+];
+
+/** Handlers that must stay marked with the given category; a lost mark silently becomes a 403. */
+export const MUST_STAY_MARKED: ReadonlyArray<readonly [string, string, string]> = [
+  // The only chat-read route a restricted key has on whatsapp-web.js.
+  ['message.controller.ts', 'getChatHistory', 'fenced'],
+];
+
 const REQUIRED_GUARD_FIELD = new RegExp(`\\b(?:${GUARD_BODY_CHAT_FIELDS.join('|')})!\\s*:`);
 const REQUIRED_BULK_FIELD = /\bmessages!\s*:/;
 
@@ -242,6 +265,33 @@ describe('a chat-restricted key can only reach a handler fenced to its allowedCh
     expect(
       chatScopeViolations(source, 'x.controller.ts', new Set(['SendThingDto']), [['x.controller.ts', 'granted']]),
     ).toEqual([]);
+  });
+
+  it('keeps the pinned handlers unmarked, and the pinned marks in place', () => {
+    const sources = new Map(
+      listControllerFiles(join(__dirname, '..')).map(f => [basename(f), readFileSync(f, 'utf8')]),
+    );
+    const marks = (file: string): Map<string, string> => {
+      const source = sources.get(file);
+      if (source === undefined) throw new Error(`${file} not found`);
+      return new Map(chatScopedHandlers(source).map(({ name, kind }) => [name, kind]));
+    };
+    for (const [file, name] of [...MUST_STAY_UNMARKED, ...MUST_STAY_MARKED]) {
+      // A renamed handler must fail here rather than leave the pin checking nothing.
+      expect({
+        file,
+        name,
+        found: new RegExp(`^ {2}(?:async\\s+)?${name}\\s*\\(`, 'm').test(sources.get(file) ?? ''),
+      }).toEqual({
+        file,
+        name,
+        found: true,
+      });
+    }
+    for (const [file, name] of MUST_STAY_UNMARKED)
+      expect({ file, name, kind: marks(file).get(name) }).toEqual({ file, name, kind: undefined });
+    for (const [file, name, kind] of MUST_STAY_MARKED)
+      expect({ file, name, kind: marks(file).get(name) }).toEqual({ file, name, kind });
   });
 
   it('pairs every decorator with a parsed handler, and the scan is not vacuous', () => {
