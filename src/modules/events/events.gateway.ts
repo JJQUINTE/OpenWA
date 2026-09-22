@@ -509,6 +509,19 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       return this.createError('UNAUTHORIZED', 'Connection is closed', requestId);
     }
 
+    // The connect handshake refuses a chat-restricted key, but the key can gain allowedChats after
+    // connect (an update on another node), so the fresh key is held to the same rule here.
+    if ((subscriberKey.allowedChats?.length ?? 0) > 0) {
+      const refusal = this.createError(
+        'UNAUTHORIZED',
+        'API keys restricted to selected chats cannot subscribe to events',
+        requestId,
+      );
+      client.emit('message', refusal);
+      client.disconnect();
+      return refusal;
+    }
+
     // The fresh key decides THIS subscribe, and is deliberately not written back over the connect-time
     // snapshot in client.data: rooms joined earlier are never revisited, so a socket that refreshed its
     // snapshot here would look current to the sweep while still holding rooms its key has since lost.
