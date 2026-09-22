@@ -119,7 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ingress manifests with an ack header value Node cannot send, a non-final ack status, a non-numeric `toleranceSec`, or a route that cannot travel as one URL path segment are refused at load, and minted ingress URLs percent-encode the route.
 - `GET` and `DELETE /mcp` answer `405` instead of `404`, so Streamable HTTP clients stop reporting an SSE error on connect.
 - A mixed-case or padded `POSTGRES_SCHEMA` is refused at boot, by the init script, by the migration CLI and on the Infrastructure page, instead of splitting the tables across two schemas.
-- `backup.sh` fails before staging anything when `BACKUP_DIR` is not writable, such as the default on the container's read-only root.
+- `backup.sh` fails before staging anything when `BACKUP_DIR` is not writable, such as the default on the container's read-only root, and names the `BACKUP_DIR` to use inside the container, plus the `TMPDIR` under docker compose, whose `/tmp` is memory-backed.
 - Dashboard: the multi-group send refuses an empty message or a missing media source and stops on a `409` instead of repeating the failure for every group.
 - Dashboard: the Message Tester follows a selected session that drops out of the ready list instead of sending to it.
 - Dashboard: a bulk send no longer starts polling its progress after the page is left.
