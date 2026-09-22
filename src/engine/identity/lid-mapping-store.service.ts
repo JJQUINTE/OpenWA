@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { LidMapping } from './lid-mapping.entity';
 import { userPart } from './wa-id';
 import { createLogger } from '../../common/services/logger.service';
@@ -11,6 +11,19 @@ import { resolveNonNegativeIntEnv } from '../../config/configuration';
 // back to engine re-resolution (a reverse lookup reads the table), so the cap trades a re-resolution for
 // bounded memory, never data loss.
 export const LID_MAPPING_CACHE_DEFAULT = 5000;
+
+/**
+ * SQLite binds at most 32766 variables in one statement (Postgres 65535), so an `IN (...)` over a
+ * large allowlist is chunked. Small enough to stay well inside both, large enough that a realistic
+ * allowlist is one round trip.
+ */
+const LID_QUERY_CHUNK = 500;
+
+function chunk<T>(items: T[], size = LID_QUERY_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 /**
  * Narrow read/write port over the `lid -> phone` table. The Baileys session store depends on this (sync
@@ -155,38 +168,92 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
    * Reverse lookup that also reads the table. {@link lidsForPhone} only sees lids resident in the
    * forward cache, and nothing phone-keyed ever warms it, so a mapping past the preload cap or
    * evicted by the LRU would stay invisible to a phone filter for good. For callers that can await
-   * (the message and status filters, the handover gate). Table rows are not indexed into the cache,
-   * so a list query cannot evict hot forward entries. A lid this process has since re-mapped
-   * elsewhere is skipped (last-write-wins), and a read error falls back to the cache alone.
+   * (the message and status filters, the handover gate, the API-key chat fence). Same rule as
+   * {@link lidsForPhonesPersisted}; a read error falls back to the cache alone.
    */
   async findLidsForPhone(phone: string): Promise<string[]> {
-    const lids = new Set(this.lidsForPhone(phone));
     try {
-      const rows = await this.repo.find({ select: { lid: true }, where: { phone } });
-      for (const { lid } of rows) {
-        const cached = this.lidToPhone.get(lid);
-        if (cached === undefined || cached === phone) lids.add(lid);
-      }
+      return (await this.readLidsForPhones([phone]))[phone];
     } catch (err) {
       this.logger.warn(`Could not read lids for a phone: ${err instanceof Error ? err.message : String(err)}`);
+      return this.lidsForPhone(phone);
     }
-    return [...lids];
   }
 
   /**
-   * Forward lookup that reads the table on a cache miss, for callers that can await (the handover
-   * gate). {@link getCached} answers a miss with undefined and only warms in the background, which
-   * is exactly when a mapping past the cap or evicted matters. Like {@link findLidsForPhone}, the row
-   * is not indexed, and a read error answers null.
+   * Batched forward lookup for a list filter: lid user-part -> phone digits. Chunked queries for the
+   * whole allowlist instead of one per entry, and the TABLE wins over the mirror so a stale cached
+   * negative cannot shadow a mapping another node persisted.
    */
-  async findPhoneForLid(lid: string): Promise<string | null> {
-    if (this.lidToPhone.has(lid)) return this.getCached(lid) ?? null;
+  async phonesForLidsPersisted(lids: string[]): Promise<Record<string, string | null>> {
+    const out: Record<string, string | null> = {};
+    if (lids.length === 0) return out;
+    for (const lid of lids) out[lid] = this.getCached(lid) ?? null;
     try {
-      return (await this.repo.findOne({ where: { lid } }))?.phone ?? null;
+      for (const batch of chunk(lids)) {
+        const rows = await this.repo.find({ where: { lid: In(batch) } });
+        // The table WINS: a stale cached negative must not shadow a mapping another node persisted.
+        for (const row of rows) out[row.lid] = row.phone;
+      }
+    } catch {
+      // The table may not exist yet (migration pending); the mirror is the best available answer.
+    }
+    return out;
+  }
+
+  /** Batched reverse lookup, companion to {@link phonesForLidsPersisted}: phone digits -> lids. */
+  async lidsForPhonesPersisted(phones: string[]): Promise<Record<string, string[]>> {
+    try {
+      return await this.readLidsForPhones(phones);
+    } catch {
+      // The table may not exist yet (migration pending); the cache is the best available answer.
+      return Object.fromEntries(phones.map(phone => [phone, this.lidsForPhone(phone)]));
+    }
+  }
+
+  /**
+   * A lid answers a phone only when the cache and the table do not disagree: a cached reverse entry
+   * whose row another node has since re-mapped to a different phone is dropped, and a row this
+   * process has since re-mapped elsewhere is skipped. Either side alone may vouch for it (the row
+   * can be past the cache cap, the cached write can still be in flight). Throws on a read error.
+   */
+  private async readLidsForPhones(phones: string[]): Promise<Record<string, string[]>> {
+    const out: Record<string, Set<string>> = {};
+    for (const phone of phones) out[phone] = new Set(this.lidsForPhone(phone));
+    const cachedLids = [...new Set(phones.flatMap(phone => [...out[phone]]))];
+    for (const batch of chunk(cachedLids)) {
+      for (const row of await this.repo.find({ where: { lid: In(batch) } })) {
+        for (const phone of phones) if (row.phone !== phone) out[phone].delete(row.lid);
+      }
+    }
+    for (const batch of chunk(phones)) {
+      for (const { lid, phone } of await this.repo.find({ where: { phone: In(batch) } })) {
+        if (!phone || !out[phone]) continue;
+        const cached = this.lidToPhone.get(lid);
+        if (cached === undefined || cached === phone) out[phone].add(lid);
+      }
+    }
+    return Object.fromEntries(phones.map(phone => [phone, [...out[phone]]]));
+  }
+
+  /**
+   * Forward lookup for callers that can await: the API-key chat fence and every chat-bound read
+   * behind it (message history and media, the quoted body, status and handover filters). The table
+   * answers first, the in-memory mirror only when the read fails or has no row. The mirror alone is
+   * not enough: it is LRU-evicted at `LID_MAPPING_CACHE_MAX`, and nothing refreshes it when another
+   * node re-maps a lid in the shared table, so a cache-first answer could resolve the same lid to
+   * a phone the fence no longer sees, and a read behind the fence would serve that other chat. The
+   * row is not indexed into the cache, so a lookup cannot evict hot entries.
+   */
+  async findPhoneForLid(jid: string): Promise<string | null> {
+    const lid = userPart(jid);
+    try {
+      const row = await this.repo.findOne({ where: { lid } });
+      if (row) return row.phone;
     } catch (err) {
       this.logger.warn(`Could not read the phone for a lid: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
     }
+    return this.getCached(lid) ?? null;
   }
 
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {

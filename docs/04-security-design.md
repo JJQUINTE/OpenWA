@@ -72,7 +72,7 @@ fixed `dev-admin-key`; with neither set, the seed key is generated in the format
 ### Permission Model
 
 API keys carry **no permission strings**. Authorization is a role hierarchy on the key itself, plus
-two scoping dimensions enforced by `ApiKeyGuard`.
+three scoping dimensions enforced by `ApiKeyGuard`.
 
 | Role       | Rank | Meaning                                                              |
 | ---------- | ---- | -------------------------------------------------------------------- |
@@ -83,10 +83,11 @@ two scoping dimensions enforced by `ApiKeyGuard`.
 A route declares its minimum level with `@RequireRole(...)`; a key passes when its role ranks at or
 above that level (`AuthService.hasPermission`). A key below it is rejected with `403 Forbidden`.
 
-| Scope     | Field             | Effect                                                                                                   |
-| --------- | ----------------- | -------------------------------------------------------------------------------------------------------- |
-| Source IP | `allowedIps`      | Empty/absent = unrestricted; non-empty = fail-closed IP whitelist (see §4.3)                             |
-| Sessions  | `allowedSessions` | Empty/absent = every session; non-empty = a request carrying any other session id is rejected with `401` |
+| Scope     | Field             | Effect                                                                                                                                                             |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source IP | `allowedIps`      | Empty/absent = unrestricted; non-empty = fail-closed IP whitelist (see §4.3)                                                                                       |
+| Sessions  | `allowedSessions` | Empty/absent = every session; non-empty = a request carrying any other session id is rejected with `401`                                                           |
+| Chats     | `allowedChats`    | Empty/absent = every chat; non-empty = default-deny: only chat-scoped routes, and only for a listed chat, else `403`; `/events`, MCP and Bull Board refuse the key |
 
 The key-lifecycle routes (`/api/auth/api-keys`) are additionally fenced with `@RequireUnscopedKey()`:
 a session-scoped key is refused there whatever its role, so it cannot mint or widen credentials

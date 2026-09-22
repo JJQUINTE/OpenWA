@@ -126,6 +126,28 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     expect(sock.data.rawApiKey).toBe('good');
   });
 
+  it('refuses a chat-restricted key at the handshake (event filtering is a later slice)', async () => {
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: null, allowedChats: ['123@g.us'] });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    expect(sock.disconnect).toHaveBeenCalled();
+    expect(sock.emit).toHaveBeenCalled();
+  });
+
+  it('refuses a subscribe once the key has gained allowedChats after connect', async () => {
+    authService.validateApiKey.mockResolvedValueOnce({ name: 'k', allowedSessions: null }); // connect
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    expect(sock.disconnect).not.toHaveBeenCalled();
+
+    authService.validateApiKey.mockResolvedValueOnce({ name: 'k', allowedSessions: null, allowedChats: ['123@g.us'] });
+    const res = (await gateway.handleMessage(asSocket(sock), subscribeMsg('sess-1', ['*']))) as WSErrorResponse;
+
+    expect(res.code).toBe('UNAUTHORIZED');
+    expect(sock.disconnect).toHaveBeenCalled();
+    expect(sessionRoomJoins(sock)).toEqual([]);
+  });
+
   it('re-validates on subscribe and disconnects a key revoked after connect', async () => {
     authService.validateApiKey.mockResolvedValueOnce({ name: 'k', allowedSessions: null }); // connect
     const sock = makeSocket({ apiKey: 'good' });

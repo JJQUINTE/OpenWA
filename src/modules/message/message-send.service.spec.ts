@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOperator, In, Repository } from 'typeorm';
+import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import type { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { BadRequestException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { MessageSendService } from './message-send.service';
 import { Message, MessageDirection, MessageStatus } from './entities/message.entity';
@@ -980,9 +982,7 @@ describe('MessageSendService', () => {
         quotedMessageId: 'wa-quoted-9',
       });
 
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { sessionId: 'sess-1', waMessageId: 'wa-quoted-9' },
-      });
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { sessionId: 'sess-1', waMessageId: 'wa-quoted-9' } });
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({
@@ -1007,6 +1007,99 @@ describe('MessageSendService', () => {
           metadata: expect.objectContaining({ quotedMessage: { id: 'wa-quoted-9', body: '' } }) as unknown,
         }),
       );
+    });
+  });
+
+  describe('a reply or button click reads the quoted body from the target chat only', () => {
+    // A stored row per chat. The fake honours the WHERE clause, so a lookup that ignores the chat
+    // would find the foreign row and copy its body.
+    const rows = [
+      { sessionId: 'sess-1', chatId: 'other@g.us', waMessageId: 'wa-foreign', body: 'not yours' },
+      { sessionId: 'sess-1', chatId: '999@lid', waMessageId: 'wa-own', body: 'same chat, lid form' },
+    ];
+    const honourWhere = (opts: { where: { sessionId: string; chatId?: FindOperator<string>; waMessageId: string } }) =>
+      Promise.resolve(
+        rows.find(
+          r =>
+            r.sessionId === opts.where.sessionId &&
+            r.waMessageId === opts.where.waMessageId &&
+            (!opts.where.chatId || (opts.where.chatId.value as unknown as string[]).includes(r.chatId)),
+        ) ?? null,
+      );
+    const quoteOf = (): unknown => {
+      const calls = (repository.create as jest.Mock).mock.calls as [{ metadata: { quotedMessage: unknown } }][];
+      return calls[0][0].metadata.quotedMessage;
+    };
+
+    beforeEach(() => {
+      (repository.findOne as jest.Mock).mockImplementation(honourWhere);
+    });
+
+    it('reply stores no body for a message id from another chat', async () => {
+      await service.reply('sess-1', { chatId: '628111@c.us', quotedMessageId: 'wa-foreign', text: 'hi' });
+      expect(quoteOf()).toEqual({ id: 'wa-foreign', body: '' });
+    });
+
+    it('clickButton stores no prompt body for a message id from another chat', async () => {
+      await service.clickButton('sess-1', { chatId: '628111@c.us', messageId: 'wa-foreign', buttonId: 'yes' });
+      expect(quoteOf()).toEqual({ id: 'wa-foreign', body: '' });
+    });
+
+    it('a quoting send keeps a quote from another chat, which the send routes allow', async () => {
+      await service.sendText('sess-1', { chatId: '628111@c.us', text: 'hi', quotedMessageId: 'wa-foreign' });
+      expect(quoteOf()).toEqual({ id: 'wa-foreign', body: 'not yours' });
+    });
+
+    it('stores no body from the chat a stale cached lid mapping names', async () => {
+      // This node cached lid 999 -> 628111; another node has since re-mapped it to 628333 in the
+      // shared table. A reply to 999@lid must not read a quote out of chat 628111.
+      rows.push({ sessionId: 'sess-1', chatId: '628111@c.us', waMessageId: 'wa-stale', body: 'chat 628111 only' });
+      const table = [{ lid: '999', phone: '628111' }];
+      const store = new LidMappingStoreService({
+        find: () => Promise.resolve([]),
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+        upsert: () => Promise.resolve({}),
+      } as unknown as Repository<LidMapping>);
+      await store.remember('999', '628111');
+      table[0].phone = '628333';
+      const withStore = new MessageSendService(
+        repository as Repository<Message>,
+        sessionService as unknown as SessionService,
+        engines,
+        hookManager as HookManager,
+        templateService as unknown as TemplateService,
+        inertPacing(),
+        undefined,
+        undefined,
+        store,
+      );
+      try {
+        await withStore.reply('sess-1', { chatId: '999@lid', quotedMessageId: 'wa-stale', text: 'hi' });
+        expect(quoteOf()).toEqual({ id: 'wa-stale', body: '' });
+      } finally {
+        rows.pop();
+      }
+    });
+
+    it('still finds a quote stored under the lid form of the target chat', async () => {
+      const store = {
+        findPhoneForLid: jest.fn().mockResolvedValue(null),
+        findLidsForPhone: jest.fn((phone: string) => Promise.resolve(phone === '628111' ? ['999'] : [])),
+      } as unknown as LidMappingStoreService;
+      const withStore = new MessageSendService(
+        repository as Repository<Message>,
+        sessionService as unknown as SessionService,
+        engines,
+        hookManager as HookManager,
+        templateService as unknown as TemplateService,
+        inertPacing(),
+        undefined,
+        undefined,
+        store,
+      );
+      await withStore.reply('sess-1', { chatId: '628111@c.us', quotedMessageId: 'wa-own', text: 'hi' });
+      expect(quoteOf()).toEqual({ id: 'wa-own', body: 'same chat, lid form' });
     });
   });
 
@@ -1117,7 +1210,7 @@ describe('MessageSendService', () => {
       // The lookup is scoped to the session: without it, one session's prompt body could be quoted
       // into another session's outgoing row.
       expect(repository.findOne).toHaveBeenCalledWith({
-        where: { sessionId: 'sess-1', waMessageId: 'PROMPT-1' },
+        where: { sessionId: 'sess-1', chatId: In(['test@c.us', 'test@s.whatsapp.net']), waMessageId: 'PROMPT-1' },
       });
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({

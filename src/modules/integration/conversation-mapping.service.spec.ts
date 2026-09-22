@@ -1,9 +1,13 @@
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, FindOperator, Repository } from 'typeorm';
 import { ConversationMapping } from './entities/conversation-mapping.entity';
 import { ConversationMappingConflict, ConversationMappingService, MappingKey } from './conversation-mapping.service';
 import { AddIntegrationFabric1781900000000 } from '../../database/migrations/1781900000000-AddIntegrationFabric';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
 import { LidMapping } from '../../engine/identity/lid-mapping.entity';
+
+/** The `In([...])` condition a lid-table fake honours; an absent condition matches every row. */
+const inList = (value: string, cond?: FindOperator<string>): boolean =>
+  cond === undefined || (cond.value as unknown as string[]).includes(value);
 
 describe('ConversationMappingService', () => {
   let ds: DataSource;
@@ -95,7 +99,8 @@ describe('ConversationMappingService', () => {
     // real but its cache is empty, as for a mapping past the preload cap or evicted: only the table has it.
     const table = [{ lid: '111', phone: '628999' }];
     const lidStore = new LidMappingStoreService({
-      find: ({ where }: { where: { phone: string } }) => Promise.resolve(table.filter(r => r.phone === where.phone)),
+      find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+        Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
       findOne: ({ where }: { where: { lid: string } }) => Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
     } as unknown as Repository<LidMapping>);
     const human = (chatId: string, provider = 'convB') =>

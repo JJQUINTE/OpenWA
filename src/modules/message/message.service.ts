@@ -10,7 +10,7 @@ import { Message, MessageDirection } from './entities/message.entity';
 import { HookManager, applySendingGate } from '../../core/hooks';
 import { SendPacingService } from './send-pacing.service';
 import { createLogger } from '../../common/services/logger.service';
-import { parseWaId } from '../../engine/identity/wa-id';
+import { resolveJidCandidates as expandJidCandidates } from '../../engine/identity/jid-candidates';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
 import { ChatMediaArchiveService } from '../chat-media/chat-media-archive.service';
 import { StorageService, isMissingObjectError } from '../../common/storage/storage.service';
@@ -365,27 +365,14 @@ export class MessageService implements PluginMessagePort {
    * digits are NOT a phone), so rows stored under the resolved form still match a raw-lid filter.
    */
   private async resolveJidCandidates(value: string): Promise<string[]> {
-    const parsed = parseWaId(value);
-    if (parsed.kind !== 'user' && parsed.kind !== 'lid' && parsed.kind !== 'unknown') {
-      return [value];
-    }
-    if (parsed.kind === 'lid') {
-      // The folded `<lid>@lid` form is how a raw-lid row is stored, so an upper-case or
-      // `@hosted.lid` input still matches it.
-      const candidates = new Set<string>([value, `${parsed.userPart}@lid`]);
-      const resolved = await this.lidMappingStore.findPhoneForLid(parsed.userPart);
-      if (resolved) {
-        candidates.add(`${resolved}@c.us`);
-        candidates.add(`${resolved}@s.whatsapp.net`);
-      }
-      return [...candidates];
-    }
-    const phone = parsed.userPart;
-    const candidates = new Set<string>([value, `${phone}@c.us`, `${phone}@s.whatsapp.net`]);
-    for (const lid of await this.lidMappingStore.findLidsForPhone(phone)) {
-      candidates.add(`${lid}@lid`);
-    }
-    return [...candidates];
+    // Rules live in the shared helper (engine/identity/jid-candidates) so this filter and the
+    // API-key chat scope cannot disagree about which ids refer to the same entity. The raw input is
+    // kept as a candidate too: a row stored under a non-folded spelling must still match it.
+    const expanded = await expandJidCandidates(value, {
+      resolveLid: lid => this.lidMappingStore.findPhoneForLid(lid),
+      lidsForPhone: phone => this.lidMappingStore.findLidsForPhone(phone),
+    });
+    return [...new Set([value, ...expanded])];
   }
 
   /**

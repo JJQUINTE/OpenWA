@@ -344,6 +344,19 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       // for "Client IP could not be determined".
       const validKey = await this.authService.validateApiKey(apiKey, clientIp);
 
+      // A chat-restricted key cannot yet be filtered on a live event stream (chat scoping of the
+      // event surface is the follow-up slice), so refuse the handshake rather than stream every
+      // chat's events to it. Mirrors the REST guard's default-deny for unmarked routes.
+      if ((validKey.allowedChats?.length ?? 0) > 0) {
+        this.logger.warn(`Client ${client.id} rejected: chat-scoped key ${validKey.id} cannot subscribe to events`);
+        client.emit(
+          'message',
+          this.createError('UNAUTHORIZED', 'API keys restricted to selected chats cannot subscribe to events'),
+        );
+        client.disconnect();
+        return;
+      }
+
       // Cap simultaneous sockets per key: each socket holds rooms, engine fan-out, and memory,
       // so one key must not open connections without bound. Enough for multi-tab dashboards;
       // excess connections get a clear error, not a silent drop.
@@ -495,6 +508,19 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     // adapter, where nothing prunes it again.
     if (client.disconnected) {
       return this.createError('UNAUTHORIZED', 'Connection is closed', requestId);
+    }
+
+    // The connect handshake refuses a chat-restricted key, but the key can gain allowedChats after
+    // connect (an update on another node), so the fresh key is held to the same rule here.
+    if ((subscriberKey.allowedChats?.length ?? 0) > 0) {
+      const refusal = this.createError(
+        'UNAUTHORIZED',
+        'API keys restricted to selected chats cannot subscribe to events',
+        requestId,
+      );
+      client.emit('message', refusal);
+      client.disconnect();
+      return refusal;
     }
 
     // The fresh key decides THIS subscribe, and is deliberately not written back over the connect-time

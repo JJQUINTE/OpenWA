@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOperator, In, Repository } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MessageService, spendInlineMediaBudget } from './message.service';
 import { MessageSendService } from './message-send.service';
@@ -12,6 +12,10 @@ import { HookManager } from '../../core/hooks';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
 import { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { SendPacingService } from './send-pacing.service';
+
+/** The `In([...])` condition a lid-table fake honours; an absent condition matches every row. */
+const inList = (value: string, cond?: FindOperator<string>): boolean =>
+  cond === undefined || (cond.value as unknown as string[]).includes(value);
 
 /** Pacing is off by default in these tests; the governor's own spec covers its behaviour. */
 const inertPacing = (): SendPacingService =>
@@ -333,7 +337,8 @@ describe('MessageService', () => {
       // The mapping is only in the table: past the preload cap or evicted by the LRU.
       const table = [{ lid: '111', phone: '628999' }];
       const store = new LidMappingStoreService({
-        find: ({ where }: { where: { phone: string } }) => Promise.resolve(table.filter(r => r.phone === where.phone)),
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
       } as unknown as Repository<LidMapping>);
       const qb = makeFilteringQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
@@ -504,6 +509,37 @@ describe('MessageService', () => {
       };
       return { qb, captured };
     };
+
+    it('expands a @lid chatId to the phone the table names, not a stale cached one', async () => {
+      // This node cached lid 111 -> 628999; another node has since re-mapped it to 628777 in the
+      // shared table. The chat fence reads the table, so history must expand to the same phone or a
+      // key allowed only 111@lid would read chat 628999.
+      const table = [{ lid: '111', phone: '628999' }];
+      const store = new LidMappingStoreService({
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+        upsert: () => Promise.resolve({}),
+      } as unknown as Repository<LidMapping>);
+      await store.remember('111', '628999');
+      table[0].phone = '628777';
+      const { qb, captured } = makeCaptureQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      const withStore = new MessageService(
+        repository as Repository<Message>,
+        engines,
+        messageProjector as unknown as MessageProjector,
+        hookManager as HookManager,
+        store,
+        inertPacing(),
+        {} as MessageSendService,
+      );
+
+      await withStore.getMessages('sess-1', { chatId: '111@lid' });
+
+      expect(captured.chatIds).toEqual(['111@lid', '628777@c.us', '628777@s.whatsapp.net']);
+    });
 
     it('does not expand a group chatId into the user dialects (fail-closed on the literal id)', async () => {
       const { qb, captured } = makeCaptureQb();

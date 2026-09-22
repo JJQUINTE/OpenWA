@@ -11,7 +11,7 @@ import {
   MembershipRequestActionDto,
   SetGroupPictureDto,
 } from './dto/group.dto';
-import { RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import {
   GroupAckResponseDto,
@@ -378,6 +378,7 @@ export class GroupController {
     return { success: true, message: 'Membership requests rejected', results };
   }
 
+  @ChatScoped('fenced')
   @Put(':groupId/subject')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Change group name/subject' })
@@ -403,6 +404,7 @@ export class GroupController {
     return { success: true, message: 'Group subject updated' };
   }
 
+  @ChatScoped('fenced')
   @Put(':groupId/description')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Change group description' })
@@ -428,6 +430,7 @@ export class GroupController {
     return { success: true, message: 'Group description updated' };
   }
 
+  @ChatScoped('fenced')
   @Post(':groupId/leave')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Leave a group' })
@@ -450,6 +453,7 @@ export class GroupController {
 
   // ========== Gap Quick Wins: Invite Link ==========
 
+  @ChatScoped('fenced')
   @Get(':groupId/picture')
   @ApiOperation({ summary: "Get the group's picture URL" })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
@@ -469,6 +473,7 @@ export class GroupController {
     return { url: await this.groupService.getGroupPicture(sessionId, groupId) };
   }
 
+  @ChatScoped('fenced')
   @Put(':groupId/picture')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)
@@ -502,6 +507,7 @@ export class GroupController {
     return { success: true, message: 'Group picture updated' };
   }
 
+  @ChatScoped('fenced')
   @Delete(':groupId/picture')
   @RequireRole(ApiKeyRole.OPERATOR)
   @HttpCode(HttpStatus.OK)

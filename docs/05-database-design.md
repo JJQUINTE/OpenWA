@@ -253,6 +253,7 @@ erDiagram
         varchar role
         simple_array allowedIps
         simple_array allowedSessions
+        simple_array allowedChats
         boolean isActive
         timestamp expiresAt
         timestamp lastUsedAt
@@ -542,6 +543,7 @@ CREATE TABLE api_keys (
     role VARCHAR(20) NOT NULL DEFAULT 'operator',  -- admin | operator | viewer
     "allowedIps" TEXT,                             -- simple-array (comma-joined), null = any IP
     "allowedSessions" TEXT,                        -- simple-array, null = all sessions
+    "allowedChats" TEXT,                           -- simple-array, null = all chats
     "isActive" BOOLEAN NOT NULL DEFAULT 1,
     "expiresAt" DATETIME,
     "lastUsedAt" DATETIME,
@@ -554,7 +556,7 @@ CREATE UNIQUE INDEX "IDX_df3b25181df0b4b59bd93f16e1" ON api_keys("keyHash");
 ```
 
 > [!NOTE]
-> Access control is **role-based** (`admin` / `operator` / `viewer`), optionally scoped by `allowedIps` and `allowedSessions`. There is no granular `permissions` string array — see [04 - Security Design](./04-security-design.md) for what each role can do.
+> Access control is **role-based** (`admin` / `operator` / `viewer`), optionally scoped by `allowedIps`, `allowedSessions` and `allowedChats`. There is no granular `permissions` string array — see [04 - Security Design](./04-security-design.md) for what each role can do.
 
 ---
 

@@ -2,7 +2,7 @@ import { Controller, Get, Post, Param, Body, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CatalogService } from './catalog.service';
 import { SendProductDto, ProductQueryDto } from './dto/send-product.dto';
-import { RequireRole } from '../auth/decorators/auth.decorators';
+import { ChatScoped, RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
 import { CatalogDto, PaginatedProductsDto, ProductDto, ProductMessageResponseDto } from './dto/catalog-response.dto';
 import { ENGINE_NOT_READY_409, SESSION_NOT_STARTED_404 } from '../../common/openapi/engine-status-responses';
@@ -69,6 +69,7 @@ export class CatalogController {
     return this.catalogService.getProduct(sessionId, productId);
   }
 
+  @ChatScoped('fenced')
   @Post('messages/send-product')
   @RequireRole(ApiKeyRole.OPERATOR)
   @ApiOperation({ summary: 'Send a product message (Baileys engine only)' })

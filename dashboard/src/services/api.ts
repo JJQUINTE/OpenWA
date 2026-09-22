@@ -179,6 +179,7 @@ export interface ApiKey {
   role: 'admin' | 'operator' | 'viewer';
   allowedIps?: string[];
   allowedSessions?: string[];
+  allowedChats?: string[];
   isActive: boolean;
   expiresAt?: string;
   lastUsedAt?: string;
@@ -984,6 +985,7 @@ export const apiKeyApi = {
     allowedIps?: string[];
     allowedSessions?: string[];
     expiresAt?: string;
+    allowedChats?: string[];
   }) =>
     request<CreatedApiKey>('/auth/api-keys', {
       method: 'POST',
@@ -997,6 +999,7 @@ export const apiKeyApi = {
       allowedIps?: string[];
       allowedSessions?: string[];
       expiresAt?: string;
+      allowedChats?: string[];
     },
   ) =>
     request<ApiKey>(`/auth/api-keys/${id}`, {
