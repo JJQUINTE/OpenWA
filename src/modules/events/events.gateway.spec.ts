@@ -973,6 +973,24 @@ describe('EventsGateway rate limiting', () => {
     const ipOf = ([, ctx]: [AuditAction, WarnContext?]): unknown =>
       (ctx as { ipAddress?: string } | undefined)?.ipAddress;
 
+    it('refunds an authenticated handshake to the /64 bucket it was charged to', async () => {
+      // The charge lands on the /64; a refund keyed on the full address finds no bucket, so every
+      // authenticated connect from one IPv6 network would spend the shared window after all.
+      process.env.WS_RATE_LIMIT_HANDSHAKE_MAX = '2';
+      process.env.WS_RATE_LIMIT_HANDSHAKE_WINDOW_MS = '60000';
+      process.env.WS_MAX_SOCKETS_PER_KEY = '99';
+      authService.validateApiKey.mockResolvedValue({ id: 'k1', name: 'k', allowedSessions: null });
+      const gw = buildGateway();
+
+      const addresses = ['2001:db8:1:2::a', '2001:db8:1:2::a', '2001:db8:1:2::b', '2001:db8:1:2::c', '2001:db8:1:2::a'];
+      for (const [i, address] of addresses.entries()) {
+        const sock = makeSock(`ok${i}`, { apiKey: 'good' }, address);
+        await gw.handleConnection(asSocket(sock));
+        expect(sock.disconnect).not.toHaveBeenCalled();
+      }
+      expect(authService.validateApiKey).toHaveBeenCalledTimes(addresses.length);
+    });
+
     it('shares the handshake window and the violation sample across a /64, keeping the real address', async () => {
       process.env.WS_RATE_LIMIT_HANDSHAKE_MAX = '1';
       authService.validateApiKey.mockRejectedValue(new Error('bad key'));
