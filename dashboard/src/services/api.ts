@@ -557,8 +557,8 @@ export interface InfraStatus {
   engine: {
     type: string;
     headless: boolean;
-    // whatsapp-web.js only: the actual WhatsApp Web build in use (distinct from the library version)
-    // and how it was chosen. (#488)
+    // whatsapp-web.js only: the WhatsApp Web build sessions request as their pin (distinct from the
+    // library version, and not necessarily the build a page runs) and how it was chosen. (#488)
     webVersion?: string | null;
     webVersionSource?: 'pinned' | 'auto' | 'native';
   };

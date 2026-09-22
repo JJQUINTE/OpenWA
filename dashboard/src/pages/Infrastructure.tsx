@@ -405,7 +405,8 @@ export function Infrastructure() {
             ))}
           </div>
 
-          {/* The actual WhatsApp Web build in use — distinct from the library version above (#488). */}
+          {/* The WhatsApp Web build sessions request as their pin, distinct from the library version above (#488).
+              A page can still run another build; each session logs the one it runs at ready. */}
           {infraStatus?.engine.webVersion !== undefined && (
             <p className="engine-web-version">
               {t('infrastructure.engine.webVersion')}:{' '}
