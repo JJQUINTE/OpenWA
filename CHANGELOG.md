@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The dashboard Chats page drops a staged reply when another chat or session is opened, so a text send there no longer fails with `404` and a media send no longer quotes the previous chat's message.
 - whatsapp-web.js chat history resolves each message's sender through `getContact()`, as the live `message` handler already does, so a group participant outside the account's contacts gets a sender label in history too. Thanks @TanmayChachra.
 - A WebSocket client that emits without an ack callback now receives command replies at all. The gateway answered by returning a frame, which Socket.IO delivers through the ack callback and nowhere else, so a client written to the documented `message` event saw no subscribe confirmation, no pong, and none of the refusals, including the session-scope denial. Replies now go out on `message` as well as through the ack.
 - A Baileys message the account sent from its phone is no longer lost when the message store cannot be read. The repeat-delivery check threw on a locked database or an unparseable row and the message was dropped with it, and WhatsApp does not re-deliver one it has already acked; the check now fails open, so at worst such a message is reported twice rather than never.
