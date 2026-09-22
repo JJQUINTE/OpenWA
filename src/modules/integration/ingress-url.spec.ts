@@ -18,6 +18,14 @@ describe('buildIngressUrls', () => {
     expect(buildIngressUrls(undefined, 'p', 'i', ['r'])).toEqual([{ route: 'r', url: '/api/ingress/p/i/r' }]);
   });
 
+  it('percent-encodes the route so a URL parser keeps it and the router decodes it back', () => {
+    for (const route of ['hook ', 'a b', 'caf\u00e9']) {
+      const url = buildIngressUrls('https://x', 'p', 'i', [route])[0].url;
+      const segment = new URL(url).pathname.split('/').pop() ?? '';
+      expect(decodeURIComponent(segment)).toBe(route);
+    }
+  });
+
   it('returns an empty array when the plugin declares no routes', () => {
     expect(buildIngressUrls('https://x', 'p', 'i', [])).toEqual([]);
   });

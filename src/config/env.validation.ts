@@ -42,6 +42,20 @@ export function sqliteDataMainPathCollision(config: EnvConfig): string | null {
 }
 
 /**
+ * POSTGRES_SCHEMA rule shared by boot validation and the Infrastructure save path: a legal,
+ * non-reserved, lower-case Postgres identifier. Returns the error message, or null when valid.
+ */
+export function postgresSchemaError(schema: string): string | null {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(schema)) {
+    return `POSTGRES_SCHEMA must be a valid lower-case Postgres identifier (a lower-case letter or underscore, then lower-case letters/digits/underscores, max 63 chars; got ${JSON.stringify(schema)})`;
+  }
+  if (schema.startsWith('pg_')) {
+    return `POSTGRES_SCHEMA must not use the reserved "pg_" prefix (got ${JSON.stringify(schema)})`;
+  }
+  return null;
+}
+
+/**
  * Fail-fast environment validation. Wired as ConfigModule's `validate`
  * callback so a misconfigured deployment is rejected at BOOT instead of silently
  * coercing (e.g. a `DATABASE_TYPE=postgre` typo falling back to SQLite) or failing on
@@ -115,15 +129,14 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     // POSTGRES_SCHEMA is optional (defaults to 'public' in configuration.ts). When set, validate it
     // is a legal, non-reserved Postgres identifier so a typo / injection-ish value fails fast at boot
     // rather than reaching CREATE TABLE "<schema>"."..." (or a search_path SET) at migration time.
-    const pgSchema = str('POSTGRES_SCHEMA');
-    if (pgSchema !== undefined) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(pgSchema)) {
-        errors.push(
-          `POSTGRES_SCHEMA must be a valid Postgres identifier (a letter or underscore, then letters/digits/underscores, max 63 chars; got ${JSON.stringify(pgSchema)})`,
-        );
-      } else if (pgSchema.toLowerCase().startsWith('pg_')) {
-        errors.push(`POSTGRES_SCHEMA must not use the reserved "pg_" prefix (got ${JSON.stringify(pgSchema)})`);
-      }
+    // Lower case only: the search_path startup option is unquoted, so Postgres folds it to lower
+    // case, while TypeORM quotes the schema. A mixed-case name would split DDL and queries across
+    // two schemas. The raw value is checked, untrimmed: the app and the migration CLI both use it
+    // as set, so a padded (or whitespace-only) value must fail here as it fails in the CLI.
+    const pgSchema = config.POSTGRES_SCHEMA;
+    const pgSchemaError = typeof pgSchema === 'string' && pgSchema !== '' ? postgresSchemaError(pgSchema) : null;
+    if (pgSchemaError) {
+      errors.push(pgSchemaError);
     }
   } else {
     // SQLite (explicit or default): DATABASE_NAME is a file path for the 'data' connection. It must

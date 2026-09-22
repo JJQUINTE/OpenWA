@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, IsNumber, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, IsNumber, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MessageDirection } from '../../message/entities/message.entity';
 import type { MessageType } from '../../../engine/interfaces/whatsapp-engine.interface';
 import { ToStrictNumber } from '../../../common/utils/strict-boolean';
+import { SEARCH_OFFSET_MAX } from '../search.constants';
 
 /**
  * Request shape for GET /search. Numeric fields are coerced from query-string strings via
@@ -69,11 +70,13 @@ export class SearchQueryDto {
   @Min(1)
   limit?: number;
 
-  @ApiPropertyOptional({ description: 'Pagination offset', type: Number })
+  @ApiPropertyOptional({ description: `Pagination offset, at most ${SEARCH_OFFSET_MAX}`, type: Number })
   @IsOptional()
   @ToStrictNumber()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  // Rejected rather than clamped: a clamped offset silently returns the page at the cap again.
+  @Max(SEARCH_OFFSET_MAX)
   offset?: number;
 }

@@ -1,8 +1,38 @@
+import { BadRequestException } from '@nestjs/common';
 import { Callback } from 'puppeteer-core/lib/cjs/puppeteer/common/CallbackRegistry.js';
 import { Client } from 'whatsapp-web.js';
 import configuration, { MAX_TIMER_MS } from '../../config/configuration';
 import { validateEnv } from '../../config/env.validation';
 import { WhatsAppWebJsAdapter } from './whatsapp-web-js.adapter';
+import { WwebjsLifecycle } from './wwebjs-lifecycle';
+import { WwebjsGroups } from './wwebjs-groups';
+import { WwebjsLabels } from './wwebjs-labels';
+import { WwebjsChats } from './wwebjs-chats';
+import { WwebjsContacts } from './wwebjs-contacts';
+import { type WwebjsMessaging } from './wwebjs-messaging';
+import { type WwebjsEngineHost } from './wwebjs-host';
+import { createLogger } from '../../common/services/logger.service';
+import { EngineTransportError } from '../../common/errors/engine-transport.error';
+import { GroupNotFoundError } from '../../common/errors/group-not-found.error';
+import { InvalidInviteCodeError } from '../../common/errors/invalid-invite-code.error';
+import { LabelNotFoundError } from '../../common/errors/label-not-found.error';
+
+/**
+ * Provoked from the INSTALLED puppeteer-core rather than copied from it. The guard exists to
+ * survive a message the library may reshape on a version bump, so a hand-written literal would
+ * keep passing while the real string drifted out from under it — the one drift this test is
+ * here to catch. Driving the real `Callback` is also what shows the label is the bare CDP
+ * method name, with no `Protocol error (...)` prefix for the death pattern to match.
+ */
+const puppeteerProtocolTimeoutMessage = async (): Promise<string> => {
+  const callback = new Callback(1, 'Runtime.callFunctionOn', 1);
+  try {
+    await callback.promise;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error('puppeteer-core did not reject on an expired protocolTimeout');
+};
 
 /**
  * The per-CDP-command budget handed to Puppeteer, and the one error it produces.
@@ -120,23 +150,6 @@ describe('whatsapp-web.js protocol timeout', () => {
       );
     };
 
-    /**
-     * Provoked from the INSTALLED puppeteer-core rather than copied from it. The guard exists to
-     * survive a message the library may reshape on a version bump, so a hand-written literal would
-     * keep passing while the real string drifted out from under it — the one drift this test is
-     * here to catch. Driving the real `Callback` is also what shows the label is the bare CDP
-     * method name, with no `Protocol error (...)` prefix for the death pattern to match.
-     */
-    const puppeteerProtocolTimeoutMessage = async (): Promise<string> => {
-      const callback = new Callback(1, 'Runtime.callFunctionOn', 1);
-      try {
-        await callback.promise;
-      } catch (error) {
-        return error instanceof Error ? error.message : String(error);
-      }
-      throw new Error('puppeteer-core did not reject on an expired protocolTimeout');
-    };
-
     it('does not treat a protocol timeout as a dead page', async () => {
       const message = await puppeteerProtocolTimeoutMessage();
 
@@ -156,5 +169,78 @@ describe('whatsapp-web.js protocol timeout', () => {
       // version swallows this, turning a reportable dead page into a silent one.
       expect(classify('Protocol error (Runtime.callFunctionOn): Session closed. Request timed out')).toBe(true);
     });
+  });
+});
+
+/**
+ * A timed-out command got no answer at all, so the verdict branches that read a rejection as "no such
+ * group" (404), "no such invite" (404), "invalid invite" (400), "no such label" (404), "no such
+ * contact" (404), "no such chat" (400) or "declined" (200 `success: false`) must not see it. It is
+ * the 503 those routes document for a query that never came back, and it is not a death: the session
+ * must not be torn down for a slow renderer.
+ */
+describe('a protocol timeout is a 503, never a not-found verdict', () => {
+  const makeHost = (
+    client: Record<string, jest.Mock>,
+  ): { host: WwebjsEngineHost; reportIfPageTransportError: jest.Mock } => {
+    const reportIfPageTransportError = jest.fn();
+    const host = {
+      ensureReady: jest.fn(),
+      getClient: () => client as unknown as Client,
+      isPageTransportError: (error: unknown) => WwebjsLifecycle.prototype.isPageTransportError.call({}, error),
+      reportIfPageTransportError,
+      logger: createLogger('wwebjs-protocol-timeout.spec'),
+    } as unknown as WwebjsEngineHost;
+    return { host, reportIfPageTransportError };
+  };
+
+  const CHAT = '628@c.us';
+  const chats = (host: WwebjsEngineHost): WwebjsChats => new WwebjsChats(host, {} as WwebjsMessaging);
+
+  const OPS: Record<string, [string, (host: WwebjsEngineHost) => Promise<unknown>]> = {
+    getGroupInfo: ['getChatById', host => new WwebjsGroups(host).getGroupInfo('120363@g.us')],
+    getGroupJoinInfo: ['getInviteInfo', host => new WwebjsGroups(host).getGroupJoinInfo('AbCdEf')],
+    joinGroupViaInviteCode: ['acceptInvite', host => new WwebjsGroups(host).joinGroupViaInviteCode('AbCdEf')],
+    getChatsByLabel: ['getChatsByLabelId', host => new WwebjsLabels(host).getChatsByLabel('7')],
+    getContactById: ['getContactById', host => new WwebjsContacts(host).getContactById('628@c.us')],
+    sendSeen: ['getChatById', host => chats(host).sendSeen(CHAT)],
+    clearChatMessages: ['getChatById', host => chats(host).clearChatMessages(CHAT)],
+    archiveChat: ['archiveChat', host => chats(host).archiveChat(CHAT, true)],
+    muteChat: ['getChatById', host => chats(host).muteChat(CHAT, null)],
+    markUnread: ['getChatById', host => chats(host).markUnread(CHAT)],
+    deleteChat: ['getChatById', host => chats(host).deleteChat(CHAT)],
+  };
+
+  it.each(Object.keys(OPS))('%s answers an expired protocolTimeout with a 503 and reports no death', async op => {
+    const [method, call] = OPS[op];
+    const timeout = new Error(await puppeteerProtocolTimeoutMessage());
+    const { host, reportIfPageTransportError } = makeHost({ [method]: jest.fn().mockRejectedValue(timeout) });
+
+    await expect(call(host)).rejects.toBeInstanceOf(EngineTransportError);
+    expect(reportIfPageTransportError).not.toHaveBeenCalled();
+  });
+
+  // Negative twin: an ordinary page-side refusal keeps its not-found verdict.
+  it.each([
+    ['getGroupInfo', null],
+    ['getGroupJoinInfo', GroupNotFoundError],
+    ['joinGroupViaInviteCode', InvalidInviteCodeError],
+    ['getChatsByLabel', LabelNotFoundError],
+    ['getContactById', null],
+    ['sendSeen', false],
+    ['clearChatMessages', false],
+    ['archiveChat', false],
+    ['muteChat', BadRequestException],
+    ['markUnread', false],
+    ['deleteChat', false],
+  ])('%s keeps its verdict for an ordinary refusal', async (op, verdict) => {
+    const [method, call] = OPS[op];
+    const { host } = makeHost({ [method]: jest.fn().mockRejectedValue(new Error('Evaluation failed: not found')) });
+
+    if (typeof verdict === 'function') {
+      await expect(call(host)).rejects.toBeInstanceOf(verdict);
+    } else {
+      await expect(call(host)).resolves.toBe(verdict ?? null);
+    }
   });
 });

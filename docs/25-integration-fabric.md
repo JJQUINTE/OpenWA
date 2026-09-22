@@ -240,12 +240,13 @@ dedup rows and re-admit their replays, which is worse than the bounded growth it
 ## 25.8 The Integration SDK (v1)
 
 The stable surface untrusted adapters consume. A plugin declares `sdkVersion: "1"` and an `ingress`
-descriptor (the route, its signature scheme, replay tolerance, dedup header, and an optional verification
-handshake) in its manifest, and requests the `webhook:ingress` and `conversation:send` permissions. The
-host refuses to load an ingress-declaring plugin whose declared **major** differs from the host's
-supported major, and the surface is **additive-only** within a major. The worker-facing API centres on
-`ctx.registerWebhook(...)` (claim an inbound route), `ctx.conversations.send(...)` (normalized reply), and
-per-instance mapping and handover helpers.
+descriptor (the route, which is a single URL path segment such as `chatwoot` and never contains a `/`, its
+signature scheme, replay tolerance, dedup header, and an optional verification handshake) in its manifest,
+and requests the `webhook:ingress` and `conversation:send` permissions. The host refuses to load an
+ingress-declaring plugin whose declared **major** differs from the host's supported major, and the surface
+is **additive-only** within a major. The worker-facing API centres on `ctx.registerWebhook(...)` (claim an
+inbound route), `ctx.conversations.send(...)` (normalized reply), and per-instance mapping and handover
+helpers.
 
 The `signature.scheme` field enumerates `hmac-sha256` (HMAC over a `contentTemplate`), `shared-secret`
 (constant-time header compare), `standard-webhooks`, and `none` (unauthenticated — a route declaring it
@@ -269,14 +270,18 @@ Within major 1 the surface grows additively. A route's optional `response` contr
 `headers`, rendered host-side with `{rawBody}`/`{timestamp}`/`{id}` templates from the verified request),
 and an advisory `deadlineMs` — lets an adapter shape the synchronous HTTP response the provider sees; the
 plugin still always runs async, and a route with no `response` is byte-identical to today's default
-fast-ack. `ack.body` and every `ack.headers` value must be strings, and a manifest that declares otherwise
-is refused at install and at boot, which leaves that plugin in error until the manifest is fixed. A
-declared header is dropped rather than written when it is one of these thirteen names: `content-type`
-(decided by the allowlist in §25.8); `content-length`, `transfer-encoding`, `content-encoding` and
-`trailer`, since the host frames the response itself and never compresses it; `set-cookie`,
-`access-control-allow-origin` and `access-control-allow-credentials`; and `content-security-policy`,
-`x-content-type-options`, `x-frame-options`, `strict-transport-security` and `referrer-policy`, the
-response protections the host sets for every request. Every other declared header goes out verbatim.
+fast-ack. `ack.body` and every `ack.headers` value must be strings, `ack.status` must be a final status
+(200-599), and a header value may hold no control character (other than HTAB) and nothing above U+00FF,
+since Node cannot write one; a manifest that declares otherwise is refused at install and at boot, which
+leaves that plugin in error until the manifest is fixed. A declared header is dropped rather than written
+when it is one of these thirteen names: `content-type`, which the host sets itself (a declared
+`application/json` or `text/plain` is honored as the bare media type with `charset=utf-8`, and any other
+declared type, or none, is sent as `text/plain`, so a reflected ack is never served as executable
+content); `content-length`, `transfer-encoding`, `content-encoding` and `trailer`, since the host frames
+the response itself and never compresses it; `set-cookie`, `access-control-allow-origin` and
+`access-control-allow-credentials`; and `content-security-policy`, `x-content-type-options`,
+`x-frame-options`, `strict-transport-security` and `referrer-policy`, the response protections the host
+sets for every request. Every other declared header goes out verbatim.
 
 The `mode: 'sync-reply'` value is **deprecated** in favor of `response`: it was inert dead code
 that was never wired to the HTTP response (the pipeline is always async + fast-ack), and it is kept in the

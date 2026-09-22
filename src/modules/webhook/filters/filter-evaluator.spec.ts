@@ -259,6 +259,11 @@ describe('evaluateFilters', () => {
       // And the exclusion direction delivers them, for the same reason: the field is not there.
       const deny = filters({ field: 'chatId', operator: 'isNot', value: ['120@g.us'] });
       expect(evaluateFilters(deny, 'message.ack', ackPayload)).toBe(true);
+      expect(evaluateFilters(deny, 'message.failed', failedPayload)).toBe(true);
+      // An absent boolean reads as false, so `is false` passes both as well.
+      const notGroup = filters({ field: 'isGroup', operator: 'is', value: false });
+      expect(evaluateFilters(notGroup, 'message.ack', ackPayload)).toBe(true);
+      expect(evaluateFilters(notGroup, 'message.failed', failedPayload)).toBe(true);
     });
 
     it('scopes message.revoked / edited payloads that only carry chatId', () => {

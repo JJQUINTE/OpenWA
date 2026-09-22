@@ -688,6 +688,63 @@ describe('PluginsService — disable when the plugin is not loaded', () => {
   });
 });
 
+describe('PluginsService: disable an engine plugin', () => {
+  let tmpDir: string;
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const build = (status: PluginStatus, engineType: string) => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'owa-engine-'));
+    const settings: Record<string, string> = {
+      'plugins.dir': path.join(tmpDir, 'plugins'),
+      dataDir: tmpDir,
+      'engine.type': engineType,
+    };
+    const config = { get: (k: string) => settings[k] } as unknown as ConfigService;
+    const loader = new PluginLoaderService(
+      config,
+      new HookManager(),
+      new PluginStorageService(config),
+      {} as unknown as ModuleRef,
+    );
+    loader.registerBuiltInPlugin(
+      { id: 'baileys', name: 'Baileys', version: '1.0.0', type: PluginType.ENGINE, main: 'index.js' },
+      {},
+    );
+    loader.getPlugin('baileys')!.status = status;
+    return { loader, service: new PluginsService(loader, config) };
+  };
+
+  // The engine factory is pinned to engine.type and ignores plugin status, so a "disabled" engine kept
+  // serving and was re-enabled on the next boot while the API reported it disabled.
+  it.each([PluginStatus.ENABLED, PluginStatus.DISABLED])(
+    'refuses the active engine plugin in status %s and changes nothing',
+    async status => {
+      const { loader, service } = build(status, 'baileys');
+      const disablePlugin = jest.spyOn(loader, 'disablePlugin');
+      const setOperatorEnabled = jest.spyOn(loader, 'setOperatorEnabled');
+
+      const res = await service.disable('baileys');
+
+      expect(res.success).toBe(false);
+      expect(res.message).toMatch(/engine\.type/);
+      expect(disablePlugin).not.toHaveBeenCalled();
+      expect(setOperatorEnabled).not.toHaveBeenCalled();
+      expect(loader.getPlugin('baileys')!.status).toBe(status);
+    },
+  );
+
+  // An engine other than engine.type runs no sessions, so disabling it is an ordinary request.
+  it('answers a loaded engine that is not the active one the way it answers any idle plugin', async () => {
+    const { service } = build(PluginStatus.DISABLED, 'whatsapp-web.js');
+
+    await expect(service.disable('baileys')).resolves.toEqual({
+      success: true,
+      message: 'Plugin baileys is not enabled',
+    });
+  });
+});
+
 /**
  * Recovery for a plugin the gateway still has a registry entry for but whose code is gone — the
  * state the loader announces on every boot ("Reinstall it — its config and stored data are kept").

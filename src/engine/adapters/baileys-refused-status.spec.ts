@@ -54,6 +54,18 @@ describe('mapServerRefusal', () => {
     );
   });
 
+  it('maps 404 to the not-found error when the caller supplies one, and only 404', async () => {
+    const notFound = () => new Error('no such group');
+    const reject = (code: number) => () => Promise.reject(new Boom('refused', { data: code }));
+    await expect(mapServerRefusal('Leaving the group', reject(404), undefined, notFound)).rejects.toThrow(
+      'no such group',
+    );
+    await expect(mapServerRefusal('Leaving the group', reject(403), undefined, notFound)).rejects.toBeInstanceOf(
+      EngineRefusedError,
+    );
+    await expect(mapServerRefusal('Leaving the group', reject(404))).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
   it('lets an unanswered query through untouched', async () => {
     const noAnswer = new Boom('Invalid group metadata response: missing <group> node', { data: undefined });
     await expect(mapServerRefusal('Setting the group subject', () => Promise.reject(noAnswer))).rejects.toBe(noAnswer);

@@ -30,6 +30,7 @@ import {
   isKnownTerminalEngineFailure,
 } from '../../engine/terminal-engine-failure';
 import { Session, SessionStatus } from './entities/session.entity';
+import { SessionResponseDto } from './dto';
 import { Message, MessageDirection, MessageStatus } from '../message/entities/message.entity';
 import { MessageBatch } from '../message/entities/message-batch.entity';
 import { Webhook } from '../webhook/entities/webhook.entity';
@@ -720,9 +721,29 @@ describe('SessionService', () => {
       expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ status: SessionStatus.CREATED }));
       expect(hookManager.execute).toHaveBeenCalledWith(
         'session:created',
-        session,
+        expect.objectContaining({ id: session.id, name: 'test-session', status: SessionStatus.CREATED }),
         expect.objectContaining({ sessionId: session.id }),
       );
+    });
+
+    it('hands session:created plugins the API shape, never the proxy credentials or config', async () => {
+      const session = createMockSession({
+        proxyUrl: 'http://alice:s3cret@proxy.corp:8080',
+        proxyType: 'http',
+        config: { webhookSecret: 'hush' },
+      });
+      (repository.findOne as jest.Mock).mockResolvedValue(null);
+      (repository.create as jest.Mock).mockReturnValue(session);
+      (repository.save as jest.Mock).mockResolvedValue(session);
+
+      const result = await service.create({ name: 'test-session', proxyUrl: 'http://alice:s3cret@proxy.corp:8080' });
+
+      const calls = (hookManager.execute as jest.Mock).mock.calls as [string, unknown][];
+      const payload = calls.find(([event]) => event === 'session:created')?.[1];
+      expect(payload).toEqual(SessionResponseDto.fromEntity(session, false));
+      expect(JSON.stringify(payload)).not.toMatch(/s3cret|hush|proxy/);
+      // The caller still gets the saved entity (the controller maps it for the response).
+      expect(result).toBe(session);
     });
 
     it('should throw ConflictException if session name already exists', async () => {

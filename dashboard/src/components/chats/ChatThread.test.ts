@@ -1,0 +1,107 @@
+// Render test for the chat thread's write actions. The gateway answers reply, react, delete and a
+// prompt-button tap only for an operator key, so a read-only key must not be offered them.
+import '../../test-helpers/register-hooks.ts';
+import { test, before, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { createElement, createRef } from 'react';
+import type { Chat } from '../../services/api.ts';
+import type { ChatMessageView } from '../../utils/chatMessages.ts';
+
+type RTL = typeof import('@testing-library/react');
+
+let rtl: RTL;
+let ChatThread: typeof import('./ChatThread.tsx').default;
+let RoleProvider: typeof import('../RoleProvider.tsx').RoleProvider;
+
+before(async () => {
+  const { installJsdomGlobals } = await import('../../test-helpers/jsdom.ts');
+  await installJsdomGlobals();
+  const { i18nReady } = await import('../../i18n/index.ts');
+  await i18nReady;
+  rtl = await import('@testing-library/react');
+  ({ RoleProvider } = await import('../RoleProvider.tsx'));
+  ({ default: ChatThread } = await import('./ChatThread.tsx'));
+});
+
+afterEach(() => {
+  rtl.cleanup();
+  window.localStorage.removeItem('openwa_user_role');
+});
+
+const CHAT: Chat = {
+  id: '15551234567@c.us',
+  name: 'Alice',
+  isGroup: false,
+  kind: 'individual',
+  unreadCount: 0,
+  timestamp: 1_700_000_000,
+  archived: false,
+  pinned: false,
+  muted: false,
+};
+
+const PROMPT: ChatMessageView = {
+  id: 'db-1',
+  waMessageId: 'wamid.1',
+  chatId: CHAT.id,
+  from: CHAT.id,
+  to: 'me',
+  body: 'Confirm?',
+  type: 'text',
+  direction: 'incoming',
+  status: 'delivered',
+  timestamp: 1_700_000_000,
+  createdAt: new Date(1_700_000_000_000).toISOString(),
+  metadata: { buttons: [{ id: 'y', text: 'Yes' }] },
+};
+
+function renderThread(role: string): { clicks: string[]; container: HTMLElement } {
+  window.localStorage.setItem('openwa_user_role', role);
+  const clicks: string[] = [];
+  const noop = () => {};
+  const { container } = rtl.render(
+    createElement(
+      RoleProvider,
+      null,
+      createElement(ChatThread, {
+        sessionId: 's1',
+        activeChat: CHAT,
+        messages: [PROMPT],
+        loadingMessages: false,
+        messagesError: false,
+        messagesContainerRef: createRef<HTMLDivElement>(),
+        hasMoreMessages: false,
+        loadingOlderMessages: false,
+        onLoadOlderMessages: noop,
+        onMediaLoad: noop,
+        measureMedia: noop,
+        onOpenImage: noop,
+        onReply: noop,
+        onReact: noop,
+        onDelete: noop,
+        onClickButton: async (_message, button) => {
+          clicks.push(button.id);
+        },
+      }),
+    ),
+  );
+  return { clicks, container };
+}
+
+test('a read-only key sees prompt choices disabled and no reply, react or delete actions', () => {
+  const { clicks, container } = renderThread('viewer');
+  const yes = rtl.screen.getByRole('button', { name: 'Yes' });
+  assert.equal(yes.matches(':disabled'), true);
+  rtl.fireEvent.click(yes);
+  assert.deepEqual(clicks, []);
+  assert.ok(!container.querySelector('.message-actions-menu'));
+});
+
+test('an operator key can tap a prompt choice and gets the message actions', async () => {
+  const { clicks, container } = renderThread('operator');
+  const yes = rtl.screen.getByRole('button', { name: 'Yes' });
+  assert.equal(yes.matches(':disabled'), false);
+  rtl.fireEvent.click(yes);
+  await rtl.waitFor(() => assert.deepEqual(clicks, ['y']));
+  assert.ok(container.querySelector('.message-actions-menu'));
+});

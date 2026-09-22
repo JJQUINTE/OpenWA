@@ -72,6 +72,51 @@ describe('validateIngressManifest', () => {
     expect(() => validateIngressManifest(m as never)).toThrow(/toleranceSec/);
   });
 
+  it('rejects a toleranceSec that is not a finite number, which would disable the replay window', () => {
+    for (const tol of ['5m', '300s', '', {}, true, [], null, JSON.parse('1e999') as number]) {
+      for (const scheme of ['hmac-sha256', 'standard-webhooks']) {
+        const m = baseManifest();
+        m.ingress[0].signature.scheme = scheme;
+        (m.ingress[0].signature as { toleranceSec?: unknown }).toleranceSec = tol;
+        expect(() => validateIngressManifest(m as never)).toThrow(/toleranceSec/);
+      }
+    }
+  });
+
+  it('still loads a numeric toleranceSec, quoted or not', () => {
+    for (const tol of [300, '300']) {
+      const m = baseManifest();
+      (m.ingress[0].signature as { toleranceSec?: unknown }).toleranceSec = tol;
+      expect(() => validateIngressManifest(m as never)).not.toThrow();
+    }
+  });
+
+  it('rejects a route that is not a single URL path segment', () => {
+    for (const route of ['events/message', '/hook', 'a\\b', 'a?b', 'a#b', 'a%2Fb', 'a\nb', '.', '..']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).toThrow(/single URL path segment/);
+    }
+    // A space or a non-ASCII letter is percent-encoded by the client and decoded before the match.
+    for (const route of ['send-sms', 'chatwoot', 'v1.events', 'a_b~c', 'a b', 'café', '...']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).not.toThrow();
+    }
+  });
+
+  it('rejects a route holding a lone UTF-16 surrogate (no URL can encode or decode to it)', () => {
+    for (const route of ['\ud800', 'a\udc00b', 'x\ud83d']) {
+      const m = baseManifest();
+      m.ingress[0].route = route;
+      expect(() => validateIngressManifest(m as never)).toThrow(/single URL path segment/);
+    }
+    // A well-formed surrogate pair is an ordinary astral character.
+    const m = baseManifest();
+    m.ingress[0].route = 'hook-\ud83d\ude80';
+    expect(() => validateIngressManifest(m as never)).not.toThrow();
+  });
+
   it('rejects a dedupOn value other than header or body', () => {
     const m = baseManifest();
     (m.ingress[0] as { dedupOn?: string }).dedupOn = 'bdy';
@@ -287,6 +332,28 @@ describe('validateIngressManifest: response contract', () => {
     ).toThrow(/invalid characters/);
   });
 
+  it('rejects a 1xx ack.status, which Node sends with no final response after it', () => {
+    for (const status of [100, 103, 199]) {
+      expect(() => validateIngressManifest(manifestWithRoute({ response: { ack: { status } } }))).toThrow(
+        /ack\.status/,
+      );
+    }
+    expect(() => validateIngressManifest(manifestWithRoute({ response: { ack: { status: 200 } } }))).not.toThrow();
+  });
+
+  it('rejects an ack header value Node cannot write, and keeps Latin-1 and HTAB', () => {
+    for (const value of ['ok \u2713', 'a\u0000b', 'a\u007fb', 'a\u001bb']) {
+      expect(() =>
+        validateIngressManifest(manifestWithRoute({ response: { ack: { headers: { 'x-note': value } } } })),
+      ).toThrow(/invalid characters/);
+    }
+    for (const value of ['caf\u00e9', 'a\tb']) {
+      expect(() =>
+        validateIngressManifest(manifestWithRoute({ response: { ack: { headers: { 'x-note': value } } } })),
+      ).not.toThrow();
+    }
+  });
+
   it('rejects a non-string ack body', () => {
     // A manifest is third-party JSON. Left unchecked, a number or object here reached the renderer,
     // which drops anything that is not a string, so the route answered every delivery with an EMPTY
@@ -297,7 +364,7 @@ describe('validateIngressManifest: response contract', () => {
   });
 
   it('rejects a non-string ack header value', () => {
-    // Same silent drop, and the CR/LF guard below does not catch it: RegExp.test coerces its
+    // Same silent drop, and the character guard does not catch it: RegExp.test coerces its
     // argument, so a number passes the injection check and is then filtered out at render time.
     expect(() =>
       validateIngressManifest(

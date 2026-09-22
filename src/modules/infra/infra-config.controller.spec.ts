@@ -92,6 +92,25 @@ describe('InfraConfigController PostgreSQL schema (POSTGRES_SCHEMA)', () => {
     expect(preserved).toContain('POSTGRES_SCHEMA=openwa');
   });
 
+  it('refuses a schema the next boot would reject instead of writing it', () => {
+    (fs.writeFileSync as jest.Mock).mockClear();
+    for (const schema of ['OpenWA', 'pg_data', 'bad-name']) {
+      expect(() =>
+        newController().saveConfig({
+          database: { type: 'postgres', builtIn: false, host: 'db', schema, password: 'unit-test-pw' },
+        } as never),
+      ).toThrow(BadRequestException);
+    }
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('still writes the public default for an empty schema', () => {
+    const env = written({
+      database: { type: 'postgres', builtIn: false, host: 'db', schema: '', password: 'unit-test-pw' },
+    });
+    expect(env).toContain('POSTGRES_SCHEMA=public');
+  });
+
   it('pins POSTGRES_SCHEMA=public for the built-in Postgres container', () => {
     const env = written({ database: { type: 'postgres', builtIn: true } });
     expect(env).toContain('POSTGRES_SCHEMA=public');

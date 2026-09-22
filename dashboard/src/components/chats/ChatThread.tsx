@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, CornerUpLeft, Loader2, MessageSquare, Smile, Trash2 } from 'lucide-react';
+import { useRole } from '../../hooks/useRole';
 import { sessionApi, type Chat } from '../../services/api';
 import { getMediaSrc, senderKey, type ChatMessageView } from '../../utils/chatMessages';
 import { shouldFetchOlderMessages } from '../../utils/scrollDecision';
@@ -62,6 +63,9 @@ function ChatThread({
   onClickButton,
 }: ChatThreadProps) {
   const { t } = useTranslation();
+  // Reply, react, delete and prompt taps all need an operator key, like the composer; a viewer
+  // would only reach a 403.
+  const { canWrite } = useRole();
 
   // Media the message list did not inline. The route serves the bytes as an attachment
   // (Content-Disposition), and the list only carries payloads up to
@@ -427,7 +431,7 @@ function ChatThread({
                             key={`${idx}:${btn.id}`}
                             type="button"
                             className={`message-prompt-button${state?.selectedId === btn.id ? ' selected' : ''}${state?.done ? ' answered' : ''}`}
-                            disabled={disabled}
+                            disabled={disabled || !canWrite}
                             onClick={() => void handleClickButton(msg, btn)}
                           >
                             {loading ? <Loader2 size={14} className="animate-spin" /> : btn.text}
@@ -476,7 +480,7 @@ function ChatThread({
                 </div>
 
                 {/* Message actions menu (hover) */}
-                {!isRevoked && (
+                {canWrite && !isRevoked && (
                   <div className="message-actions-menu">
                     <button
                       type="button"

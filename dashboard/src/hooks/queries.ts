@@ -77,7 +77,8 @@ export function useStopSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => sessionApi.stop(id),
-    onSuccess: () => {
+    // A failed stop can still have changed the session, so the list is re-read either way.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
     },
   });

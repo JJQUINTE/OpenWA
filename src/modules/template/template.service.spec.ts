@@ -25,6 +25,7 @@ function createMockTemplate(overrides: Partial<Template> = {}): Template {
 describe('TemplateService', () => {
   let service: TemplateService;
   let repository: jest.Mocked<Partial<Repository<Template>>>;
+  let sessionRepository: { exists: jest.Mock };
 
   beforeEach(async () => {
     repository = {
@@ -35,8 +36,14 @@ describe('TemplateService', () => {
       remove: jest.fn().mockResolvedValue(undefined),
     };
 
+    sessionRepository = { exists: jest.fn().mockResolvedValue(true) };
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [TemplateService, { provide: getRepositoryToken(Template, 'data'), useValue: repository }],
+      providers: [
+        TemplateService,
+        { provide: getRepositoryToken(Template, 'data'), useValue: repository },
+        { provide: getRepositoryToken(Session, 'data'), useValue: sessionRepository },
+      ],
     }).compile();
 
     service = module.get<TemplateService>(TemplateService);
@@ -45,6 +52,16 @@ describe('TemplateService', () => {
   // ── create ────────────────────────────────────────────────────────
 
   describe('create', () => {
+    it('rejects a session that does not exist with 404 before touching the templates table', async () => {
+      sessionRepository.exists.mockResolvedValue(false);
+
+      await expect(service.create('ghost', { name: 'n', body: 'b' })).rejects.toThrow(
+        new NotFoundException("Session with id 'ghost' not found"),
+      );
+      expect(sessionRepository.exists).toHaveBeenCalledWith({ where: { id: 'ghost' } });
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
     it('should create a template with normalized null header/footer', async () => {
       await service.create('sess-1', { name: 'welcome', body: 'Hi {{name}}' });
 

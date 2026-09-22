@@ -209,7 +209,7 @@ describe('hydrateNames', () => {
 
   it('uses the incremental resync on a first link (accountSyncCounter is still 0)', async () => {
     // First connect still has Baileys' own snapshot path in flight; forcing another snapshot would
-    // race it. Empty contacts here are the boot window, not a missed reconnect.
+    // race it. The lifecycle pulls the address book once that initial sync has gone quiet instead.
     const set = jest.fn().mockResolvedValue(undefined);
     const resyncAppState = jest.fn().mockResolvedValue(undefined);
     const { history: h } = history(

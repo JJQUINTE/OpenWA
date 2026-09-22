@@ -5,7 +5,6 @@ import {
   IsNotEmpty,
   IsOptional,
   MaxLength,
-  IsUrl,
   ValidateIf,
   IsArray,
   ArrayMaxSize,
@@ -15,6 +14,8 @@ import {
 import { Type } from 'class-transformer';
 import { IsMentionWidConstraint } from './is-mention-wid.validator';
 import { ToStrictBoolean } from '../../../common/utils/strict-boolean';
+import { IsMediaUrl } from '../../../common/media/media-url';
+import { stripBase64DataUri } from '../media-cap.util';
 
 export const MENTIONS_DESCRIPTION =
   'WIDs to @mention (e.g. ["62811@c.us"]). The text/caption must also contain the @<number> token.';
@@ -193,8 +194,9 @@ export class SendMediaMessageDto {
     example: 'https://example.com/image.jpg',
   })
   @IsOptional()
-  @IsUrl()
-  @ValidateIf((o: SendMediaMessageDto) => !o.base64)
+  // base64 wins when it holds data, so a url next to it is not fetched and not checked; a base64 that
+  // is only a data-URI prefix strips to nothing, and then the url is what gets sent.
+  @IsMediaUrl<SendMediaMessageDto>({ ignoreWhen: o => !!stripBase64DataUri(o.base64) })
   url?: string;
 
   @ApiPropertyOptional({

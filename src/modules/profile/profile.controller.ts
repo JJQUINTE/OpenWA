@@ -5,7 +5,11 @@ import { ProfileService } from './profile.service';
 import { SetProfileNameDto, SetProfileStatusDto, SetProfilePictureDto } from './dto/profile.dto';
 import { RequireRole } from '../auth/decorators/auth.decorators';
 import { ApiKeyRole } from '../auth/entities/api-key.entity';
-import { ENGINE_NOT_READY_409 } from '../../common/openapi/engine-status-responses';
+import {
+  ENGINE_NOT_READY_409,
+  MEDIA_TOO_LARGE_413,
+  MEDIA_URL_PROXY_503,
+} from '../../common/openapi/engine-status-responses';
 
 @ApiTags('profile')
 @Controller('sessions/:sessionId/profile')
@@ -64,7 +68,9 @@ export class ProfileController {
   @ApiResponse({ status: 200, description: 'Profile picture updated', type: ProfileAckResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'Neither url nor base64 provided, base64 without mimetype, or session is not started',
+    description:
+      'Neither url nor base64 provided, base64 without mimetype, session is not started, or the url ' +
+      'answers non-2xx, times out or cannot be reached',
   })
   @ApiResponse({
     status: 403,
@@ -72,12 +78,13 @@ export class ProfileController {
       'The whatsapp-web.js engine refused the picture change. The Baileys engine has no acceptance ' +
       'signal and answers 200 for an upload WhatsApp declined.',
   })
-  @ApiResponse({ status: 413, description: 'Decoded base64 image exceeds the configured media cap' })
+  @ApiResponse({ status: 413, description: MEDIA_TOO_LARGE_413 })
   @ApiResponse({
     status: 503,
     description:
       'WhatsApp did not answer within the request budget. The change may or may not have been applied — ' +
-      'the gateway stopped waiting for a confirmation that never came.',
+      'the gateway stopped waiting for a confirmation that never came. ' +
+      MEDIA_URL_PROXY_503,
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   async setPicture(@Param('sessionId') sessionId: string, @Body() dto: SetProfilePictureDto) {

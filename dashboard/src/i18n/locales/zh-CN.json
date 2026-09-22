@@ -216,6 +216,7 @@
     "noSessions": "未找到会话。创建一个即可开始。",
     "view": "查看",
     "disconnect": "断开连接",
+    "disconnectFailed": "无法断开会话连接",
     "errorPrefix": "错误：{{message}}",
     "loadError": "加载数据失败",
     "charts": {
@@ -226,6 +227,7 @@
         "30d": "30天"
       },
       "overTime": "消息趋势",
+      "overTimeUtcDays": "消息趋势（按 UTC 日期）",
       "byType": "按类型分类的消息",
       "topChats": "热门聊天",
       "sent": "已发送",
@@ -345,7 +347,8 @@
       "actionRequiredTitle": "需要操作",
       "actionRequiredDesc": "此会话需要您的关注。打开会话以查看需要做什么。",
       "failedTitle": "会话失败",
-      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。"
+      "failedDesc": "WhatsApp 会话启动失败。打开该会话以查看原因。",
+      "stopFailedTitle": "停止失败"
     },
     "card": {
       "phone": "电话",
@@ -464,7 +467,10 @@
     },
     "empty": {
       "title": "尚未配置 Webhook",
-      "description": "添加 Webhook 以接收实时事件通知"
+      "description": "添加 Webhook 以接收实时事件通知",
+      "loadErrorTitle": "无法加载 Webhook",
+      "forbiddenTitle": "无权访问 Webhook",
+      "forbiddenDesc": "Webhook 需要具有操作员或管理员角色的 API 密钥。"
     },
     "toasts": {
       "created": "Webhook 创建成功",
@@ -485,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "收到消息时",
       "message.sent": "发送消息时",
-      "session.connected": "会话连接时",
-      "session.disconnected": "会话断开时",
+      "message.ack": "消息的送达或已读状态变化时",
+      "message.failed": "发出的消息投递失败时",
+      "message.revoked": "消息被撤回时",
+      "message.reaction": "添加、更改或移除回应时",
+      "message.edited": "消息被编辑时",
+      "session.status": "会话状态变化时",
       "session.qr": "生成 QR 码时",
+      "session.authenticated": "会话完成配对并就绪时",
+      "session.disconnected": "会话断开时",
+      "session.reconnect_loop": "会话反复重连失败时",
+      "session.restriction": "WhatsApp 限制账号或解除限制时",
+      "presence.update": "已订阅的聊天上线、正在输入或下线时",
+      "group.join": "有成员加入或被添加到群组时",
+      "group.leave": "有成员退出或被移出群组时",
+      "group.update": "群组名称、描述或设置变化时",
+      "group.join_request": "有人申请加入此会话管理的群组时",
+      "call.received": "来电开始响铃时",
+      "call.accepted": "来电被接听时",
+      "call.rejected": "来电被拒接时",
+      "call.missed": "来电未接听时",
+      "status.received": "联系人发布状态时",
       "all": "所有事件"
     }
   },

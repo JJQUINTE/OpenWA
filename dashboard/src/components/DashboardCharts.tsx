@@ -18,6 +18,7 @@ import {
 import { BarChart3 } from 'lucide-react';
 import { useStatsMessagesQuery } from '../hooks/queries';
 import type { StatsPeriod } from '../services/api';
+import { formatTick } from '../utils/chartTicks';
 import './DashboardCharts.css';
 
 const PERIODS: StatsPeriod[] = ['24h', '7d', '30d'];
@@ -48,11 +49,6 @@ function colorForType(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
   return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
-}
-
-// '2026-06-24 14:00:00' (hour buckets) → '14:00'; '2026-06-24' (day buckets) → '06-24'.
-function formatTick(ts: string, period: StatsPeriod): string {
-  return period === '24h' ? ts.slice(11, 16) : ts.slice(5);
 }
 
 // WhatsApp ids look like '62812...@c.us' / '...@g.us' / '...@lid' — show just the local part.
@@ -111,7 +107,7 @@ export function DashboardCharts() {
       ) : (
         <div className="charts-grid">
           <div className="chart-card chart-wide">
-            <h3>{t('dashboard.charts.overTime')}</h3>
+            <h3>{period === '24h' ? t('dashboard.charts.overTime') : t('dashboard.charts.overTimeUtcDays')}</h3>
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={timeSeries} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
                 <defs>

@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, Send, Webhook, Activity, Loader2 } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useRole } from '../hooks/useRole';
+import { useToast } from '../hooks/useToast';
 import {
   useSessionsQuery,
   useSessionStatsQuery,
@@ -22,6 +24,8 @@ export function Dashboard() {
   const { t } = useTranslation();
   useDocumentTitle(t('dashboard.title'));
   const navigate = useNavigate();
+  const { canWrite } = useRole();
+  const toast = useToast();
   const { data: sessions = [], isLoading: loadingSessions, error: sessionsError } = useSessionsQuery();
   const { data: stats } = useSessionStatsQuery();
   const { data: webhooks, isError: webhooksFailed } = useWebhooksQuery();
@@ -43,7 +47,7 @@ export function Dashboard() {
     try {
       await stopMutation.mutateAsync(id);
     } catch (err) {
-      console.error('Failed to disconnect:', err);
+      toast.error(t('dashboard.disconnectFailed'), err instanceof Error ? err.message : undefined);
     }
   };
 
@@ -162,7 +166,8 @@ export function Dashboard() {
                   <button className="btn-sm" onClick={() => navigate('/sessions')}>
                     {t('dashboard.view')}
                   </button>
-                  {['ready', 'initializing', 'qr_ready'].includes(session.status) && (
+                  {/* Stopping a session is an operator write; a read-only key would only collect a 403. */}
+                  {canWrite && ['ready', 'initializing', 'qr_ready'].includes(session.status) && (
                     <button className="btn-sm danger" onClick={() => handleDisconnect(session.id)}>
                       {t('dashboard.disconnect')}
                     </button>

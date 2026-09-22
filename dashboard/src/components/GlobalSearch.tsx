@@ -25,18 +25,23 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Bumped by every search and by clearing the input: a response whose id is no longer current belongs
   // to a query the user has moved past, and a slower earlier one must not overwrite the latest results.
   const requestId = useRef(0);
+  // The query and scope the list was last searched for; Escape can cancel a pending search (a keystroke or
+  // a scope toggle), leaving the list behind what the input shows.
+  const searchedKey = useRef('');
+  const scopeKey = scopeCurrent && currentSessionId ? currentSessionId : '';
 
   const run = useCallback(
     async (query: string, offset: number, append: boolean) => {
       const id = ++requestId.current;
-      const params = buildSearchParams(
-        query,
-        scopeCurrent && currentSessionId ? { sessionId: currentSessionId } : undefined,
-        { limit: PAGE_SIZE, offset },
-      );
+      searchedKey.current = `${scopeKey}|${query}`;
+      const params = buildSearchParams(query, scopeKey ? { sessionId: scopeKey } : undefined, {
+        limit: PAGE_SIZE,
+        offset,
+      });
       if (!params) {
         setHits([]);
         setTotal(0);
@@ -63,7 +68,7 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
         if (id === requestId.current) setLoading(false);
       }
     },
-    [scopeCurrent, currentSessionId, t],
+    [scopeKey, t],
   );
 
   // Debounce on input change.
@@ -77,12 +82,15 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
       setLoading(false);
       return;
     }
+    // timer.current is non-null exactly while a search is pending, which the Escape handler reads.
     timer.current = setTimeout(() => {
+      timer.current = null;
       setOpen(true);
       void run(q, 0, false);
     }, DEBOUNCE_MS);
     return () => {
       if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
     };
   }, [q, run]);
 
@@ -93,20 +101,58 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
     };
   }, []);
 
-  const loadMore = () => void run(q, hits.length, true);
+  const reopen = () => {
+    if (!q.trim()) return;
+    if (searchedKey.current !== `${scopeKey}|${q}`) {
+      // Searched now, so the keystroke debounce still pending for the same text would only repeat it.
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      void run(q, 0, false);
+    }
+    setOpen(true);
+  };
+
+  // Focus returns to the input so a keyboard user can keep going (Escape, Tab) once the button is
+  // replaced by the loading row, which would otherwise leave focus on nothing.
+  const loadMore = () => {
+    inputRef.current?.focus();
+    void run(q, hits.length, true);
+  };
 
   return (
-    <div className="global-search">
+    <div
+      className="global-search"
+      // Close only when focus leaves the whole widget: tabbing from the input to the scope toggle or
+      // the "more" button must keep the results open, or the button unmounts before it can be used.
+      onBlur={e => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        blurTimer.current = setTimeout(() => setOpen(false), 150);
+      }}
+      // Escape dismisses the open results from anywhere in the widget (input, scope toggle, a hit,
+      // "more") and is consumed, so a page-level Escape handler (the Chats page closes the open
+      // conversation) leaves it alone.
+      onKeyDown={e => {
+        if (e.key !== 'Escape' || e.nativeEvent.isComposing) return;
+        // A pending debounce would reopen the results the user just dismissed. Cancelling it is the
+        // key's whole effect, so it is consumed too, even before any results have opened.
+        const cancelledSearch = timer.current !== null;
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = null;
+        if (!cancelledSearch && (!open || !q.trim())) return;
+        e.preventDefault();
+        setOpen(false);
+      }}
+    >
       <input
+        ref={inputRef}
         className="global-search-input"
         type="text"
         placeholder={t('search.placeholder')}
         value={q}
         onChange={e => setQ(e.target.value)}
-        onFocus={() => q.trim() && setOpen(true)}
-        onBlur={() => {
-          blurTimer.current = setTimeout(() => setOpen(false), 150);
-        }}
+        onFocus={reopen}
+        // A pick or Escape closes the results with focus still in the input, where a click fires no focus.
+        onClick={reopen}
         aria-label={t('search.placeholder')}
       />
       {currentSessionId && (
@@ -123,7 +169,18 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
           {!loading &&
             !error &&
             hits.map(h => (
-              <button key={h.messageId} className="global-search-hit" role="option" onMouseDown={() => onHit(h)}>
+              <button
+                key={h.messageId}
+                className="global-search-hit"
+                role="option"
+                // preventDefault on mousedown keeps focus in the input, as on "more"; click fires for the
+                // mouse and for Enter/Space on a hit reached with Tab. Picking a hit closes the results.
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  onHit(h);
+                }}
+              >
                 <div className="global-search-hit-meta">
                   {h.chatId} · {new Date(h.timestamp * 1000).toLocaleString()}
                 </div>
@@ -135,7 +192,9 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
               </button>
             ))}
           {!loading && !error && hits.length < total && (
-            <button className="global-search-more" onClick={loadMore}>
+            // preventDefault on mousedown keeps focus in the input, so a mouse click does not start the
+            // close timer; click still fires for the mouse and for Enter/Space.
+            <button className="global-search-more" onMouseDown={e => e.preventDefault()} onClick={loadMore}>
               {t('search.results', { count: total })}
             </button>
           )}

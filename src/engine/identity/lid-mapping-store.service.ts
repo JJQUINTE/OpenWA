@@ -8,7 +8,8 @@ import { resolveNonNegativeIntEnv } from '../../config/configuration';
 
 // Default cap on the in-memory lid->phone mirror. Every other long-lived map in the engine surface is
 // bounded (the per-session lidPhoneCache is 5000); the LID mirror was the lone exception. A miss falls
-// back to engine re-resolution, so the cap trades a re-resolution for bounded memory, never data loss.
+// back to engine re-resolution (a reverse lookup reads the table), so the cap trades a re-resolution for
+// bounded memory, never data loss.
 export const LID_MAPPING_CACHE_DEFAULT = 5000;
 
 /**
@@ -45,8 +46,10 @@ export interface LidMappingStore {
  * contact-heavy account does not accumulate one entry per distinct LID ever seen into a slow memory leak.
  * A cache miss is warmed from the table in the background (rows past the preload cap stay resolvable)
  * and otherwise falls back to engine re-resolution (the table remains the source of truth), so eviction
- * only costs a re-resolution, never data loss. The reverse map is reconciled on each eviction so it does
- * not retain entries for LIDs no longer in the forward cache.
+ * only costs a re-resolution, never data loss. The reverse map has no such warm path (nothing looks a
+ * lid up by phone), so a phone-keyed filter uses {@link findLidsForPhone}, which reads the table. The
+ * reverse map is reconciled on each eviction so it does not retain entries for LIDs no longer in the
+ * forward cache.
  */
 @Injectable()
 export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
@@ -146,6 +149,44 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
   lidsForPhone(phone: string): string[] {
     const set = this.phoneToLids.get(phone);
     return set ? [...set] : [];
+  }
+
+  /**
+   * Reverse lookup that also reads the table. {@link lidsForPhone} only sees lids resident in the
+   * forward cache, and nothing phone-keyed ever warms it, so a mapping past the preload cap or
+   * evicted by the LRU would stay invisible to a phone filter for good. For callers that can await
+   * (the message and status filters, the handover gate). Table rows are not indexed into the cache,
+   * so a list query cannot evict hot forward entries. A lid this process has since re-mapped
+   * elsewhere is skipped (last-write-wins), and a read error falls back to the cache alone.
+   */
+  async findLidsForPhone(phone: string): Promise<string[]> {
+    const lids = new Set(this.lidsForPhone(phone));
+    try {
+      const rows = await this.repo.find({ select: { lid: true }, where: { phone } });
+      for (const { lid } of rows) {
+        const cached = this.lidToPhone.get(lid);
+        if (cached === undefined || cached === phone) lids.add(lid);
+      }
+    } catch (err) {
+      this.logger.warn(`Could not read lids for a phone: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return [...lids];
+  }
+
+  /**
+   * Forward lookup that reads the table on a cache miss, for callers that can await (the handover
+   * gate). {@link getCached} answers a miss with undefined and only warms in the background, which
+   * is exactly when a mapping past the cap or evicted matters. Like {@link findLidsForPhone}, the row
+   * is not indexed, and a read error answers null.
+   */
+  async findPhoneForLid(lid: string): Promise<string | null> {
+    if (this.lidToPhone.has(lid)) return this.getCached(lid) ?? null;
+    try {
+      return (await this.repo.findOne({ where: { lid } }))?.phone ?? null;
+    } catch (err) {
+      this.logger.warn(`Could not read the phone for a lid: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
   }
 
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {

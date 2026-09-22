@@ -4,13 +4,18 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import * as crypto from 'crypto';
 import { setTimeout } from 'node:timers/promises';
 import { Webhook } from './entities/webhook.entity';
 import { WebhookOutboxService } from './webhook-outbox.service';
 import { WebhookDeliveryFailure } from './entities/webhook-delivery-failure.entity';
 import { recordWebhookDeliveryFailure } from './utils/record-delivery-failure';
-import { postWebhookPayload, recordTerminalFailure } from './utils/deliver-once';
+import {
+  buildDeliveryHeaders,
+  generateSignature,
+  postWebhookPayload,
+  recordTerminalFailure,
+  sanitizeCustomHeaders,
+} from './utils/deliver-once';
 import { createLogger } from '../../common/services/logger.service';
 import { DEFAULT_WEBHOOK_MEDIA_INLINE_MAX_BYTES, shedInlineMedia } from '../../common/utils/inline-media';
 import { incrementWebhookDeliveryFailures } from '../../common/metrics/webhook-delivery-metrics';
@@ -21,6 +26,7 @@ import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.
 import { redactSsrfError } from '../../common/security/ssrf-guard';
 import { HookManager } from '../../core/hooks';
 import { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
+import { isWebhookBeforeResult } from '../../core/hooks/hook-results';
 
 export interface WebhookPayload {
   event: string;
@@ -81,6 +87,8 @@ interface DispatchEventContext {
  * Records terminally failed deliveries in webhook_delivery_failures. Webhook registration/CRUD
  * lives on WebhookService, which delegates dispatch here.
  */
+const isPlainObject = (value: unknown): boolean => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 @Injectable()
 export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger('WebhookDelivery');
@@ -237,8 +245,9 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
     // A subscribed webhook that a filter drops leaves no trace otherwise: dispatch() awaits an empty
     // array and returns, and the delivery-failure table only records deliveries that were ATTEMPTED.
     // That is fine when the filter is doing its job, and indistinguishable from it when it is not —
-    // a condition on a field the event's payload does not carry resolves to undefined and fails,
-    // which is how a `sender` filter silently swallows every message.ack. Debug rather than warn:
+    // an `is`/`contains`/`equals` condition on a field the event's payload does not carry resolves to
+    // undefined and fails, which is how a `sender is` filter silently swallows every message.ack
+    // (an `isNot` condition, or a boolean compared with false, passes instead). Debug rather than warn:
     // suppression is the normal outcome of a working filter, so this is a trace to switch on while
     // investigating, not an alarm.
     if (matching.length < subscribed.length) {
@@ -324,10 +333,16 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
       // place, so reading the canonical timestamp off the hook result afterwards is not safe.
       const payloadTimestamp = payload.timestamp;
 
+      // A handler result without a plain-object payload is skipped, so the chain keeps the last usable
+      // payload (an earlier hook's redaction included) rather than the one it started from.
       const { continue: shouldContinue, data: hookResult } = await this.hookManager.execute(
         'webhook:before',
         { sessionId, event, payload },
-        { sessionId, source: 'WebhookService' },
+        {
+          sessionId,
+          source: 'WebhookService',
+          accept: isWebhookBeforeResult,
+        },
       );
 
       if (!shouldContinue) {
@@ -338,8 +353,20 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
         return 'cancelled';
       }
 
-      // Null/undefined hook results mean "no override", matching an object without payload.
-      const finalPayload = (hookResult as { payload?: WebhookPayload } | null | undefined)?.payload ?? payload;
+      // Null/undefined hook results mean "no override", matching an object without payload. A
+      // payload that is not a plain object (a primitive, which throws on the writes below, or an
+      // array, which drops them from the JSON) is not one either: send the original and say so.
+      const hookPayload = (hookResult as { payload?: unknown } | null | undefined)?.payload ?? payload;
+      const usable = isPlainObject(hookPayload);
+      if (!usable) {
+        this.logger.warn('A webhook:before hook returned a payload that is not an object; sending the original', {
+          webhookId: webhook.id,
+          event,
+          received: Array.isArray(hookPayload) ? 'array' : typeof hookPayload,
+          action: 'hook_payload_discarded',
+        });
+      }
+      const finalPayload = usable ? (hookPayload as WebhookPayload) : payload;
       // Re-assert EVERY identity field after the (untrusted) hook chain. A hook may rewrite data,
       // but event/sessionId/timestamp and the dedupe ids must remain the server's values: the
       // receiver verifies the signature over this body and compares it against the X-OpenWA-*
@@ -386,15 +413,7 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
         return null;
       }
 
-      const headers = {
-        ...this.sanitizeCustomHeaders(webhook.headers),
-        'Content-Type': 'application/json',
-        'User-Agent': 'OpenWA-Webhook/1.0.0',
-        'X-OpenWA-Event': event,
-        'X-OpenWA-Idempotency-Key': idempotencyKey,
-        'X-OpenWA-Delivery-Id': deliveryId,
-        'X-OpenWA-Retry-Count': '0',
-      };
+      const headers = buildDeliveryHeaders(webhook, event, idempotencyKey, deliveryId, body);
       return { finalPayload, body, headers };
     } catch (error) {
       await this.recordUndelivered(
@@ -454,15 +473,9 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
   ): Promise<WebhookDeliveryOutcome> {
     const { sessionId, event } = ctx;
     try {
-      // Sign the exact pre-serialized body from preflight. The processor re-serializes the same
-      // payload object at delivery time (JSON key order survives the Redis round-trip), so the
-      // signature stays valid over the bytes the receiver sees.
-      const signature = webhook.secret ? this.generateSignature(body, webhook.secret) : '';
-
-      if (webhook.secret) {
-        headers['X-OpenWA-Signature'] = signature;
-      }
-
+      // The job's headers are the enqueue-time snapshot. The processor rebuilds them (and the
+      // signature) from the current webhook row on every attempt, so a secret or header rotated
+      // while the job waits is honoured.
       const jobData: WebhookJobData = {
         webhookId: webhook.id,
         url: webhook.url,
@@ -797,26 +810,12 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Drop operator-supplied custom headers that target reserved names (Content-Type or any
-   * X-OpenWA-* header) so a webhook config cannot forge the signature/event/idempotency
-   * headers. Spread the result BEFORE the system headers so system always wins. Shared with
-   * WebhookService.test(), which must probe with headers identical to a real delivery's.
-   */
+  /** Shared with WebhookService.test(), which must probe with headers identical to a real delivery's. */
   sanitizeCustomHeaders(custom: Record<string, string> | null | undefined): Record<string, string> {
-    const safe: Record<string, string> = {};
-    for (const [key, value] of Object.entries(custom ?? {})) {
-      if (!/^(content-type|x-openwa-)/i.test(key)) {
-        safe[key] = value;
-      }
-    }
-    return safe;
+    return sanitizeCustomHeaders(custom);
   }
 
-  /** HMAC-SHA256 over the exact pre-serialized body, prefixed for receiver-side verification. */
   generateSignature(payload: string, secret: string): string {
-    const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(payload);
-    return `sha256=${hmac.digest('hex')}`;
+    return generateSignature(payload, secret);
   }
 }

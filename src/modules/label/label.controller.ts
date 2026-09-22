@@ -21,8 +21,12 @@ export class LabelController {
   @Get()
   @ApiOperation({ summary: 'Get all labels (WhatsApp Business only)' })
   @ApiParam({ name: 'sessionId', description: 'Session ID' })
-  @ApiResponse({ status: 200, description: 'List of labels', type: [LabelDto] })
-  @ApiResponse({ status: 400, description: 'Session not ready or not a business account' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of labels (empty on a personal, non-Business account)',
+    type: [LabelDto],
+  })
+  @ApiResponse({ status: 400, description: 'Session not started' })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: ENGINE_NOT_SUPPORTED_501 })
   @ApiResponse({
@@ -67,9 +71,9 @@ export class LabelController {
   @ApiResponse({
     status: 503,
     description:
-      'The whatsapp-web.js page connection died mid-read, so nothing could be read. Deliberately not ' +
-      'reported as a missing label — a page that went away says nothing about whether the label exists. ' +
-      'The other engine never answers this: Baileys has no label query at all and answers 501 above.',
+      'WhatsApp Web did not answer (the page died or the command timed out), so nothing could be ' +
+      'read. Deliberately not reported as a missing label: no answer says nothing about whether the label ' +
+      'exists. The other engine never answers this: Baileys has no label query at all and answers 501 above.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: LABEL_NOT_FOUND_404 })
@@ -176,6 +180,10 @@ export class LabelController {
   })
   @ApiResponse({ status: 200, description: 'Label added to chat', type: LabelAckResponseDto })
   @ApiResponse({
+    status: 404,
+    description: 'The chat does not exist on this session, so nothing was written (whatsapp-web.js)',
+  })
+  @ApiResponse({
     status: 422,
     description: 'Labels require a WhatsApp Business account, or the chat type has no labels',
   })
@@ -202,6 +210,10 @@ export class LabelController {
   @ApiParam({ name: 'chatId', description: 'Chat ID' })
   @ApiParam({ name: 'labelId', description: 'Label ID to remove' })
   @ApiResponse({ status: 200, description: 'Label removed from chat', type: LabelAckResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'The chat does not exist on this session, so nothing was written (whatsapp-web.js)',
+  })
   @ApiResponse({
     status: 422,
     description: 'Labels require a WhatsApp Business account, or the chat type has no labels',

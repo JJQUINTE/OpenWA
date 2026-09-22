@@ -1,4 +1,5 @@
 import { WorkerToHostMessage, HostToWorkerMessage } from './protocol';
+import { hookConfigStore } from './worker-hooks';
 import { ConversationSendEnvelope } from '../plugin.interfaces';
 import { HandoverState } from '../../../modules/integration/entities/conversation-mapping.entity';
 
@@ -16,7 +17,8 @@ export class WorkerCapabilityClient {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.post({ kind: 'cap', id, verb, args });
+      const inFlight = hookConfigStore.getStore()?.inFlight;
+      this.post(inFlight ? { kind: 'cap', id, verb, args, inFlight } : { kind: 'cap', id, verb, args });
     });
   }
 

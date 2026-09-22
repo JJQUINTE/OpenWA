@@ -9,6 +9,7 @@ import {
   JoinGroupDto,
   GroupSettingsDto,
   MembershipRequestActionDto,
+  SetGroupPictureDto,
   GROUP_PARTICIPANTS_MAX,
 } from './group.dto';
 
@@ -28,6 +29,19 @@ function instanceFor<T extends object>(cls: new () => T, payload: unknown): T {
 }
 
 describe('group DTO validation', () => {
+  it('SetGroupPictureDto accepts only an absolute http(s) url, the only form the engines fetch', async () => {
+    for (const url of ['example.com/a.jpg', 'ftp://example.com/a.jpg']) {
+      expect((await errorsFor(SetGroupPictureDto, { url })).length).toBeGreaterThan(0);
+    }
+    for (const url of ['https://example.com/a.jpg', 'HTTPS://example.com/a.jpg', 'http://example.com/a.jpg']) {
+      expect(await errorsFor(SetGroupPictureDto, { url })).toHaveLength(0);
+    }
+    expect(await errorsFor(SetGroupPictureDto, { url: 'example.com/a.jpg', base64: 'QUJD' })).toHaveLength(0);
+    // A base64 that is only a data-URI prefix strips to nothing, so the url is what would be sent.
+    const prefixOnly = { url: 'cdn/group.jpg', base64: 'data:image/jpeg;base64,', mimetype: 'image/jpeg' };
+    expect((await errorsFor(SetGroupPictureDto, prefixOnly)).length).toBeGreaterThan(0);
+  });
+
   it('accepts a valid participants body (regression for #190)', async () => {
     const errors = await errorsFor(ParticipantsDto, { participants: ['628123456789@c.us'] });
     expect(errors).toHaveLength(0);

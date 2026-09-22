@@ -28,7 +28,7 @@ export function automationTools(automation: AutomationRulesService): AnyToolDesc
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        ruleId: z.string().describe('Rule UUID'),
+        ruleId: z.string().min(1).describe('Rule UUID'),
       }),
       handler: input =>
         automation.findOne(input.sessionId, input.ruleId).then(rule => AutomationRuleResponseDto.fromEntity(rule)),

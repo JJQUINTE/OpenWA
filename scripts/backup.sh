@@ -77,6 +77,14 @@ ADMIN_KEY_FILE="$DATA_DIR/.api-key"
 
 log() { echo "[backup] $*"; }
 
+# Check the destination before staging anything. The shipped container's root filesystem is
+# read-only, so the default ./backups (/app/backups) cannot be created there; failing only at the
+# end would first copy every database, session and media file into the memory-backed /tmp.
+if ! mkdir -p "$BACKUP_DIR" 2>/dev/null || [ ! -w "$BACKUP_DIR" ]; then
+  log "ERROR: BACKUP_DIR=$BACKUP_DIR is not writable; point BACKUP_DIR at a writable, persistent directory (inside the read-only container use BACKUP_DIR=/app/data/backups)"
+  exit 1
+fi
+
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -188,7 +196,6 @@ if [ -f "$ADMIN_KEY_FILE" ]; then
   cp -p "$ADMIN_KEY_FILE" "$STAGE/.api-key"
 fi
 
-mkdir -p "$BACKUP_DIR"
 ARCHIVE="$BACKUP_DIR/openwa-backup-$TIMESTAMP.tar.gz"
 tar -czf "$ARCHIVE" -C "$STAGE" .
 

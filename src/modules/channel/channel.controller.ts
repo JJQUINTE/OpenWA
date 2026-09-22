@@ -272,6 +272,7 @@ export class ChannelController {
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: CHANNEL_INVITE_NOT_FOUND_404 })
+  @ApiResponse({ status: 403, description: ENGINE_REFUSED_403 })
   async subscribe(@Param('sessionId') sessionId: string, @Body() body: SubscribeChannelDto) {
     return this.channelService.subscribeToChannel(sessionId, body.inviteCode);
   }

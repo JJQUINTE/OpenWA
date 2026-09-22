@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, CircleDashed, Loader2, Megaphone, Plus, Search } from 'lucide-react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { Channel, Chat, ContactStatusGroup, Session } from '../../services/api';
+import { useRole } from '../../hooks/useRole';
 import ChatAvatar from './ChatAvatar';
 
 export type ChatsTab = 'chats' | 'channels' | 'status';
@@ -57,6 +58,8 @@ function ChatSidebar({
   statusTab,
 }: ChatSidebarProps) {
   const { t } = useTranslation();
+  // Posting a status needs an operator key; a read-only key would only reach a 403.
+  const { canWrite } = useRole();
 
   const formatLastMessageSnippet = (chat: Chat) => chat.lastMessage || '';
 
@@ -164,7 +167,7 @@ function ChatSidebar({
         </div>
 
         {/* Compose a new status — only meaningful on the Status tab. */}
-        {activeTab === 'status' && (
+        {activeTab === 'status' && canWrite && (
           <button type="button" className="btn-primary status-compose-trigger" onClick={onComposeStatus}>
             <Plus size={16} />
             {t('chats.status.compose')}

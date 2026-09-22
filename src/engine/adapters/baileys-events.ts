@@ -171,11 +171,10 @@ export class BaileysEvents {
       // apart except the id, which the adapter recorded when it sent: skip only what we sent, so
       // the echo cannot fire onMessageCreate twice and the phone's outage-window sends still land
       // as outgoing messages. Real history never reaches this handler; it arrives on
-      // messaging-history.set and is captured dispatch-free. A re-delivered inbound message is
-      // harmless, since the insert oracle dedupes on the WhatsApp message id and does not dispatch
-      // a stored message again. That oracle does NOT gate dispatch on the own-send path, which is
-      // why the echo has to be caught here, and why a fromMe message the store already holds is
-      // dropped in processInboundMessage before it can be reported a second time.
+      // messaging-history.set and is captured dispatch-free. A re-delivered message of either
+      // direction the store already holds is dropped in processInboundMessage: the projector's insert
+      // oracle dedupes the inbound fan-out but runs after the message:received plugin hook, and it
+      // does not gate dispatch on the own-send path at all, which is also why the echo is caught here.
       //
       // Only ids this session SENT are consumed here. Claiming every inbound fromMe id instead, to
       // close the window where two deliveries of one id arrive before the store write commits, costs
@@ -333,7 +332,12 @@ export class BaileysEvents {
           messageId: rm?.key?.id ?? '',
           chatId: this.host.toNeutralJid(remoteJid),
           reaction: rm?.text ?? '',
-          senderId: this.host.toNeutralJid(msg.key.participant ?? remoteJid),
+          // A 1:1 key names the chat partner, not the author: for a reaction the account made from
+          // its phone (fromMe) the reactor is the account itself. Group and status keys carry the
+          // author as `participant`, own reactions included, which the edit branch reads the same way.
+          senderId: this.host.toNeutralJid(
+            msg.key.participant ?? (msg.key.fromMe === true ? this.host.normalizedSelfJid() : remoteJid),
+          ),
         };
         this.host.getOnMessageReaction()?.(event);
         return;
@@ -364,15 +368,17 @@ export class BaileysEvents {
       }
 
       // --- Normal message: enrich + emit ---
-      // A fromMe message the store already holds was delivered or sent before: WhatsApp re-delivers
-      // a node whose ack was lost on a drop, and the own-send path downstream dispatches message.sent
-      // whatever its insert did, so the second copy has to stop here. The store is written by both
-      // the inbound path below and the send path, and it survives a restart, which the registry
-      // consulted in handleMessagesUpsert does not. The read fails open (see readStoredMessage).
-      const ownMessageId = msg.key.fromMe === true ? (msg.key.id ?? null) : null;
-      if (ownMessageId !== null && (await this.readStoredMessage(ownMessageId))) {
+      // A message the store already holds was delivered or sent before: WhatsApp re-delivers a node
+      // whose ack was lost on a drop, so the second copy has to stop here. Downstream would not catch
+      // it: the own-send path dispatches message.sent whatever its insert did, and the inbound path
+      // runs the message:received plugin hook before its insert oracle dedupes. The store is written
+      // by the inbound path below, only after dispatch, and by the send path, and it survives a
+      // restart, which the registry consulted in handleMessagesUpsert does not. The read fails open
+      // (see readStoredMessage).
+      const storedId = msg.key.id ?? null;
+      if (storedId !== null && (await this.readStoredMessage(storedId))) {
         this.host.logger.debug('Skipping a re-delivered message this session already recorded', {
-          msgId: ownMessageId,
+          msgId: storedId,
         });
         return;
       }

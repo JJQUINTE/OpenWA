@@ -39,7 +39,7 @@ export class SettingsController {
         // use), not a hardcoded localhost guess that ignores the operator's configured host.
         apiBaseUrl: process.env.BASE_URL || `http://localhost:${port}`,
         // The engine auto-reconnects on a transient disconnect by default (there is no global off
-        // switch; reconnection is bounded per-session by RECONNECT_MAX_ATTEMPTS). Reporting a hardcoded
+        // switch; attempts are unlimited unless a session sets config.maxReconnectAttempts). Reporting a hardcoded
         // `false` for a non-existent `engine.autoReconnect` key was actively misleading.
         autoReconnect: true,
         debugMode: this.configService.get<boolean>('database.logging', false),

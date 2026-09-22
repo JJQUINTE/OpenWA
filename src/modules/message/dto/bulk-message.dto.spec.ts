@@ -51,3 +51,16 @@ describe('SendBulkMessageDto recipient', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 });
+
+// The url scheme is checked by the service after `variables` are applied, because a placeholder may
+// stand for the whole URL; the DTO only requires a string.
+describe('SendBulkMessageDto media url', () => {
+  it('leaves a templated url to the per-item check', async () => {
+    expect(await validateBulk(imageItem({ url: '{{imageUrl}}' }))).toHaveLength(0);
+    expect(await validateBulk(imageItem({ url: 'https://{{host}}/a.jpg' }))).toHaveLength(0);
+  });
+
+  it('rejects a non-string url even next to base64', async () => {
+    expect((await validateBulk(imageItem({ base64: 'AAAA', url: 123 }))).length).toBeGreaterThan(0);
+  });
+});

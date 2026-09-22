@@ -430,4 +430,24 @@ const SqliteSession = new EntitySchema<Record<string, unknown>>({
     const carried = await repo.findOneByOrFail({ id: SESSION_ID });
     expect(carried.leaseExpiresAt!.getTime()).toBeGreaterThanOrEqual(leaseExpiresAt.getTime());
   });
+
+  it('rolls back a rejected row with its real error instead of an aborted-transaction failure', async () => {
+    await seedSession(SESSION_ID, new Date('2026-01-01T00:00:00.000Z'));
+    const archive = JSON.parse(JSON.stringify(await infra.exportData())) as { tables: MigrationTables };
+    const [row] = archive.tables.sessions;
+
+    const res = await infra.importData({
+      tables: {
+        sessions: [
+          { ...row, id: OLD_ID },
+          { ...row, id: OLD_ID, name: 'dup' },
+        ],
+      },
+    });
+
+    expect(res.imported).toBe(false);
+    expect(res.warnings).toHaveLength(1);
+    expect(res.warnings[0]).toContain('duplicate key');
+    expect((await ds.getRepository(Session).find()).map(s => s.id)).toEqual([SESSION_ID]);
+  });
 });

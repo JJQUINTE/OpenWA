@@ -28,6 +28,7 @@ import { AuthService } from './modules/auth/auth.service';
 import { AuditService } from './modules/audit/audit.service';
 import { Request, Response, NextFunction } from 'express';
 import { RedisIoAdapter } from './modules/events/redis-io.adapter';
+import { prestartBuiltinDatabase } from './modules/docker/docker.service';
 
 // The created app, exposed at module scope so the fatal handler below can run a best-effort teardown
 // (engine sessions, Redis/pg) when bootstrap fails AFTER NestFactory.create succeeded — notably a
@@ -101,6 +102,10 @@ async function bootstrap() {
     configured: process.env.STORAGE_LOCAL_PATH,
     logger: bootstrapLogger,
   });
+
+  // The data connection dials PostgreSQL inside NestFactory.create, so a stopped built-in container
+  // must be started before it, not from DockerService.onModuleInit (see the helper).
+  await prestartBuiltinDatabase();
 
   // Disable Nest's default body parser so we can set an explicit size cap below.
   const app = await NestFactory.create(AppModule, { bodyParser: false });

@@ -216,6 +216,7 @@
     "noSessions": "Oturum bulunamadı. Başlamak için bir tane oluşturun.",
     "view": "Görüntüle",
     "disconnect": "Bağlantıyı Kes",
+    "disconnectFailed": "Oturumun bağlantısı kesilemedi",
     "errorPrefix": "Hata: {{message}}",
     "loadError": "Veriler yüklenemedi",
     "charts": {
@@ -226,6 +227,7 @@
         "30d": "30g"
       },
       "overTime": "Zamana göre mesajlar",
+      "overTimeUtcDays": "Zamana göre mesajlar (günler UTC'ye göre)",
       "byType": "Türe göre mesajlar",
       "topChats": "En popüler sohbetler",
       "sent": "Gönderilen",
@@ -350,7 +352,8 @@
       "actionRequiredTitle": "İşlem gerekiyor",
       "actionRequiredDesc": "Bu oturumun ilgilenilmesi gerekiyor. Ne yapılması gerektiğini görmek için oturumu açın.",
       "failedTitle": "Oturum Başarısız",
-      "failedDesc": "WhatsApp oturumu başlatılamadı. Nedenini görmek için oturumu açın."
+      "failedDesc": "WhatsApp oturumu başlatılamadı. Nedenini görmek için oturumu açın.",
+      "stopFailedTitle": "Durdurma başarısız"
     },
     "card": {
       "phone": "Telefon",
@@ -464,7 +467,10 @@
     },
     "empty": {
       "title": "Yapılandırılmış webhook yok",
-      "description": "Gerçek zamanlı olay bildirimleri almak için bir webhook ekleyin"
+      "description": "Gerçek zamanlı olay bildirimleri almak için bir webhook ekleyin",
+      "loadErrorTitle": "Webhook'lar yüklenemedi",
+      "forbiddenTitle": "Webhook'lara erişim yok",
+      "forbiddenDesc": "Webhook'lar, operatör veya yönetici rolüne sahip bir API anahtarı gerektirir."
     },
     "toasts": {
       "created": "Webhook başarıyla oluşturuldu",
@@ -485,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "Bir mesaj alındığında",
       "message.sent": "Bir mesaj gönderildiğinde",
-      "session.connected": "Bir oturum bağlandığında",
-      "session.disconnected": "Bir oturumun bağlantısı kesildiğinde",
+      "message.ack": "Bir mesajın teslim veya okunma durumu değiştiğinde",
+      "message.failed": "Giden bir mesaj teslim edilemediğinde",
+      "message.revoked": "Bir mesaj herkesten silindiğinde",
+      "message.reaction": "Bir tepki eklendiğinde, değiştirildiğinde veya kaldırıldığında",
+      "message.edited": "Bir mesaj düzenlendiğinde",
+      "session.status": "Bir oturumun durumu değiştiğinde",
       "session.qr": "QR kodu oluşturulduğunda",
+      "session.authenticated": "Bir oturum eşlendiğinde ve hazır olduğunda",
+      "session.disconnected": "Bir oturumun bağlantısı kesildiğinde",
+      "session.reconnect_loop": "Bir oturum yeniden bağlanmayı sürekli başaramadığında",
+      "session.restriction": "WhatsApp hesabı kısıtladığında veya bir kısıtlamayı kaldırdığında",
+      "presence.update": "Abone olunan bir sohbet çevrimiçi olduğunda, yazdığında veya çevrimdışı olduğunda",
+      "group.join": "Katılımcılar bir gruba katıldığında veya eklendiğinde",
+      "group.leave": "Katılımcılar bir gruptan ayrıldığında veya çıkarıldığında",
+      "group.update": "Bir grubun adı, açıklaması veya ayarları değiştiğinde",
+      "group.join_request": "Birisi bu oturumun yönettiği bir gruba katılmak istediğinde",
+      "call.received": "Gelen bir arama çalmaya başladığında",
+      "call.accepted": "Bir arama yanıtlandığında",
+      "call.rejected": "Bir arama reddedildiğinde",
+      "call.missed": "Bir arama yanıtsız kaldığında",
+      "status.received": "Bir kişi durum paylaştığında",
       "all": "Tüm olaylar"
     }
   },
