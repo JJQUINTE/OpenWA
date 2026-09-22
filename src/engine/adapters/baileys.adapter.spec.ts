@@ -3914,6 +3914,16 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(fakeSock.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('editMessage answers not-found for an inbound message from another chat, like an own one', async () => {
+    // Refusing the inbound one would tell a caller fenced to one chat who sent a message elsewhere.
+    fakeStore.getMessage.mockResolvedValue({ ...stored, key: { ...stored.key, remoteJid: '628222@s.whatsapp.net' } });
+    const adapter = await ready();
+    await expect(adapter.editMessage('628111@s.whatsapp.net', 'TARGET', 'x')).rejects.toBeInstanceOf(
+      MessageNotFoundError,
+    );
+    expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('editMessage matches the chat across dialects (@c.us request vs @s.whatsapp.net stored key)', async () => {
     fakeStore.getMessage.mockResolvedValue(ownStored);
     fakeSock.sendMessage.mockResolvedValue(undefined);
