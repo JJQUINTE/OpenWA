@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, QueryDeepPartialEntity } from 'typeorm';
+import { In, Repository, QueryDeepPartialEntity } from 'typeorm';
 import { SessionService } from '../session/session.service';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { SendTextMessageDto, SendMediaMessageDto, SendAudioMessageDto, MessageResponseDto } from './dto';
@@ -18,6 +18,8 @@ import { SsrfBlockedError, SSRF_BLOCKED_CLIENT_MESSAGE } from '../../common/secu
 import { resolveFeatureFlags } from '../../config/feature-flags';
 import { isUniqueViolation } from '../../common/utils/db-errors';
 import { ChatMediaArchiveService } from '../chat-media/chat-media-archive.service';
+import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { resolveJidCandidates } from '../../engine/identity/jid-candidates';
 import { isMediaUrl, MEDIA_URL_MESSAGE } from '../../common/media/media-url';
 
 /** Default cap on a rendered template's final text; overridable via TEMPLATE_RENDER_MAX_CHARS. */
@@ -89,6 +91,10 @@ export class MessageSendService {
     // archived — the inline row copy and the read endpoint are unaffected either way.
     @Optional()
     private readonly chatMediaArchive?: ChatMediaArchiveService,
+    // Optional for the same reason; absent means a quote is matched on the chat's phone and
+    // literal forms only, never on its lid.
+    @Optional()
+    private readonly lidMappingStore?: LidMappingStoreService,
   ) {}
 
   async sendText(sessionId: string, dto: SendTextMessageDto): Promise<MessageResponseDto> {
@@ -494,7 +500,7 @@ export class MessageSendService {
     const engine = this.getEngine(sessionId);
 
     // Resolve the quoted message body (best-effort) so the dashboard can render the reply preview.
-    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.quotedMessageId);
+    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.chatId, finalDto.quotedMessageId);
 
     // Save message as pending BEFORE sending
     const message = await this.saveOutgoingMessage(sessionId, {
@@ -529,7 +535,7 @@ export class MessageSendService {
     // A click IS a reply to the prompt, so resolve the prompt's body the way reply() does: the
     // dashboard renders the quote box from this field, and a hardcoded empty string left every
     // answered prompt showing an empty quote above the choice the user tapped.
-    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.messageId);
+    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.chatId, finalDto.messageId);
 
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: finalDto.chatId,
@@ -588,12 +594,24 @@ export class MessageSendService {
    * The body of the message a send is quoting, for the dashboard's quote preview. Best-effort in
    * every direction: an id that names nothing stored (evicted, or sent from the phone before this
    * gateway saw the chat) and a read that fails both answer '', because a preview is never worth
-   * failing a send over. The row is looked up by engine id within the session, so one session
-   * cannot read another's message.
+   * failing a send over. The row is looked up by engine id within the session AND the target chat
+   * (any of its phone, lid or group forms): a message from another chat is never a valid quote, and
+   * copying its body would store it under a chat a chat-restricted key may use.
    */
-  private async resolveQuotedBody(sessionId: string, quotedMessageId: string): Promise<string> {
+  private async resolveQuotedBody(sessionId: string, chatId: string, quotedMessageId: string): Promise<string> {
     try {
-      const quoted = await this.messageRepository.findOne({ where: { sessionId, waMessageId: quotedMessageId } });
+      const store = this.lidMappingStore;
+      const expanded = await resolveJidCandidates(
+        chatId,
+        store && {
+          resolveLid: lid => store.findPhoneForLid(lid),
+          lidsForPhone: phone => store.findLidsForPhone(phone),
+        },
+      );
+      const chatIds = [...new Set([chatId, ...expanded])];
+      const quoted = await this.messageRepository.findOne({
+        where: { sessionId, chatId: In(chatIds), waMessageId: quotedMessageId },
+      });
       return quoted?.body || '';
     } catch (err) {
       this.logger.warn(`Failed to resolve quoted message ${quotedMessageId}`, { error: String(err) });
@@ -619,7 +637,7 @@ export class MessageSendService {
     // location, contact, poll, quoted text) used to persist an id with an empty body and the
     // dashboard drew a blank quote box above the message.
     const quotedMessage = data.quotedMessageId
-      ? { id: data.quotedMessageId, body: await this.resolveQuotedBody(sessionId, data.quotedMessageId) }
+      ? { id: data.quotedMessageId, body: await this.resolveQuotedBody(sessionId, data.chatId, data.quotedMessageId) }
       : undefined;
     const message = this.messageRepository.create({
       sessionId,
