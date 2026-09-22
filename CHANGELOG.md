@@ -180,6 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A proxy password no longer reaches the log. A failed SOCKS connect carries the whole proxy config as the error's only property, and `BAILEYS_LOG_LEVEL=debug` wrote it to stdout verbatim. Logs written at that level by an earlier release may hold the password; rotate it.
 - Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
 - The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one unauthenticated request can no longer write an audit row per batch element.
+- Per-client rate limits key an IPv6 client on its /64, so rotating addresses inside one allocation no longer escapes them ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)). Thanks @Saksham-official.
 
 ## [0.23.5] - 2026-09-15
 

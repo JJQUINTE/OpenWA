@@ -1,5 +1,5 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
-import { ThrottlerGuard, ThrottlerLimitDetail } from '@nestjs/throttler';
+import { normalizeIp, ThrottlerGuard, ThrottlerLimitDetail } from '@nestjs/throttler';
 import { resolveClientIp, RequestLike } from '../utils/ip';
 import { createLogger } from '../services/logger.service';
 
@@ -25,6 +25,11 @@ const LIBRARY_DEFAULT_SKIP_KEY = 'THROTTLER:SKIPdefault';
  * This reuses the same trusted-proxy-aware resolution as ApiKeyGuard: with no
  * TRUSTED_PROXIES configured it falls back to the socket IP (no behavior change and no
  * XFF-spoofing risk); with trusted proxies it keys on the real forwarded client IP.
+ *
+ * The resolved address is normalized through `@nestjs/throttler`'s `normalizeIp`:
+ * IPv6 addresses are masked to `ipv6SubnetPrefix` (default /64) so that an IPv6 client
+ * cannot evade rate limits by rotating addresses within its subnet, while IPv4,
+ * IPv4-mapped, and loopback addresses remain unchanged.
  */
 @Injectable()
 export class ProxyAwareThrottlerGuard extends ThrottlerGuard {
@@ -57,7 +62,8 @@ export class ProxyAwareThrottlerGuard extends ThrottlerGuard {
         );
       }
     }
-    return Promise.resolve(resolveClientIp(req as unknown as RequestLike, trustedProxies));
+    const clientIp = resolveClientIp(req as unknown as RequestLike, trustedProxies);
+    return Promise.resolve(normalizeIp(clientIp, this.ipv6SubnetPrefix));
   }
 
   /**
