@@ -34,7 +34,7 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { resolveBodyLimit } from './bootstrap-security';
-import { resolveClientIp } from '../common/utils/ip';
+import { limiterKeyForIp, resolveClientIp } from '../common/utils/ip';
 
 /**
  * Default budget = 4 × the per-request body cap: a handful of concurrent full-size media uploads
@@ -134,8 +134,9 @@ export function createInflightBodyBudget(budgetBytes: number, options?: Inflight
   const trustedProxies = options?.trustedProxies ?? [];
   const share = Math.min(1, Math.max(Number.EPSILON, options?.perClientShare ?? 0.5));
   const perClientCap = Math.max(1, Math.floor(budgetBytes * share));
-  // Per-client in-flight bytes. The key is the resolved client IP; entries are created lazily and
-  // deleted by the same exactly-once release that decrements the aggregate, so the map cannot
+  // Per-client in-flight bytes, keyed on the resolved client IP (an IPv6 client on its /64).
+  // Entries are created lazily and deleted by the same exactly-once release that decrements the
+  // aggregate, so the map cannot
   // leak a client that finished. A cap on the MAP itself guards the pathological many-spoofed-IPs
   // case: past it, a NEW client key is treated as busiest (refused) rather than evicting a live
   // one - refusing beats corrupting another client's accounting.
@@ -216,7 +217,7 @@ export function createInflightBodyBudget(budgetBytes: number, options?: Inflight
     // The per-client check is what makes the DoS bounded per attacker rather than per deployment:
     // four trickle connections from one source exhaust only that source's share, and every other
     // client's uploads still land.
-    const clientKey = resolveClientIp(req, trustedProxies);
+    const clientKey = limiterKeyForIp(resolveClientIp(req, trustedProxies));
     const clientBusy = clientInFlight.get(clientKey) ?? 0;
     const mapAtCapacity = clientInFlight.size >= MAX_TRACKED_CLIENTS && !clientInFlight.has(clientKey);
     if (inFlightBytes + reserved > budgetBytes || clientBusy + reserved > perClientCap || mapAtCapacity) {
@@ -327,7 +328,7 @@ export function createInflightBodyBudget(budgetBytes: number, options?: Inflight
   return {
     middleware,
     currentBytes: () => inFlightBytes,
-    clientBytes: req => clientInFlight.get(resolveClientIp(req, trustedProxies)) ?? 0,
+    clientBytes: req => clientInFlight.get(limiterKeyForIp(resolveClientIp(req, trustedProxies))) ?? 0,
   };
 }
 

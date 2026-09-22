@@ -17,8 +17,8 @@ describe('HealthController', () => {
   const validateApiKey = jest.fn();
   const logWarn = jest.fn().mockResolvedValue(null);
 
-  const reqWith = (headers: Record<string, string> = {}): Request =>
-    ({ headers, socket: { remoteAddress: '127.0.0.1' } }) as unknown as Request;
+  const reqWith = (headers: Record<string, string> = {}, ip = '127.0.0.1'): Request =>
+    ({ headers, socket: { remoteAddress: ip } }) as unknown as Request;
 
   beforeEach(async () => {
     mainQuery.mockResolvedValue([{ '1': 1 }]);
@@ -129,6 +129,24 @@ describe('HealthController', () => {
       }
 
       expect(logWarn).toHaveBeenCalledTimes(10);
+    });
+  });
+
+  describe('key-probe audit bound for IPv6', () => {
+    it('shares one audit budget across a /64 and records the full address', async () => {
+      validateApiKey.mockRejectedValue(new UnauthorizedException('Invalid API key'));
+
+      for (let i = 0; i < 15; i++) {
+        await controller.check(reqWith({ 'x-api-key': 'owa_k1_probe' }, `2001:db8:1:2::${(i + 1).toString(16)}`));
+      }
+      expect(logWarn).toHaveBeenCalledTimes(10);
+      expect(logWarn).toHaveBeenLastCalledWith(
+        AuditAction.API_KEY_AUTH_FAILED,
+        expect.objectContaining({ ipAddress: '2001:db8:1:2::a' }),
+      );
+
+      await controller.check(reqWith({ 'x-api-key': 'owa_k1_probe' }, '2001:db8:1:3::1'));
+      expect(logWarn).toHaveBeenCalledTimes(11);
     });
   });
 

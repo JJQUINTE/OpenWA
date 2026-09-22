@@ -1,4 +1,4 @@
-import { normalizeIp, ipMatches } from './ip';
+import { normalizeIp, ipMatches, limiterKeyForIp } from './ip';
 
 describe('normalizeIp', () => {
   it('strips an IPv4-mapped IPv6 prefix', () => {
@@ -11,6 +11,24 @@ describe('normalizeIp', () => {
 
   it('leaves a real IPv6 address untouched', () => {
     expect(normalizeIp('2001:db8::1')).toBe('2001:db8::1');
+  });
+});
+
+describe('limiterKeyForIp', () => {
+  it('gives two IPv6 addresses in one /64 the same key', () => {
+    expect(limiterKeyForIp('2001:db8:1:2::a')).toBe(limiterKeyForIp('2001:db8:1:2:ffff:ffff:ffff:ffff'));
+    expect(limiterKeyForIp('2001:db8:1:2::a')).toBe('2001:db8:1:2::/64');
+  });
+
+  it('keeps IPv6 addresses in different /64s apart', () => {
+    expect(limiterKeyForIp('2001:db8:1:2::a')).not.toBe(limiterKeyForIp('2001:db8:1:3::a'));
+  });
+
+  it('keys IPv4 and loopback as they are, and an IPv4-mapped address as its IPv4 form', () => {
+    expect(limiterKeyForIp('203.0.113.7')).toBe('203.0.113.7');
+    expect(limiterKeyForIp('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(limiterKeyForIp('::1')).toBe('::1');
+    expect(limiterKeyForIp('')).toBe('');
   });
 });
 

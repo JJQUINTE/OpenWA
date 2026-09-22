@@ -117,6 +117,19 @@ describe('createIpThrottle (pre-auth per-IP MCP throttle)', () => {
     expect(next).toHaveBeenCalledWith();
   });
 
+  it('buckets an IPv6 client on its /64, so rotating addresses inside it shares one bucket', () => {
+    const throttle = createIpThrottle(new KeyRateLimiter(1, 60_000));
+    throttle(makeReq('2001:db8:1:2::a'), makeRes() as unknown as Response, jest.fn());
+
+    const sameSubnet = jest.fn();
+    throttle(makeReq('2001:db8:1:2::b'), makeRes() as unknown as Response, sameSubnet);
+    expect(sameSubnet).not.toHaveBeenCalled();
+
+    const otherSubnet = jest.fn();
+    throttle(makeReq('2001:db8:1:3::a'), makeRes() as unknown as Response, otherSubnet);
+    expect(otherSubnet).toHaveBeenCalledWith();
+  });
+
   // Every element of a JSON-RPC batch is dispatched (and each tools/call runs its own key lookup and
   // auth-failure audit), so the budget is charged per message, not per HTTP request.
   const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'SessionFindAll', arguments: {} } };

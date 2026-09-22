@@ -1,3 +1,5 @@
+import { normalizeIp as maskIpv6Subnet } from '@nestjs/throttler';
+
 /**
  * Strip an IPv4-mapped IPv6 prefix so comparisons work consistently.
  * Node often reports socket addresses as `::ffff:1.2.3.4` behind dual-stack
@@ -55,6 +57,18 @@ export function resolveClientIp(req: RequestLike, trustedProxies: string[]): str
   }
 
   return socketIp;
+}
+
+/**
+ * Key for a per-client limiter, budget or counter: an IPv6 address is masked to its /64 (the
+ * `@nestjs/throttler` default the global guard uses), so a client holding a /64 cannot rotate
+ * addresses into fresh buckets. IPv4 and loopback addresses come back unchanged, and an IPv4-mapped
+ * address as its dotted IPv4 form.
+ * For limiter keys ONLY: allowlist matching, audit rows, logs and responses need the real
+ * address from `resolveClientIp`.
+ */
+export function limiterKeyForIp(ip: string): string {
+  return maskIpv6Subnet(ip, 64);
 }
 
 function ipv4ToInt(ip: string): number | null {
