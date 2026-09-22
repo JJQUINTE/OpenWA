@@ -165,24 +165,6 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
   }
 
   /**
-   * Deterministic forward lookup for authorization paths (the API-key chat fence): the persisted
-   * table first, the in-memory mirror only when the table read fails or has no row. The mirror alone
-   * is not enough there: it is LRU-evicted at `LID_MAPPING_CACHE_MAX` and can hold a stale negative
-   * for a lid another node has since mapped, so a cache-first answer would let the same key and chat
-   * pass or fail depending on cache residency. {@link findPhoneForLid} is the cache-first variant.
-   */
-  async resolveLidPersisted(jid: string): Promise<string | null> {
-    const lid = userPart(jid);
-    try {
-      const row = await this.repo.findOne({ where: { lid } });
-      if (row) return row.phone;
-    } catch {
-      // The table may not exist yet (migration pending); fall back to the mirror.
-    }
-    return this.getCached(lid) ?? null;
-  }
-
-  /**
    * Reverse lookup that also reads the table. {@link lidsForPhone} only sees lids resident in the
    * forward cache, and nothing phone-keyed ever warms it, so a mapping past the preload cap or
    * evicted by the LRU would stay invisible to a phone filter for good. For callers that can await
@@ -255,19 +237,23 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
   }
 
   /**
-   * Forward lookup that reads the table on a cache miss, for callers that can await (the handover
-   * gate). {@link getCached} answers a miss with undefined and only warms in the background, which
-   * is exactly when a mapping past the cap or evicted matters. Like {@link findLidsForPhone}, the row
-   * is not indexed, and a read error answers null.
+   * Forward lookup for callers that can await: the API-key chat fence and every chat-bound read
+   * behind it (message history and media, the quoted body, status and handover filters). The table
+   * answers first, the in-memory mirror only when the read fails or has no row. The mirror alone is
+   * not enough: it is LRU-evicted at `LID_MAPPING_CACHE_MAX`, and nothing refreshes it when another
+   * node re-maps a lid in the shared table, so a cache-first answer could resolve the same lid to
+   * a phone the fence no longer sees, and a read behind the fence would serve that other chat. The
+   * row is not indexed into the cache, so a lookup cannot evict hot entries.
    */
-  async findPhoneForLid(lid: string): Promise<string | null> {
-    if (this.lidToPhone.has(lid)) return this.getCached(lid) ?? null;
+  async findPhoneForLid(jid: string): Promise<string | null> {
+    const lid = userPart(jid);
     try {
-      return (await this.repo.findOne({ where: { lid } }))?.phone ?? null;
+      const row = await this.repo.findOne({ where: { lid } });
+      if (row) return row.phone;
     } catch (err) {
       this.logger.warn(`Could not read the phone for a lid: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
     }
+    return this.getCached(lid) ?? null;
   }
 
   async remember(lid: string, phone: string | null, sessionId?: string): Promise<void> {

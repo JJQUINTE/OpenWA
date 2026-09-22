@@ -467,13 +467,13 @@ describe('LidMappingStoreService — deterministic preload + repository fallback
 });
 
 describe('LidMappingStoreService — deterministic persisted lookups (authorization path)', () => {
-  it('resolveLidPersisted answers from the cache when warm', async () => {
+  it('findPhoneForLid answers from the cache when warm', async () => {
     const repo = makeFakeRepo([{ lid: '111', phone: '628999' }]);
     const store = await newStore(repo);
-    expect(await store.resolveLidPersisted('111@lid')).toBe('628999');
+    expect(await store.findPhoneForLid('111@lid')).toBe('628999');
   });
 
-  it('resolveLidPersisted reads the table for a lid evicted from the LRU cache', async () => {
+  it('findPhoneForLid reads the table for a lid evicted from the LRU cache', async () => {
     process.env.LID_MAPPING_CACHE_MAX = '1';
     try {
       // Preload keeps one row; the other is persisted but not cached, so the table must answer.
@@ -482,8 +482,8 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
         { lid: '222', phone: '628888' },
       ]);
       const store = await newStore(repo);
-      expect(await store.resolveLidPersisted('111@lid')).toBe('628999');
-      expect(await store.resolveLidPersisted('222@lid')).toBe('628888');
+      expect(await store.findPhoneForLid('111@lid')).toBe('628999');
+      expect(await store.findPhoneForLid('222@lid')).toBe('628888');
     } finally {
       delete process.env.LID_MAPPING_CACHE_MAX;
     }
@@ -494,22 +494,31 @@ describe('LidMappingStoreService — deterministic persisted lookups (authorizat
     const store = await newStore(repo);
     await store.remember('222', null); // this node cached a negative
     repo.rows[0].phone = '628888'; // another node has since mapped it in the table
-    expect(await store.resolveLidPersisted('222@lid')).toBe('628888');
+    expect(await store.findPhoneForLid('222@lid')).toBe('628888');
     expect(await store.phonesForLidsPersisted(['222'])).toEqual({ 222: '628888' });
   });
 
-  it('resolveLidPersisted returns null for a lid with no persisted row', async () => {
+  it('a cached mapping another node has re-mapped answers the table row, not the cache', async () => {
     const repo = makeFakeRepo();
     const store = await newStore(repo);
-    expect(await store.resolveLidPersisted('999@lid')).toBeNull();
+    await store.remember('333', '628111'); // this node cached 333 -> 628111
+    repo.rows[0].phone = '628222'; // another node has since re-mapped it in the shared table
+    expect(store.getCached('333')).toBe('628111');
+    expect(await store.findPhoneForLid('333@lid')).toBe('628222');
+  });
+
+  it('findPhoneForLid returns null for a lid with no persisted row', async () => {
+    const repo = makeFakeRepo();
+    const store = await newStore(repo);
+    expect(await store.findPhoneForLid('999@lid')).toBeNull();
     expect(repo.findOne).toHaveBeenCalledWith({ where: { lid: '999' } });
   });
 
-  it('resolveLidPersisted fails soft (null) when the table read throws', async () => {
+  it('findPhoneForLid fails soft (null) when the table read throws', async () => {
     const repo = makeFakeRepo();
     const store = await newStore(repo);
     repo.findOne.mockRejectedValueOnce(new Error('no such table'));
-    expect(await store.resolveLidPersisted('555@lid')).toBeNull();
+    expect(await store.findPhoneForLid('555@lid')).toBeNull();
   });
 
   it('findLidsForPhone reads the table for a lid evicted from the LRU cache', async () => {

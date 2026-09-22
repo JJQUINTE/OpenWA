@@ -9,7 +9,7 @@ const LID = '555000111';
 /** Deterministic persisted-lookup stand-in; the real service reads the lid table on a cache miss. */
 function fakeStore(): LidMappingStoreService {
   return {
-    resolveLidPersisted: jest.fn((lid: string) => Promise.resolve(lid === LID ? PHONE : null)),
+    findPhoneForLid: jest.fn((lid: string) => Promise.resolve(lid === LID ? PHONE : null)),
     findLidsForPhone: jest.fn((phone: string) => Promise.resolve(phone === PHONE ? [LID] : [])),
     phonesForLidsPersisted: jest.fn((lids: string[]) =>
       Promise.resolve(Object.fromEntries(lids.map(lid => [lid, lid === LID ? PHONE : null]))),

@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { FindOperator, In, Repository } from 'typeorm';
-import type { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import type { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { BadRequestException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { MessageSendService } from './message-send.service';
 import { Message, MessageDirection, MessageStatus } from './entities/message.entity';
@@ -1049,6 +1050,38 @@ describe('MessageSendService', () => {
     it('a quoting send stores no body for a message id from another chat', async () => {
       await service.sendText('sess-1', { chatId: '628111@c.us', text: 'hi', quotedMessageId: 'wa-foreign' });
       expect(quoteOf()).toEqual({ id: 'wa-foreign', body: '' });
+    });
+
+    it('stores no body from the chat a stale cached lid mapping names', async () => {
+      // This node cached lid 999 -> 628111; another node has since re-mapped it to 628333 in the
+      // shared table. A reply to 999@lid must not read a quote out of chat 628111.
+      rows.push({ sessionId: 'sess-1', chatId: '628111@c.us', waMessageId: 'wa-stale', body: 'chat 628111 only' });
+      const table = [{ lid: '999', phone: '628111' }];
+      const store = new LidMappingStoreService({
+        find: () => Promise.resolve([]),
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+        upsert: () => Promise.resolve({}),
+      } as unknown as Repository<LidMapping>);
+      await store.remember('999', '628111');
+      table[0].phone = '628333';
+      const withStore = new MessageSendService(
+        repository as Repository<Message>,
+        sessionService as unknown as SessionService,
+        engines,
+        hookManager as HookManager,
+        templateService as unknown as TemplateService,
+        inertPacing(),
+        undefined,
+        undefined,
+        store,
+      );
+      try {
+        await withStore.reply('sess-1', { chatId: '999@lid', quotedMessageId: 'wa-stale', text: 'hi' });
+        expect(quoteOf()).toEqual({ id: 'wa-stale', body: '' });
+      } finally {
+        rows.pop();
+      }
     });
 
     it('still finds a quote stored under the lid form of the target chat', async () => {

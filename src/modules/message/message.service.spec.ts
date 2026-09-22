@@ -510,6 +510,37 @@ describe('MessageService', () => {
       return { qb, captured };
     };
 
+    it('expands a @lid chatId to the phone the table names, not a stale cached one', async () => {
+      // This node cached lid 111 -> 628999; another node has since re-mapped it to 628777 in the
+      // shared table. The chat fence reads the table, so history must expand to the same phone or a
+      // key allowed only 111@lid would read chat 628999.
+      const table = [{ lid: '111', phone: '628999' }];
+      const store = new LidMappingStoreService({
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+        upsert: () => Promise.resolve({}),
+      } as unknown as Repository<LidMapping>);
+      await store.remember('111', '628999');
+      table[0].phone = '628777';
+      const { qb, captured } = makeCaptureQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      const withStore = new MessageService(
+        repository as Repository<Message>,
+        engines,
+        messageProjector as unknown as MessageProjector,
+        hookManager as HookManager,
+        store,
+        inertPacing(),
+        {} as MessageSendService,
+      );
+
+      await withStore.getMessages('sess-1', { chatId: '111@lid' });
+
+      expect(captured.chatIds).toEqual(['111@lid', '628777@c.us', '628777@s.whatsapp.net']);
+    });
+
     it('does not expand a group chatId into the user dialects (fail-closed on the literal id)', async () => {
       const { qb, captured } = makeCaptureQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);

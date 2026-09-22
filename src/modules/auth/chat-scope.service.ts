@@ -66,7 +66,7 @@ export class ChatScopeService {
     const store = this.lidStore;
     if (!store) return undefined;
     return {
-      resolveLid: userPart => store.resolveLidPersisted(userPart),
+      resolveLid: userPart => store.findPhoneForLid(userPart),
       lidsForPhone: phone => store.findLidsForPhone(phone),
     };
   }
