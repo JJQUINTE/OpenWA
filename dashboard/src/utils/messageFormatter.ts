@@ -4,6 +4,10 @@
  * - bold / italic / strike: container with children (allows nesting)
  * - code: inline `code`; value rendered literally, no link detection
  * - codeblock: ```block```; value rendered literally with newlines preserved
+ * - mention: a resolved "@Name" substitution (see chatMessages.ts#resolveMentions); rendered as
+ *   its own element so Linkify (which walks the rendered tree, not this raw string) never touches
+ *   it — a push name is attacker-controlled text and linkify-react treats a bare word like
+ *   "localhost" as a URL, which character-stripping alone cannot prevent.
  */
 export type MessageNode =
   | { type: 'text'; value: string }
@@ -11,7 +15,8 @@ export type MessageNode =
   | { type: 'italic'; children: MessageNode[] }
   | { type: 'strike'; children: MessageNode[] }
   | { type: 'code'; value: string }
-  | { type: 'codeblock'; value: string };
+  | { type: 'codeblock'; value: string }
+  | { type: 'mention'; value: string };
 
 const FORMATS: Record<string, 'bold' | 'italic' | 'strike'> = {
   '*': 'bold',
@@ -21,10 +26,18 @@ const FORMATS: Record<string, 'bold' | 'italic' | 'strike'> = {
 
 const BOUNDARY_CHAR = /^[\s.,;:!?()[\]{}'"<>]$/;
 
+// Private-use-area delimiters resolveMentions wraps a resolved name in. WhatsApp message text is
+// never PUA, so these can't collide with real content the way a printable marker could.
+export const MENTION_OPEN = '';
+export const MENTION_CLOSE = '';
+
 /**
  * Parse a WhatsApp-formatted text string into a list of MessageNode.
  *
  * Algorithm:
+ * 0. Split off any resolveMentions-wrapped `MENTION_OPEN...MENTION_CLOSE` spans into `mention`
+ *    nodes first, so their content skips code/format parsing entirely — the substituted name is
+ *    opaque, not text a `*`/`` ` `` inside it should be able to reformat the surrounding message.
  * 1. Extract code segments (triple-backtick blocks first, then single-backtick inline)
  *    by walking the string and emitting `codeblock` / `code` nodes for them; the
  *    remaining text segments are passed to the format parser.
@@ -36,6 +49,33 @@ const BOUNDARY_CHAR = /^[\s.,;:!?()[\]{}'"<>]$/;
  * 3. Unbalanced or boundary-violating markers fall through as literal text.
  */
 export function parseMessageBody(input: string): MessageNode[] {
+  if (input.length === 0) return [];
+  if (!input.includes(MENTION_OPEN)) return parseMessageBodySegment(input);
+
+  const nodes: MessageNode[] = [];
+  let cursor = 0;
+  while (cursor < input.length) {
+    const openIdx = input.indexOf(MENTION_OPEN, cursor);
+    if (openIdx === -1) {
+      for (const n of parseMessageBodySegment(input.slice(cursor))) nodes.push(n);
+      break;
+    }
+    const closeIdx = input.indexOf(MENTION_CLOSE, openIdx + 1);
+    if (closeIdx === -1) {
+      // Unterminated marker (should not happen from resolveMentions) — treat the rest as plain text.
+      for (const n of parseMessageBodySegment(input.slice(cursor))) nodes.push(n);
+      break;
+    }
+    if (openIdx > cursor) {
+      for (const n of parseMessageBodySegment(input.slice(cursor, openIdx))) nodes.push(n);
+    }
+    nodes.push({ type: 'mention', value: input.slice(openIdx + 1, closeIdx) });
+    cursor = closeIdx + 1;
+  }
+  return nodes;
+}
+
+function parseMessageBodySegment(input: string): MessageNode[] {
   if (input.length === 0) return [];
 
   // Step 1: peel off code segments, emit nodes between them.

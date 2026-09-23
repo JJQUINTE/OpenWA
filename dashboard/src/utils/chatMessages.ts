@@ -1,4 +1,5 @@
 import type { ChatMessage, EngineHistoryMessage, MessageType } from '../services/api';
+import { MENTION_CLOSE, MENTION_OPEN } from './messageFormatter.ts';
 
 export type { EngineHistoryMessage };
 
@@ -124,23 +125,18 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
   for (const m of messages) {
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
-    const name = safeMentionName(m.chatName);
+    const name = blankMentionName(m.chatName) ? '' : m.chatName.trim();
     if (name && /^\d+$/.test(local) && !map.has(local)) map.set(local, name);
   }
   return map;
 }
 
-/**
- * A push name is set freely by any WhatsApp user and is spliced into text that MessageBody later
- * linkifies, so keep only letters, digits, marks and spaces: `bit.ly/free` becomes `bitlyfree`, which can
- * never form a link or WhatsApp formatting. Returns '' when nothing usable is left, so the caller keeps
- * the original `@<digits>` instead of rendering a bare `@`.
- */
-function safeMentionName(name: string): string {
-  return name
-    .replace(/[^\p{L}\p{N}\p{M} ]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+// U+3164 HANGUL FILLER renders as nothing but is not Unicode whitespace, so `.trim()` leaves it
+// behind — a push name of only fillers passed the old blank check and rendered a bare "@".
+const HANGUL_FILLER = /ㅤ/g;
+
+function blankMentionName(name: string): boolean {
+  return name.replace(HANGUL_FILLER, '').trim() === '';
 }
 
 /**
@@ -149,13 +145,24 @@ function safeMentionName(name: string): string {
  * the same fallback WhatsApp's own official clients show for a participant they can't resolve
  * either, rather than guessing. First name only, matching WhatsApp's own mention convention (a
  * bare "@FirstName Last Name" reads as the mention swallowing following prose).
+ *
+ * The resolved name is wrapped in MENTION_OPEN/MENTION_CLOSE (private-use-area delimiters
+ * messageFormatter.ts's parseMessageBody recognizes as a `mention` node), not spliced in as plain
+ * text: a push name is set freely by any WhatsApp user, and MessageBody renders that node as a
+ * real <bdi> element outside Linkify's ignoreTags-respected walk, so the name can never become a
+ * clickable link (character-stripping alone does not stop linkify-react auto-linking a bare word
+ * like "localhost").
+ *
+ * The left boundary only fires at the start of the text, after whitespace, or after opening
+ * punctuation — not after `/` or a backtick — so a URL path segment or an inline-code span with
+ * the same digits is left untouched (this runs on the raw body, before parseMessageBody splits
+ * out code spans).
  */
 export function resolveMentions(text: string, names: Map<string, string>): string {
   if (names.size === 0 || !text.includes('@')) return text;
-  // The left boundary keeps this off the middle of a word: `admin@12345678.com` is not a mention.
-  return text.replace(/(?<![\p{L}\p{N}])@(\d{7,})/gu, (full: string, digits: string) => {
+  return text.replace(/(^|[\s([{"'])@(\d{7,})/gu, (full: string, prefix: string, digits: string) => {
     const first = names.get(digits)?.split(' ')[0];
-    return first ? `@${first}` : full;
+    return first ? `${prefix}${MENTION_OPEN}@${first}${MENTION_CLOSE}` : full;
   });
 }
 

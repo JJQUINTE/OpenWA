@@ -12,7 +12,11 @@ const linkifyOptions = {
   target: '_blank',
   rel: 'noopener noreferrer',
   defaultProtocol: 'https',
-  ignoreTags: ['code', 'pre'],
+  // 'bdi' isolates a resolved @mention (see the 'mention' case below) from Linkify: a push name
+  // is attacker-controlled text, and linkify-react auto-links a bare word with no scheme (e.g.
+  // "localhost"), so character-stripping the name is not enough — keeping it out of Linkify's own
+  // tree walk is what stops it. 'bdi' also isolates a right-to-left name's directionality.
+  ignoreTags: ['code', 'pre', 'bdi'],
   attributes: {
     onClick: (e: React.MouseEvent) => e.stopPropagation(),
   },
@@ -36,6 +40,8 @@ function renderNode(node: MessageNode, key: number): ReactNode {
           <code>{node.value}</code>
         </pre>
       );
+    case 'mention':
+      return <bdi key={key}>{node.value}</bdi>;
   }
 }
 

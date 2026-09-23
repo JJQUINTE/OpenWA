@@ -9,6 +9,7 @@ import {
   liveMessageMetadata,
   type EngineHistoryMessage,
 } from './chatMessages.ts';
+import { MENTION_CLOSE, MENTION_OPEN } from './messageFormatter.ts';
 import type { ChatMessage } from '../services/api';
 
 const hist = (over: Partial<EngineHistoryMessage> = {}): EngineHistoryMessage => ({
@@ -459,9 +460,14 @@ test('buildMentionNameMap skips a row with no author or no resolved name', () =>
   assert.equal(map.size, 0);
 });
 
-test('resolveMentions replaces a matched @<digits> token with @<FirstName>', () => {
+// resolveMentions wraps a resolved name in the same PUA sentinels messageFormatter.ts's
+// parseMessageBody splits into a `mention` node (rendered as a real <bdi>, outside Linkify's
+// walk — see MessageBody.tsx). Tests assert against that wrapped form, not a plain "@Name" splice.
+const wrap = (s: string) => `${MENTION_OPEN}${s}${MENTION_CLOSE}`;
+
+test('resolveMentions replaces a matched @<digits> token with a mention-wrapped @<FirstName>', () => {
   const names = buildMentionNameMap([msg({ author: '166868170059932@lid', chatName: 'Sneha Desai' })]);
-  assert.equal(resolveMentions('Hi @166868170059932, any update?', names), 'Hi @Sneha, any update?');
+  assert.equal(resolveMentions('Hi @166868170059932, any update?', names), `Hi ${wrap('@Sneha')}, any update?`);
 });
 
 test('resolveMentions leaves an unmatched @<digits> token exactly as WhatsApp sent it', () => {
@@ -486,30 +492,65 @@ test('buildMentionNameMap only keys a device-suffixed author when the :device pa
   );
 });
 
-test('a push name cannot become a link: link characters are stripped before it is spliced in', () => {
+test('a push name is inserted verbatim, unstripped — a real <bdi> element is what keeps it from becoming a link, not character filtering', () => {
   const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'bit.ly/free' })]);
-  assert.equal(resolveMentions('hi @6281112345', names), 'hi @bitlyfree');
+  assert.equal(resolveMentions('hi @6281112345', names), `hi ${wrap('@bit.ly/free')}`);
 });
 
-test('a push name with WhatsApp formatting characters is reduced to plain text', () => {
-  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: '*_Ravi_* ~x~' })]);
-  assert.equal(resolveMentions('@6281112345', names), '@Ravi');
+test('a push name that is a bare word linkify-react would auto-link ("localhost") is still mention-wrapped, not stripped', () => {
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'localhost' })]);
+  assert.equal(resolveMentions('@6281112345', names), wrap('@localhost'));
 });
 
-test('resolveMentions needs a left boundary: it does not fire inside an email address', () => {
+test('resolveMentions needs a left boundary: start of text, whitespace, or opening punctuation', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('@12345678', names), wrap('@Ravi'));
+  assert.equal(resolveMentions(' @12345678', names), ` ${wrap('@Ravi')}`);
+  assert.equal(resolveMentions('(@12345678)', names), `(${wrap('@Ravi')})`);
+  assert.equal(resolveMentions('[@12345678]', names), `[${wrap('@Ravi')}]`);
+  assert.equal(resolveMentions('"@12345678"', names), `"${wrap('@Ravi')}"`);
+});
+
+test('resolveMentions does not fire inside an email address', () => {
   const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
   assert.equal(resolveMentions('mail admin@12345678.com now', names), 'mail admin@12345678.com now');
-  assert.equal(resolveMentions('(@12345678) and, @12345678.', names), '(@Ravi) and, @Ravi.');
-  assert.equal(resolveMentions('@12345678', names), '@Ravi');
 });
 
-test('a blank push name is skipped, so the mention stays as WhatsApp sent it instead of a bare @', () => {
+test('resolveMentions does not fire in a URL path segment (a preceding "/" is not a left boundary)', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('see https://x.test/@12345678/profile', names), 'see https://x.test/@12345678/profile');
+});
+
+test('resolveMentions does not fire right after a backtick (an inline-code span is not a left boundary)', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('run `@12345678`', names), 'run `@12345678`');
+});
+
+test('resolveMentions resolves two mentions in the same message', () => {
   const names = buildMentionNameMap([
-    msg({ author: '6281112345@c.us', chatName: ' ' }),
-    msg({ author: '6281112346@c.us', chatName: '///' }),
+    msg({ author: '12345678@c.us', chatName: 'Ravi' }),
+    msg({ author: '87654321@c.us', chatName: 'Sam' }),
   ]);
+  assert.equal(resolveMentions('@12345678 @87654321', names), `${wrap('@Ravi')} ${wrap('@Sam')}`);
+});
+
+test('a push name blank after trimming is skipped, so the mention stays as WhatsApp sent it instead of a bare @', () => {
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: ' ' })]);
   assert.equal(names.size, 0);
-  assert.equal(resolveMentions('@6281112345 @6281112346', names), '@6281112345 @6281112346');
+  assert.equal(resolveMentions('@6281112345', names), '@6281112345');
+});
+
+test('a name made only of punctuation is not blank — it is a legitimate, if odd, push name now that character-stripping is gone', () => {
+  const names = buildMentionNameMap([msg({ author: '6281112346@c.us', chatName: '///' })]);
+  assert.equal(resolveMentions('@6281112346', names), wrap('@///'));
+});
+
+test('a push name of only U+3164 HANGUL FILLER is treated as blank, not as usable text', () => {
+  // HANGUL FILLER renders as nothing but is not Unicode whitespace, so a plain .trim() check
+  // alone would have let this through and rendered "@" with nothing after it.
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'ㅤㅤ' })]);
+  assert.equal(names.size, 0);
+  assert.equal(resolveMentions('@6281112345', names), '@6281112345');
 });
 
 test('a later usable name for the same participant is still picked up after a blank one', () => {
@@ -517,5 +558,5 @@ test('a later usable name for the same participant is still picked up after a bl
     msg({ author: '6281112345@c.us', chatName: ' ' }),
     msg({ author: '6281112345@c.us', chatName: 'Ravi Kumar' }),
   ]);
-  assert.equal(resolveMentions('@6281112345', names), '@Ravi');
+  assert.equal(resolveMentions('@6281112345', names), wrap('@Ravi'));
 });
