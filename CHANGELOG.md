@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.6] - 2026-09-23
+
 ### Added
 
 - API keys can carry an `allowedChats` allowlist next to `allowedSessions`, scoping a key to a chosen set of groups and contacts (omit or leave empty for unrestricted). A restricted key is refused with `403` on every route not explicitly marked safe, and on a marked route each chat it names is checked against the allowlist, with identity resolved through the `lid_mappings` table so a phone entry also matches its resolved `@lid` form; of the list routes only `GET /sessions/:sessionId/chats` is usable, and it filters before paginating. Thanks @bhavyachopra99 and @lasithadilshan.
@@ -183,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Baileys sessions with a SOCKS4 proxy fetch through it instead of connecting direct: inbound media, the WhatsApp Web version lookup, the initial-sync payloads and a product card's image URL, which 0.23.5 routed through HTTP, HTTPS and SOCKS5 proxies only ([#1626](https://github.com/rmyndharis/OpenWA/issues/1626)).
 - A media URL passed to a send route or to `POST /api/sessions/{sessionId}/media/convert/voice` or `.../convert/video`, and the link preview of a text send, are fetched through the named session's egress proxy on both engines, instead of leaving from the gateway's own address ([#1626](https://github.com/rmyndharis/OpenWA/issues/1626)).
 - A proxy password no longer reaches the log. A failed SOCKS connect carries the whole proxy config as the error's only property, and `BAILEYS_LOG_LEVEL=debug` wrote it to stdout verbatim. Logs written at that level by an earlier release may hold the password; rotate it.
-- Media conversion runs only the ffmpeg demuxers of single-file media containers, so a crafted input can no longer make ffmpeg read other local files.
+- Media conversion runs only the ffmpeg demuxers of single-file media containers, so an operator key can no longer make a crafted input read other local files on the host ([GHSA-c9fv-6j9g-8p98](https://github.com/rmyndharis/OpenWA/security/advisories/GHSA-c9fv-6j9g-8p98)).
 - The MCP pre-auth per-IP limit counts each message of a JSON-RPC batch, so one request can no longer run more unauthenticated key lookups, or write more audit rows, than `MCP_IP_RATE_LIMIT_MAX` allows.
 - Per-client rate limits key an IPv6 client on its /64, so rotating addresses inside one allocation no longer escapes them ([#1686](https://github.com/rmyndharis/OpenWA/issues/1686)). Thanks @Saksham-official.
 - The MCP, Bull Board and WebSocket pre-auth limiters, the WebSocket rate-limit audit sampler, the per-client upload body budget and the health route's auth-failure audit limiter key an IPv6 client on its /64 as well ([#1695](https://github.com/rmyndharis/OpenWA/issues/1695)).
