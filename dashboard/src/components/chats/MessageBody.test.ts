@@ -9,6 +9,7 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { MENTION_CLOSE, MENTION_OPEN } from '../../utils/messageFormatter.ts';
+import { buildMentionNameMap, resolveMentions } from '../../utils/chatMessages.ts';
 
 let rtl: typeof import('@testing-library/react');
 let MessageBody: (typeof import('./MessageBody.tsx'))['default'];
@@ -51,4 +52,27 @@ test('an unresolved mention (no matching participant) is still plain "@digits" t
   const { container } = rtl.render(createElement(MessageBody, { text: 'hi @166868170059932 there' }));
   assert.equal(container.querySelectorAll('a').length, 0, 'digits alone are not a URL');
   assert.ok(container.textContent?.includes('@166868170059932'));
+});
+
+test('a push name that smuggles the closing delimiter still renders as one <bdi> with no anchor', () => {
+  const names = buildMentionNameMap([
+    { author: '6281112345@c.us', chatName: `X${MENTION_CLOSE}bit.ly/free` } as Parameters<
+      typeof buildMentionNameMap
+    >[0][number],
+  ]);
+  const { container } = rtl.render(
+    createElement(MessageBody, { text: resolveMentions('hi @6281112345 there', names) }),
+  );
+  assert.equal(container.querySelectorAll('a').length, 0);
+  assert.equal(container.querySelectorAll('bdi').length, 1);
+  assert.equal(container.querySelector('bdi')?.textContent, '@Xbit.ly/free');
+});
+
+test('a mention inside *bold* renders bold with the <bdi> as a child, not literal asterisks', () => {
+  const names = buildMentionNameMap([{ author: '6281112345@c.us', chatName: 'Ravi' }]);
+  const { container } = rtl.render(
+    createElement(MessageBody, { text: resolveMentions('*Reminder @6281112345 at 10*', names) }),
+  );
+  assert.equal(container.querySelector('strong')?.textContent, 'Reminder @Ravi at 10');
+  assert.ok(container.querySelector('strong bdi'), 'the mention sits inside the bold element');
 });

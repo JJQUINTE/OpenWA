@@ -581,3 +581,31 @@ test('resolveMentions does not fire right after a closing backtick', () => {
   const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
   assert.equal(resolveMentions('`x`@12345678', names), '`x`@12345678');
 });
+
+test('a push name made only of other invisible code points is blank too, not just the Hangul filler', () => {
+  for (const cp of [
+    '\u200B',
+    '\u00AD',
+    '\u2060',
+    '\u200E',
+    '\u034F',
+    '\u115F',
+    '\u1160',
+    '\uFFA0',
+    '\u2800',
+    '\u180E',
+  ]) {
+    const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: cp + cp })]);
+    assert.equal(names.size, 0, `U+${cp.codePointAt(0)?.toString(16)} should count as blank`);
+  }
+  // A visible character among them keeps the name usable.
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: '\u200BRavi\u200B' })]);
+  assert.equal(resolveMentions('@6281112345', names), wrap('@\u200BRavi\u200B'));
+});
+
+test('a push name carrying the span delimiters cannot close its own mention early', () => {
+  const names = buildMentionNameMap([
+    msg({ author: '6281112345@c.us', chatName: `X${MENTION_CLOSE}bit.ly/free ${MENTION_OPEN}Y` }),
+  ]);
+  assert.equal(resolveMentions('hi @6281112345', names), `hi ${wrap('@Xbit.ly/free')}`);
+});

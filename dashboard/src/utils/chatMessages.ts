@@ -125,19 +125,24 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
   for (const m of messages) {
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
-    const name = blankMentionName(m.chatName) ? '' : m.chatName.trim();
+    // A push name is sender-controlled: strip the span delimiters so a name cannot close its own
+    // mention early and hand its tail back to Linkify and the format parser.
+    const name = m.chatName.replace(MENTION_DELIMITERS, '').trim();
     // Rows are ascending by time, so the last write is the participant's current push name.
-    if (name && /^\d+$/.test(local)) map.set(local, name);
+    if (name && !blankMentionName(name) && /^\d+$/.test(local)) map.set(local, name);
   }
   return map;
 }
 
-// U+3164 HANGUL FILLER renders as nothing but is not Unicode whitespace, so `.trim()` leaves it
-// behind — a push name of only fillers passed the old blank check and rendered a bare "@".
-const HANGUL_FILLER = /ㅤ/g;
+const MENTION_DELIMITERS = new RegExp(`[${MENTION_OPEN}${MENTION_CLOSE}]`, 'g');
+
+// Characters that render as nothing yet survive `.trim()`: format controls (zero-width space, soft
+// hyphen, word joiner, bidi marks), combining marks, the Hangul fillers and the blank braille
+// pattern. A push name made only of these would render as a bare "@".
+const INVISIBLE = /[\p{Cf}\p{M}\u115F\u1160\u3164\uFFA0\u2800]/gu;
 
 function blankMentionName(name: string): boolean {
-  return name.replace(HANGUL_FILLER, '').trim() === '';
+  return name.replace(INVISIBLE, '').trim() === '';
 }
 
 // The left boundary is the start of the text, whitespace, opening punctuation, or a format opener
