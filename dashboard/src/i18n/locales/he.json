@@ -223,6 +223,7 @@
     "noSessions": "לא נמצאו Sessions. יש ליצור אחד כדי להתחיל.",
     "view": "צפייה",
     "disconnect": "ניתוק",
+    "disconnectFailed": "לא ניתן לנתק את ה-Session",
     "errorPrefix": "שגיאה: {{message}}",
     "loadError": "טעינת הנתונים נכשלה",
     "charts": {
@@ -233,6 +234,7 @@
         "30d": "30 יום"
       },
       "overTime": "הודעות לאורך זמן",
+      "overTimeUtcDays": "הודעות לאורך זמן (ימים לפי UTC)",
       "byType": "הודעות לפי סוג",
       "topChats": "צ'אטים מובילים",
       "sent": "נשלחו",
@@ -352,7 +354,8 @@
       "actionRequiredTitle": "נדרשת פעולה",
       "actionRequiredDesc": "ה-Session הזה דורש את תשומת לבך. פתחו את ה-Session כדי לראות מה לעשות.",
       "failedTitle": "ה-Session נכשל",
-      "failedDesc": "ה-Session של WhatsApp נכשל באתחול. פתחו את ה-Session כדי לראות את הסיבה."
+      "failedDesc": "ה-Session של WhatsApp נכשל באתחול. פתחו את ה-Session כדי לראות את הסיבה.",
+      "stopFailedTitle": "העצירה נכשלה"
     },
     "card": {
       "phone": "טלפון",
@@ -473,7 +476,10 @@
     },
     "empty": {
       "title": "לא הוגדרו Webhooks",
-      "description": "יש להוסיף Webhook כדי לקבל התראות בזמן אמת"
+      "description": "יש להוסיף Webhook כדי לקבל התראות בזמן אמת",
+      "loadErrorTitle": "לא ניתן לטעון את ה-Webhooks",
+      "forbiddenTitle": "אין גישה ל-Webhooks",
+      "forbiddenDesc": "Webhooks דורשים מפתח API עם תפקיד מפעיל או מנהל."
     },
     "toasts": {
       "created": "ה-Webhook נוצר בהצלחה",
@@ -494,9 +500,27 @@
     "eventDescriptions": {
       "message.received": "כאשר מתקבלת הודעה",
       "message.sent": "כאשר נשלחת הודעה",
-      "session.connected": "כאשר Session מתחבר",
-      "session.disconnected": "כאשר Session מתנתק",
+      "message.ack": "כאשר סטטוס המסירה או הקריאה של הודעה משתנה",
+      "message.failed": "כאשר מסירת הודעה יוצאת נכשלת",
+      "message.revoked": "כאשר הודעה נמחקת אצל כולם",
+      "message.reaction": "כאשר תגובה נוספת, משתנה או מוסרת",
+      "message.edited": "כאשר הודעה נערכת",
+      "session.status": "כאשר הסטטוס של Session משתנה",
       "session.qr": "כאשר נוצר קוד QR",
+      "session.authenticated": "כאשר Session מקושר ומוכן",
+      "session.disconnected": "כאשר Session מתנתק",
+      "session.reconnect_loop": "כאשר Session נכשל שוב ושוב בהתחברות מחדש",
+      "session.restriction": "כאשר WhatsApp מגביל את החשבון או מסיר הגבלה",
+      "presence.update": "כאשר צ'אט במעקב מתחבר, מקליד או מתנתק",
+      "group.join": "כאשר משתתפים מצטרפים לקבוצה או מתווספים אליה",
+      "group.leave": "כאשר משתתפים עוזבים קבוצה או מוסרים ממנה",
+      "group.update": "כאשר השם, התיאור או ההגדרות של קבוצה משתנים",
+      "group.join_request": "כאשר מישהו מבקש להצטרף לקבוצה שה-Session הזה מנהל",
+      "call.received": "כאשר שיחה נכנסת מתחילה לצלצל",
+      "call.accepted": "כאשר עונים לשיחה",
+      "call.rejected": "כאשר שיחה נדחית",
+      "call.missed": "כאשר שיחה לא נענית",
+      "status.received": "כאשר איש קשר מפרסם סטטוס",
       "all": "כל האירועים"
     }
   },

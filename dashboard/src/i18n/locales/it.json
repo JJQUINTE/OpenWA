@@ -216,6 +216,7 @@
     "noSessions": "Nessuna sessione trovata. Creane una per iniziare.",
     "view": "Visualizza",
     "disconnect": "Disconnetti",
+    "disconnectFailed": "Impossibile disconnettere la sessione",
     "errorPrefix": "Errore: {{message}}",
     "loadError": "Impossibile caricare i dati",
     "charts": {
@@ -226,6 +227,7 @@
         "30d": "30 g"
       },
       "overTime": "Messaggi nel tempo",
+      "overTimeUtcDays": "Messaggi nel tempo (giorni in UTC)",
       "byType": "Messaggi per tipo",
       "topChats": "Chat principali",
       "sent": "Inviati",
@@ -345,7 +347,8 @@
       "actionRequiredTitle": "Azione richiesta",
       "actionRequiredDesc": "Questa sessione richiede la tua attenzione. Apri la sessione per vedere cosa fare.",
       "failedTitle": "Sessione Fallita",
-      "failedDesc": "Avvio della sessione WhatsApp non riuscito. Apri la sessione per vedere il motivo."
+      "failedDesc": "Avvio della sessione WhatsApp non riuscito. Apri la sessione per vedere il motivo.",
+      "stopFailedTitle": "Arresto non riuscito"
     },
     "card": {
       "phone": "Telefono",
@@ -464,7 +467,10 @@
     },
     "empty": {
       "title": "Nessun webhook configurato",
-      "description": "Aggiungi un webhook per ricevere le notifiche degli eventi in tempo reale"
+      "description": "Aggiungi un webhook per ricevere le notifiche degli eventi in tempo reale",
+      "loadErrorTitle": "Impossibile caricare i webhook",
+      "forbiddenTitle": "Nessun accesso ai webhook",
+      "forbiddenDesc": "I webhook richiedono una chiave API con ruolo operatore o amministratore."
     },
     "toasts": {
       "created": "Webhook creato con successo",
@@ -485,9 +491,27 @@
     "eventDescriptions": {
       "message.received": "Quando viene ricevuto un messaggio",
       "message.sent": "Quando viene inviato un messaggio",
-      "session.connected": "Quando una sessione si connette",
-      "session.disconnected": "Quando una sessione si disconnette",
+      "message.ack": "Quando cambia lo stato di consegna o di lettura di un messaggio",
+      "message.failed": "Quando la consegna di un messaggio in uscita non riesce",
+      "message.revoked": "Quando un messaggio viene eliminato per tutti",
+      "message.reaction": "Quando una reazione viene aggiunta, modificata o rimossa",
+      "message.edited": "Quando un messaggio viene modificato",
+      "session.status": "Quando cambia lo stato di una sessione",
       "session.qr": "Quando viene generato un codice QR",
+      "session.authenticated": "Quando una sessione è associata e pronta",
+      "session.disconnected": "Quando una sessione si disconnette",
+      "session.reconnect_loop": "Quando una sessione continua a non riuscire a riconnettersi",
+      "session.restriction": "Quando WhatsApp limita l'account o rimuove una limitazione",
+      "presence.update": "Quando una chat seguita va online, scrive o va offline",
+      "group.join": "Quando dei partecipanti entrano in un gruppo o vengono aggiunti",
+      "group.leave": "Quando dei partecipanti lasciano un gruppo o vengono rimossi",
+      "group.update": "Quando cambiano il nome, la descrizione o le impostazioni di un gruppo",
+      "group.join_request": "Quando qualcuno chiede di entrare in un gruppo amministrato da questa sessione",
+      "call.received": "Quando una chiamata in arrivo inizia a squillare",
+      "call.accepted": "Quando si risponde a una chiamata",
+      "call.rejected": "Quando una chiamata viene rifiutata",
+      "call.missed": "Quando una chiamata resta senza risposta",
+      "status.received": "Quando un contatto pubblica uno stato",
       "all": "Tutti gli eventi"
     }
   },

@@ -206,7 +206,8 @@ export class StatsService {
       .select('m.type', 'type')
       .addSelect('COUNT(*)', 'count')
       .where('m.createdAt >= :since', { since })
-      .andWhere("(m.body IS NOT NULL AND m.body != '') OR m.metadata IS NOT NULL")
+      // Parenthesized: TypeORM does not wrap an andWhere, so a bare OR would escape the period bound.
+      .andWhere("((m.body IS NOT NULL AND m.body != '') OR m.metadata IS NOT NULL)")
       .groupBy('m.type')
       .getRawMany<{ type: string; count: string }>();
 

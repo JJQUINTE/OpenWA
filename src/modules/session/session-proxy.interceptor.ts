@@ -19,8 +19,11 @@ import { SESSION_SCOPED_KEY } from '../auth/decorators/auth.decorators';
 import { createLogger } from '../../common/services/logger.service';
 import { normalizeIp } from '../../common/utils/ip';
 
-/** The request headers a forwarded call carries over. Everything else is this hop's business. */
-const FORWARDED_REQUEST_HEADERS = ['x-api-key', 'authorization', 'content-type', 'accept'] as const;
+/**
+ * The request headers a forwarded call carries over. Everything else is this hop's business.
+ * content-type is not among them: forward() sends every body as JSON and labels it so itself.
+ */
+const FORWARDED_REQUEST_HEADERS = ['x-api-key', 'authorization', 'accept'] as const;
 
 /** The response headers relayed back. Deliberately short: hop-by-hop headers must not leak through. */
 const RELAYED_RESPONSE_HEADERS = [
@@ -193,11 +196,15 @@ export class SessionProxyInterceptor implements NestInterceptor {
   ): Promise<void> {
     const timeoutMs = this.configService?.get<number>('session.proxyTimeoutMs', 60_000) ?? 60_000;
 
+    const hasBody = !['GET', 'HEAD'].includes(request.method);
     const headers: Record<string, string> = { [FORWARDED_HEADER]: this.ownership?.nodeId ?? '1' };
     for (const name of FORWARDED_REQUEST_HEADERS) {
       const value = request.headers[name];
       if (typeof value === 'string') headers[name] = value;
     }
+    // Label the bytes actually sent: a form-encoded request, relabelled as the client sent it, would
+    // have the owner's urlencoded parser read the JSON text as one form key and answer 400.
+    if (hasBody) headers['content-type'] = 'application/json';
 
     // The owner re-authenticates the forwarded call (allowedIps) and throttles per client IP, so
     // the chain must carry what this hop observed — without it every forwarded call shows up as
@@ -210,7 +217,6 @@ export class SessionProxyInterceptor implements NestInterceptor {
       headers['x-forwarded-for'] = inboundChain ? `${inboundChain}, ${observedPeer}` : observedPeer;
     }
 
-    const hasBody = !['GET', 'HEAD'].includes(request.method);
     let target: string | undefined;
     try {
       // Inside the try: a NODE_URL that is not a usable absolute URL makes this throw, and that is
@@ -220,8 +226,9 @@ export class SessionProxyInterceptor implements NestInterceptor {
       const upstream = await fetch(target, {
         method: request.method,
         headers,
-        // The body has already been parsed by this hop's JSON body-parser; re-serialising it is
-        // byte-equivalent for the JSON API surface (there are no multipart session routes).
+        // The body has already been parsed by this hop's JSON or urlencoded body-parser; re-serialising
+        // it as JSON keeps the parsed values the owner's DTOs would have seen (there are no multipart
+        // session routes).
         body: hasBody ? JSON.stringify(request.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeoutMs),
         redirect: 'manual',

@@ -1,7 +1,13 @@
-import { DataSource } from 'typeorm';
+import { DataSource, FindOperator, Repository } from 'typeorm';
 import { ConversationMapping } from './entities/conversation-mapping.entity';
 import { ConversationMappingConflict, ConversationMappingService, MappingKey } from './conversation-mapping.service';
 import { AddIntegrationFabric1781900000000 } from '../../database/migrations/1781900000000-AddIntegrationFabric';
+import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { LidMapping } from '../../engine/identity/lid-mapping.entity';
+
+/** The `In([...])` condition a lid-table fake honours; an absent condition matches every row. */
+const inList = (value: string, cond?: FindOperator<string>): boolean =>
+  cond === undefined || (cond.value as unknown as string[]).includes(value);
 
 describe('ConversationMappingService', () => {
   let ds: DataSource;
@@ -85,6 +91,145 @@ describe('ConversationMappingService', () => {
       handoverState: 'human',
     });
     expect(await service.findHandoverForChat('sess-1', 'other-chat')).toBeNull();
+  });
+
+  describe('findHandoverForChat across the lid and phone forms of one chat', () => {
+    // lid 111 -> phone 628999. A 1:1 chat's neutral id flips from `111@lid` to `628999@c.us` once the
+    // mapping is learned, so a takeover recorded under either form has to govern the other. The store is
+    // real but its cache is empty, as for a mapping past the preload cap or evicted: only the table has it.
+    const table = [{ lid: '111', phone: '628999' }];
+    const lidStore = new LidMappingStoreService({
+      find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+        Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
+      findOne: ({ where }: { where: { lid: string } }) => Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+    } as unknown as Repository<LidMapping>);
+    const human = (chatId: string, provider = 'convB') =>
+      service.upsert({ sessionId: 'sess-1', chatId, pluginId: 'chatwoot-adapter', instanceId: 'i2' }, provider, {
+        handoverState: 'human',
+      });
+    const bot = (chatId: string, provider: string) =>
+      service.upsert({ sessionId: 'sess-1', chatId, pluginId: 'chatwoot-adapter', instanceId: 'i2' }, provider);
+
+    beforeEach(() => {
+      service = new ConversationMappingService(ds.getRepository(ConversationMapping), lidStore);
+    });
+
+    it('finds a takeover stored under the lid when the chat now arrives by phone', async () => {
+      await human('111@lid');
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toEqual({
+        pluginId: 'chatwoot-adapter',
+        handoverState: 'human',
+      });
+    });
+
+    it('finds a takeover stored under the phone when the chat arrives by lid', async () => {
+      await human('628999@c.us');
+      expect(await service.findHandoverForChat('sess-1', '111@lid')).toEqual({
+        pluginId: 'chatwoot-adapter',
+        handoverState: 'human',
+      });
+    });
+
+    it('does not match another person', async () => {
+      await human('111@lid');
+      expect(await service.findHandoverForChat('sess-1', '628000@c.us')).toBeNull();
+    });
+
+    const row = (chatId: string) =>
+      service.get({ sessionId: 'sess-1', chatId, pluginId: 'chatwoot-adapter', instanceId: 'i2' });
+
+    it('keeps the takeover when the flip makes the adapter link a fresh row under the phone form', async () => {
+      await human('111@lid');
+      await bot('628999@c.us', 'convC'); // linked by the flip, not a hand-back
+      await bot('628999@c.us', 'convC'); // and re-linked idempotently
+      expect((await row('628999@c.us'))!.handoverState).toBe('human');
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toEqual({
+        pluginId: 'chatwoot-adapter',
+        handoverState: 'human',
+      });
+    });
+
+    it('a hand-back under either form clears both, and an idempotent upsert does not revive it', async () => {
+      await human('111@lid');
+      await bot('628999@c.us', 'convC');
+      await service.setHandover((await row('628999@c.us'))!.id, 'bot'); // the agent hands the chat back
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toBeNull();
+      expect(await service.findHandoverForChat('sess-1', '111@lid')).toBeNull();
+
+      await bot('111@lid', 'convB'); // the adapter re-links the lid row with nothing changed
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toBeNull();
+    });
+
+    it('a takeover under either form survives an idempotent upsert of the other form', async () => {
+      await bot('111@lid', 'convB');
+      await bot('628999@c.us', 'convC');
+      await service.setHandover((await row('111@lid'))!.id, 'human');
+      await bot('628999@c.us', 'convC');
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toEqual({
+        pluginId: 'chatwoot-adapter',
+        handoverState: 'human',
+      });
+    });
+
+    it('a hand-back reaches a row whose form was paired after the takeover', async () => {
+      await human('111@lid');
+      await bot('628999@c.us', 'convC'); // inherits the takeover
+      table.push({ lid: '333', phone: '628999' }); // another lid for the number is learned meanwhile
+      try {
+        await service.setHandover((await row('628999@c.us'))!.id, 'bot');
+        expect((await row('111@lid'))!.handoverState).toBe('bot');
+        expect(await service.findHandoverForChat('sess-1', '111@lid')).toBeNull();
+      } finally {
+        table.pop();
+      }
+    });
+
+    it('a decision on one lid of a number reaches its sibling lid and the phone-form row', async () => {
+      table.push({ lid: '222', phone: '628999' });
+      try {
+        await bot('111@lid', 'convB');
+        await bot('222@lid', 'convD');
+        await service.setHandover((await row('222@lid'))!.id, 'human');
+        expect(await service.findHandoverForChat('sess-1', '111@lid')).toEqual({
+          pluginId: 'chatwoot-adapter',
+          handoverState: 'human',
+        });
+        await bot('628999@c.us', 'convC'); // a phone-form row joins and inherits the takeover
+        expect((await row('628999@c.us'))!.handoverState).toBe('human');
+        await service.setHandover((await row('111@lid'))!.id, 'bot');
+        expect((await row('628999@c.us'))!.handoverState).toBe('bot');
+        expect(await service.findHandoverForChat('sess-1', '222@lid')).toBeNull();
+      } finally {
+        table.pop();
+      }
+    });
+
+    it('a hand-back that lands while a row under the other form is being linked still reaches it', async () => {
+      await human('111@lid');
+      const repo = ds.getRepository(ConversationMapping);
+      const save = repo.save.bind(repo);
+      jest.spyOn(repo, 'save').mockImplementationOnce(async (entity: unknown) => {
+        // The agent hands back on the lid conversation after the new row read the takeover.
+        await service.setHandover((await row('111@lid'))!.id, 'bot');
+        return save(entity as ConversationMapping);
+      });
+      await bot('628999@c.us', 'convC');
+      expect(await service.findHandoverForChat('sess-1', '628999@c.us')).toBeNull();
+    });
+
+    it('a row rebound from a deleted session keeps a takeover a fresh row in the new session does not hold', async () => {
+      await human('111@lid');
+      // The session is re-paired, and the chat arrives by phone before the old lid row is rebound.
+      await service.upsert(
+        { sessionId: 'sess-2', chatId: '628999@c.us', pluginId: 'chatwoot-adapter', instanceId: 'i2' },
+        'convC',
+      );
+      await service.rebindSession((await row('111@lid'))!.id, 'sess-2');
+      expect(await service.findHandoverForChat('sess-2', '628999@c.us')).toEqual({
+        pluginId: 'chatwoot-adapter',
+        handoverState: 'human',
+      });
+    });
   });
 
   it('delete removes the row so a later reverse-key insert no longer conflicts', async () => {

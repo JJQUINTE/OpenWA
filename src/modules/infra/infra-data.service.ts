@@ -675,7 +675,7 @@ export class InfraDataService {
         // SQLite only: archived datetime values are normalized to the form TypeORM writes there, so a
         // PostgreSQL-made backup compares and sorts like rows the app wrote itself.
         const datetimeColumns = isPostgres ? undefined : sqliteDatetimeColumns(this.dataDataSource);
-        for (const importer of TABLE_IMPORTERS) {
+        restore: for (const importer of TABLE_IMPORTERS) {
           const rows = data.tables[importer.key];
           if (!rows?.length) continue;
           const dateColumns = datetimeColumns?.get(importer.key) ?? [];
@@ -706,6 +706,9 @@ export class InfraDataService {
               warnings.push(
                 `Failed to import ${importer.label} ${importer.id(row)}: ${err instanceof Error ? err.message : String(err)}`,
               );
+              // PostgreSQL aborts the transaction on a failed statement: every later one would fail with
+              // "current transaction is aborted" and bury this row's real error. Stop at the first.
+              if (isPostgres) break restore;
             }
           }
         }
@@ -716,12 +719,33 @@ export class InfraDataService {
         // bug it fixes — on PostgreSQL a failed statement aborts the transaction, so the COMMIT would
         // execute as a ROLLBACK and the endpoint would report a fully discarded import as a success,
         // with per-table counts, to an operator restoring after data loss.
-        try {
-          await restoreSessionOwnership(preservedOwnership, insert, ownershipReadAt);
-        } catch (error) {
-          warnings.push(
-            `Failed to restore session ownership: ${error instanceof Error ? error.message : String(error)}`,
-          );
+        // Skipped once a row has failed: the rollback below is already certain, and on PostgreSQL the
+        // aborted transaction would only add a misleading warning.
+        if (warnings.length === 0) {
+          try {
+            await restoreSessionOwnership(preservedOwnership, insert, ownershipReadAt);
+          } catch (error) {
+            warnings.push(
+              `Failed to restore session ownership: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+
+        // "Replace all data" must be all-or-nothing: the import already DELETEd every row, so if any
+        // INSERT failed we must roll back (restoring the pre-import data) rather than commit a
+        // half-wiped DB and report success. A partial restore reported as imported:true was how
+        // message history could silently vanish on a SQLite->Postgres migration. It must precede
+        // every further statement: on PostgreSQL a failure has aborted the transaction, so the
+        // normalization UPDATE below would throw and turn this answer into a 500.
+        if (warnings.length > 0) {
+          await queryRunner.rollbackTransaction();
+          return {
+            imported: false,
+            counts,
+            warnings,
+            notices,
+            ...engineStateAfterRollback,
+          };
         }
 
         // Normalize imported statuses the same way boot does: an ACTIVE status (ready,
@@ -754,21 +778,6 @@ export class InfraDataService {
             `${normalized.affected} imported session(s) carried an active status (the source host's engines): ` +
               'restored as disconnected - start them via POST /api/sessions/:id/start or let auto-start adopt them.',
           );
-        }
-
-        // "Replace all data" must be all-or-nothing: the import already DELETEd every row, so if any
-        // INSERT failed we must roll back (restoring the pre-import data) rather than commit a
-        // half-wiped DB and report success. A partial restore reported as imported:true was how
-        // message history could silently vanish on a SQLite->Postgres migration.
-        if (warnings.length > 0) {
-          await queryRunner.rollbackTransaction();
-          return {
-            imported: false,
-            counts,
-            warnings,
-            notices,
-            ...engineStateAfterRollback,
-          };
         }
 
         // A wrong/empty/garbage backup file restores zero rows but the DELETE already ran — committing

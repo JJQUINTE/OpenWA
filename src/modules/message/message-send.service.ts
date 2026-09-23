@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, QueryDeepPartialEntity } from 'typeorm';
+import { In, Repository, QueryDeepPartialEntity } from 'typeorm';
 import { SessionService } from '../session/session.service';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { SendTextMessageDto, SendMediaMessageDto, SendAudioMessageDto, MessageResponseDto } from './dto';
@@ -18,6 +18,9 @@ import { SsrfBlockedError, SSRF_BLOCKED_CLIENT_MESSAGE } from '../../common/secu
 import { resolveFeatureFlags } from '../../config/feature-flags';
 import { isUniqueViolation } from '../../common/utils/db-errors';
 import { ChatMediaArchiveService } from '../chat-media/chat-media-archive.service';
+import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { resolveJidCandidates } from '../../engine/identity/jid-candidates';
+import { isMediaUrl, MEDIA_URL_MESSAGE } from '../../common/media/media-url';
 
 /** Default cap on a rendered template's final text; overridable via TEMPLATE_RENDER_MAX_CHARS. */
 export const DEFAULT_TEMPLATE_RENDER_MAX_CHARS = 64 * 1024;
@@ -88,6 +91,10 @@ export class MessageSendService {
     // archived — the inline row copy and the read endpoint are unaffected either way.
     @Optional()
     private readonly chatMediaArchive?: ChatMediaArchiveService,
+    // Optional for the same reason; absent means a quote is matched on the chat's phone and
+    // literal forms only, never on its lid.
+    @Optional()
+    private readonly lidMappingStore?: LidMappingStoreService,
   ) {}
 
   async sendText(sessionId: string, dto: SendTextMessageDto): Promise<MessageResponseDto> {
@@ -188,7 +195,7 @@ export class MessageSendService {
       this.pacing.recordSendFailure(sessionId);
       // The same classification picks the failures worth a log line. Otherwise an engine-side failure
       // leaves only Nest's generic `[ExceptionsHandler]` line, with no session, chat or message type to
-      // correlate it with; a minified page error reads as `t: t` there.
+      // correlate it with.
       this.logger.warn(`Send failed in the engine (${type})`, {
         sessionId,
         chatId: message.chatId,
@@ -493,7 +500,7 @@ export class MessageSendService {
     const engine = this.getEngine(sessionId);
 
     // Resolve the quoted message body (best-effort) so the dashboard can render the reply preview.
-    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.quotedMessageId);
+    const quotedBody = await this.resolveQuotedBody(sessionId, finalDto.quotedMessageId, finalDto.chatId);
 
     // Save message as pending BEFORE sending
     const message = await this.saveOutgoingMessage(sessionId, {
@@ -528,7 +535,7 @@ export class MessageSendService {
     // A click IS a reply to the prompt, so resolve the prompt's body the way reply() does: the
     // dashboard renders the quote box from this field, and a hardcoded empty string left every
     // answered prompt showing an empty quote above the choice the user tapped.
-    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.messageId);
+    const promptBody = await this.resolveQuotedBody(sessionId, finalDto.messageId, finalDto.chatId);
 
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: finalDto.chatId,
@@ -587,12 +594,30 @@ export class MessageSendService {
    * The body of the message a send is quoting, for the dashboard's quote preview. Best-effort in
    * every direction: an id that names nothing stored (evicted, or sent from the phone before this
    * gateway saw the chat) and a read that fails both answer '', because a preview is never worth
-   * failing a send over. The row is looked up by engine id within the session, so one session
-   * cannot read another's message.
+   * failing a send over. The row is looked up by engine id within the session. A reply and a button
+   * click answer a message in the chat they send into, so for them `chatId` also restricts the lookup
+   * to that chat (any of its phone, lid or group forms): the pending row is saved before the engine
+   * refuses a cross-chat quote, and copying a foreign body would store it under a chat a
+   * chat-restricted key may use. The send routes may quote across chats, and the guard refuses a
+   * chat-restricted key any quotedMessageId there, so they pass no chat.
    */
-  private async resolveQuotedBody(sessionId: string, quotedMessageId: string): Promise<string> {
+  private async resolveQuotedBody(sessionId: string, quotedMessageId: string, chatId?: string): Promise<string> {
     try {
-      const quoted = await this.messageRepository.findOne({ where: { sessionId, waMessageId: quotedMessageId } });
+      const store = this.lidMappingStore;
+      const expanded = chatId
+        ? await resolveJidCandidates(
+            chatId,
+            store && {
+              resolveLid: lid => store.findPhoneForLid(lid),
+              lidsForPhone: phone => store.findLidsForPhone(phone),
+            },
+          )
+        : [];
+      const quoted = await this.messageRepository.findOne({
+        where: chatId
+          ? { sessionId, chatId: In([...new Set([chatId, ...expanded])]), waMessageId: quotedMessageId }
+          : { sessionId, waMessageId: quotedMessageId },
+      });
       return quoted?.body || '';
     } catch (err) {
       this.logger.warn(`Failed to resolve quoted message ${quotedMessageId}`, { error: String(err) });
@@ -827,6 +852,11 @@ export class MessageSendService {
     if (!dto.url && !base64) {
       throw new BadRequestException('Either url or base64 must be provided');
     }
+    // The DTO checks this too, but a plugin send and a message:sending rewrite reach here without it,
+    // and both engines decode anything that is not an http(s) URL as base64.
+    if (!base64 && !isMediaUrl(dto.url)) {
+      throw new BadRequestException(MEDIA_URL_MESSAGE);
+    }
 
     if (base64 && !dto.mimetype) {
       throw new BadRequestException('mimetype is required when using base64 data');
@@ -840,8 +870,8 @@ export class MessageSendService {
       mimetype: dto.mimetype || 'application/octet-stream',
       // base64 wins over url when both are present: it is the explicit local payload, and a stale
       // `url` (e.g. a Swagger/example default left in the body) must not be fetched in its place.
-      // Aligns the send selection with the base64-first persisted metadata and the url field's
-      // `@ValidateIf((o) => !o.base64)` (which skips @IsUrl when base64 is present) — #670.
+      // Aligns the send selection with the base64-first persisted metadata and the url field's check,
+      // which is skipped only when base64 holds data after its data-URI prefix is stripped (#670).
       data: base64 || dto.url!,
       filename: dto.filename,
       caption: dto.caption,

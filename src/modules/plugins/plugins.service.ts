@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException, 
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PluginLoaderService, PluginStatus, resolvePluginEntryPath } from '../../core/plugins';
+import { PluginLoaderService, PluginStatus, PluginType, resolvePluginEntryPath } from '../../core/plugins';
 import { pluginUpdateBackupDirName, pluginUpdateStagingDirName } from '../../core/plugins';
 import type { PluginConfigSchema } from '../../core/plugins';
 import { PluginDto } from './dto/plugin.dto';
@@ -163,6 +163,21 @@ export class PluginsService {
       }
       this.pluginLoader.setOperatorEnabled(id, false);
       return { success: true, message: `Plugin ${id} is not loaded; it will not be enabled on boot` };
+    }
+
+    if (
+      plugin.manifest.type === PluginType.ENGINE &&
+      id === (this.configService.get<string>('engine.type') ?? 'whatsapp-web.js')
+    ) {
+      // The engine factory is pinned to engine.type and never reads plugin status, and boot re-enables
+      // that engine regardless: "disabling" it here reported success while sessions kept starting on
+      // it. Refuse it in the same shape enable uses for a non-active engine. Kept at this layer, not in
+      // the lifecycle, because shutdown and unload must still tear engines down. An engine that is not
+      // engine.type runs nothing, so it takes the ordinary path below.
+      return {
+        success: false,
+        message: `Engine "${id}" cannot be disabled at runtime. Set engine.type and restart to switch engines.`,
+      };
     }
 
     if (plugin.status !== PluginStatus.ENABLED) {

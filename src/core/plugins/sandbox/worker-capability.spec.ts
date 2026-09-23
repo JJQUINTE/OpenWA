@@ -1,5 +1,6 @@
 import { WorkerCapabilityClient, buildSandboxContext } from './worker-capability';
 import { WorkerToHostMessage } from './protocol';
+import { WorkerHookRegistry } from './worker-hooks';
 
 describe('WorkerCapabilityClient', () => {
   it('posts a cap request and resolves on the matching cap-result', async () => {
@@ -38,6 +39,52 @@ describe('WorkerCapabilityClient', () => {
     client.handleResult({ kind: 'cap-result', id: reqA.id, ok: true, result: 'A' });
     await expect(a).resolves.toBe('A');
     await expect(b).resolves.toBe('B');
+  });
+
+  it('tags a call made inside a hook handler with that dispatch chain, and only that call', async () => {
+    const sent: WorkerToHostMessage[] = [];
+    const client = new WorkerCapabilityClient(m => sent.push(m));
+    const hooks = new WorkerHookRegistry(m => sent.push(m));
+    hooks.register('message:sending', () => {
+      void client.call('messages.sendText', ['in-hook']);
+      return { continue: true };
+    });
+
+    void client.call('messages.sendText', ['outside']); // an ingress handler or a timer
+    await hooks.handleHook({
+      kind: 'hook',
+      id: 1,
+      event: 'message:sending',
+      data: {},
+      source: 't',
+      inFlight: ['message:received', 'message:sending'],
+    });
+
+    const caps = sent.filter((m): m is Extract<WorkerToHostMessage, { kind: 'cap' }> => m.kind === 'cap');
+    expect(caps.map(c => [c.args[0], c.inFlight])).toEqual([
+      ['outside', undefined],
+      ['in-hook', ['message:received', 'message:sending']],
+    ]);
+  });
+
+  it('does not tag a call a hook handler defers past the end of its dispatch', async () => {
+    const sent: WorkerToHostMessage[] = [];
+    const client = new WorkerCapabilityClient(m => sent.push(m));
+    const hooks = new WorkerHookRegistry(m => sent.push(m));
+    let fireLater!: () => void;
+    const later = new Promise<void>(resolve => (fireLater = resolve));
+    hooks.register('message:sent', () => {
+      void later.then(() => client.call('messages.sendText', ['later']));
+      return { continue: true };
+    });
+
+    await hooks.handleHook({ kind: 'hook', id: 1, event: 'message:sent', data: {}, source: 't' });
+    fireLater();
+    await later;
+    await Promise.resolve();
+
+    const caps = sent.filter((m): m is Extract<WorkerToHostMessage, { kind: 'cap' }> => m.kind === 'cap');
+    expect(caps.map(c => [c.args[0], c.inFlight])).toEqual([['later', undefined]]);
   });
 });
 

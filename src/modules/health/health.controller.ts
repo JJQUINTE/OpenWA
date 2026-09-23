@@ -12,7 +12,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { SlidingWindowLimiter } from '../events/ws-rate-limit';
-import { resolveClientIp } from '../../common/utils/ip';
+import { limiterKeyForIp, resolveClientIp } from '../../common/utils/ip';
 
 interface DependencyStatus {
   status: 'up' | 'down';
@@ -91,7 +91,7 @@ export class HealthController {
       // route was the one blind spot: the failure only withheld the version, invisibly. Fire-and-
       // forget and rate-bounded per IP (constructor): audit logging must never fail the probe.
       const failureIp = resolveClientIp(req, this.configService.get<string[]>('security.trustedProxies') ?? []);
-      if (this.authFailureAuditLimiter.allow(failureIp)) {
+      if (this.authFailureAuditLimiter.allow(limiterKeyForIp(failureIp))) {
         void this.auditService.logWarn(AuditAction.API_KEY_AUTH_FAILED, {
           ipAddress: failureIp,
           method: req.method,

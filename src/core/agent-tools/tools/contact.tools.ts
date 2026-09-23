@@ -26,7 +26,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        contactId: z.string().describe('Contact JID (e.g. 628123456789@c.us)'),
+        contactId: z.string().min(1).describe('Contact JID (e.g. 628123456789@c.us)'),
       }),
       handler: input => contact.getContactById(input.sessionId, input.contactId),
     }),
@@ -38,7 +38,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        number: z.string().describe('Phone number to check (e.g. 628123456789, digits only)'),
+        number: z.string().min(1).describe('Phone number to check (e.g. 628123456789, digits only)'),
       }),
       handler: async input => {
         const whatsappId = await contact.getNumberId(input.sessionId, input.number);
@@ -53,7 +53,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        contactId: z.string().describe('Contact JID to resolve (e.g. an @lid)'),
+        contactId: z.string().min(1).describe('Contact JID to resolve (e.g. an @lid)'),
       }),
       handler: async input => {
         const phone = await contact.resolveContactPhone(input.sessionId, input.contactId);
@@ -67,7 +67,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        contactId: z.string().describe('Contact JID (e.g. 628123456789@c.us)'),
+        contactId: z.string().min(1).describe('Contact JID (e.g. 628123456789@c.us)'),
       }),
       handler: async input => {
         const url = await contact.getProfilePicture(input.sessionId, input.contactId);
@@ -82,7 +82,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        contactId: z.string().describe('Contact JID (e.g. 628123456789@c.us)'),
+        contactId: z.string().min(1).describe('Contact JID (e.g. 628123456789@c.us)'),
       }),
       handler: async input => {
         await contact.blockContact(input.sessionId, input.contactId);
@@ -97,7 +97,7 @@ export function contactTools(contact: ContactService): AnyToolDescriptor[] {
       sessionScoped: true,
       inputSchema: z.object({
         sessionId,
-        contactId: z.string().describe('Contact JID (e.g. 628123456789@c.us)'),
+        contactId: z.string().min(1).describe('Contact JID (e.g. 628123456789@c.us)'),
       }),
       handler: async input => {
         await contact.unblockContact(input.sessionId, input.contactId);

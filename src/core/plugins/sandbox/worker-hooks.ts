@@ -1,12 +1,17 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkerToHostMessage, HostToWorkerMessage } from './protocol';
+import { HOOK_RESULT_ACCEPT } from '../../hooks/hook-results';
+import type { HookEvent } from '../../hooks/hook.interfaces';
 
 /**
  * Carries the per-session-resolved config for the duration of a hook dispatch so ctx.config (a getter
  * in worker-bootstrap) returns the right slice — even when events for different sessions interleave.
  * AsyncLocalStorage scopes it per async call tree, so concurrent dispatches never see each other's.
+ * It also carries the dispatch's in-flight hook chain, which a capability call made from that tree
+ * sends back to the host: only a call caused by a hook handler is re-entrancy-guarded, never an
+ * unrelated one (an ingress handler, a timer set outside a hook) that merely overlaps a dispatch.
  */
-export const hookConfigStore = new AsyncLocalStorage<{ config: Record<string, unknown> }>();
+export const hookConfigStore = new AsyncLocalStorage<{ config?: Record<string, unknown>; inFlight?: string[] }>();
 
 export interface WorkerHookContext {
   event: string;
@@ -36,11 +41,18 @@ export class WorkerHookRegistry {
 
   constructor(private readonly post: (message: WorkerToHostMessage) => void) {}
 
-  register(event: string, handler: WorkerHookHandler, priority = 100): void {
+  register(event: string, handler: WorkerHookHandler, rawPriority: unknown = 100): void {
+    // The host runs a non-finite or non-numeric priority at 100; compare and sort on that same value,
+    // or a junk first priority would stop a later lower one from moving the shim up.
+    const priority = typeof rawPriority === 'number' && Number.isFinite(rawPriority) ? rawPriority : 100;
     const list = this.handlers.get(event);
     if (list) {
+      const lowest = list[0].priority;
       list.push({ handler, priority });
       list.sort((a, b) => a.priority - b.priority);
+      // The host runs this event's whole worker chain from one shim; move it up to the new lowest
+      // priority so this handler still runs ahead of other plugins' handlers it asked to precede.
+      if (priority < lowest) this.post({ kind: 'hook-subscribe', event, priority });
       return;
     }
     this.handlers.set(event, [{ handler, priority }]);
@@ -51,16 +63,24 @@ export class WorkerHookRegistry {
     // Run the whole dispatch inside the per-session config scope so every handler (and any async work
     // it awaits) sees ctx.config resolved for THIS event's session. Absent config => the bootstrap
     // getter falls back to the base config.
-    const run = () => this.dispatch(message);
-    if (message.config !== undefined) {
-      await hookConfigStore.run({ config: message.config }, run);
-    } else {
-      await run();
+    // The store outlives the dispatch in any timer or detached promise a handler starts; drop the
+    // chain once it settles so such a later call is not treated as re-entrant.
+    const store: { config?: Record<string, unknown>; inFlight?: string[] } = {
+      config: message.config,
+      inFlight: message.inFlight ?? [message.event],
+    };
+    try {
+      await hookConfigStore.run(store, () => this.dispatch(message));
+    } finally {
+      store.inFlight = undefined;
     }
   }
 
   private async dispatch(message: Extract<HostToWorkerMessage, { kind: 'hook' }>): Promise<void> {
     const list = this.handlers.get(message.event) ?? [];
+    // Guard only a chain that starts from a usable value: there is nothing to keep otherwise.
+    const check = HOOK_RESULT_ACCEPT[message.event as HookEvent];
+    const accept = check?.(message.data) ? check : undefined;
     let data = message.data;
     let shouldContinue = true;
     let firstError: string | undefined;
@@ -73,7 +93,9 @@ export class WorkerHookRegistry {
           source: message.source,
           timestamp: new Date(),
         });
-        if (result.data !== undefined) data = result.data;
+        // Same rule as the host chain: a result the event cannot use is skipped, so an earlier handler's
+        // rewrite (a redaction) survives a later handler of this plugin returning null.
+        if (result.data !== undefined && (accept?.(result.data) ?? true)) data = result.data;
         if (!result.continue) {
           shouldContinue = false;
           break;

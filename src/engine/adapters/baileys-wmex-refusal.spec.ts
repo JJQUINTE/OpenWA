@@ -3,6 +3,7 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import { BaileysChannels, BaileysChannelsHost } from './baileys-channels';
 import { EngineRefusedError } from '../../common/errors/engine-refused.error';
 import { EngineTransportError } from '../../common/errors/engine-transport.error';
+import { ChannelNotFoundError } from '../../common/errors/channel-not-found.error';
 
 /**
  * Channels do not fail like the rest of the adapter. executeWMexQuery reports a server refusal as a
@@ -34,9 +35,22 @@ describe('channel refusals map to 403, not a bare 500', () => {
     ['deleteChannel', 'newsletterDelete', (c: BaileysChannels) => c.deleteChannel('120363@newsletter')],
     ['muteChannel', 'newsletterMute', (c: BaileysChannels) => c.muteChannel('120363@newsletter', true)],
     ['createChannel', 'newsletterCreate', (c: BaileysChannels) => c.createChannel('N')],
+    [
+      'unsubscribeFromChannel',
+      'newsletterUnfollow',
+      (c: BaileysChannels) => c.unsubscribeFromChannel('120363@newsletter'),
+    ],
   ])('%s', async (_n, method, call) => {
     const sock = { [method]: jest.fn().mockRejectedValue(wmexRefusal(403)) };
     await expect(call(channels(sock, 500))).rejects.toBeInstanceOf(EngineRefusedError);
+  });
+
+  it('subscribeToChannel: a refused follow', async () => {
+    const sock = {
+      newsletterMetadata: jest.fn().mockResolvedValue({ id: '120363@newsletter', name: 'N' }),
+      newsletterFollow: jest.fn().mockRejectedValue(wmexRefusal(403)),
+    };
+    await expect(channels(sock, 500).subscribeToChannel('CODE')).rejects.toBeInstanceOf(EngineRefusedError);
   });
 
   it('maps any 4xx the GraphQL payload reports, not only 403', async () => {
@@ -47,11 +61,57 @@ describe('channel refusals map to 403, not a bare 500', () => {
   });
 });
 
+describe('a refused channel lookup is "no such channel", not a bare 500', () => {
+  it('getChannelById resolves null, which the service answers 404', async () => {
+    const newsletterMetadata = jest.fn().mockRejectedValue(wmexRefusal(404));
+    await expect(channels({ newsletterMetadata }, 500).getChannelById('120363@newsletter')).resolves.toBeNull();
+  });
+
+  it('subscribeToChannel with a refused invite lookup throws ChannelNotFoundError', async () => {
+    const sock = { newsletterMetadata: jest.fn().mockRejectedValue(wmexRefusal(404)), newsletterFollow: jest.fn() };
+    await expect(channels(sock, 500).subscribeToChannel('BAD')).rejects.toBeInstanceOf(ChannelNotFoundError);
+    expect(sock.newsletterFollow).not.toHaveBeenCalled();
+  });
+
+  it('a dead socket or the no-answer shape on the lookup still propagates', async () => {
+    const connectionClosed = new Boom('Connection Closed', { statusCode: 428 });
+    const noAnswer = new Boom('Failed to newsletter metadata, unexpected response structure.', { statusCode: 400 });
+    for (const error of [connectionClosed, noAnswer]) {
+      const newsletterMetadata = jest.fn().mockRejectedValue(error);
+      await expect(channels({ newsletterMetadata }, 500).getChannelById('120363@newsletter')).rejects.toBe(error);
+    }
+  });
+
+  it("Baileys' own send timeout or a rate limit on the lookup propagates, not as 404", async () => {
+    // promiseTimeout (Utils/generics.js) rejects a stalled send with an OBJECT data and a 408 code.
+    const timedOut = new Boom('Timed Out', { statusCode: 408, data: { stack: 'Error\n    at x' } });
+    for (const error of [timedOut, wmexRefusal(429)]) {
+      const newsletterMetadata = jest.fn().mockRejectedValue(error);
+      await expect(channels({ newsletterMetadata }, 500).getChannelById('120363@newsletter')).rejects.toBe(error);
+    }
+  });
+
+  it('an unanswered lookup still answers 503', async () => {
+    const newsletterMetadata = jest.fn(() => new Promise<never>(() => undefined));
+    await expect(channels({ newsletterMetadata }, 15).getChannelById('120363@newsletter')).rejects.toBeInstanceOf(
+      EngineTransportError,
+    );
+  });
+});
+
 describe('what must NOT be classified as a refusal', () => {
   it('a dead socket still propagates rather than becoming a 403', async () => {
     const connectionClosed = new Boom('Connection Closed', { statusCode: 428 });
     const newsletterDelete = jest.fn().mockRejectedValue(connectionClosed);
     await expect(channels({ newsletterDelete }, 500).deleteChannel('120363@newsletter')).rejects.toBe(connectionClosed);
+  });
+
+  it("Baileys' own send timeout still propagates rather than becoming a 403", async () => {
+    const timedOut = new Boom('Timed Out', { statusCode: 408, data: { stack: 'Error\n    at x' } });
+    const newsletterUnfollow = jest.fn().mockRejectedValue(timedOut);
+    await expect(channels({ newsletterUnfollow }, 500).unsubscribeFromChannel('120363@newsletter')).rejects.toBe(
+      timedOut,
+    );
   });
 
   it('an unanswered query still answers 503, not a 403', async () => {

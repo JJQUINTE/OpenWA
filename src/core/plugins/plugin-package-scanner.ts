@@ -318,10 +318,9 @@ export class PluginPackageScanner {
       throw new Error(`Plugin ${manifest.id}: main file not found in the plugin directory: ${manifest.main}`);
     }
 
-    // Reject a malformed ingress declaration (SDK-major mismatch, missing webhook:ingress permission,
-    // duplicate/empty routes, non-positive toleranceSec) at load time instead of letting it silently
-    // load and become provisionable. No-op for plugins that declare no ingress. A route declaring
-    // signature.scheme 'none' is rejected unless the operator opted in via ALLOW_UNSIGNED_INGRESS=true.
+    // Reject a malformed ingress declaration (every check is listed on validateIngressManifest) at
+    // load time instead of letting it silently load and become provisionable. No-op for plugins that
+    // declare no ingress.
     validateIngressManifest(manifest, this.configService.get<boolean>('ingress.allowUnsigned', false));
 
     // Surface a loud warning for any ingress route that skips signature verification — a scheme:'none'

@@ -108,7 +108,7 @@
 > Nothing is published to peers; instead every node re-validates the keys behind its own live
 > sockets against the database once a minute (`EventsGateway.sweepApiKeyAuthorization`, one batched
 > read of the key ids currently holding sockets) and evicts on a row that is gone, inactive, expired,
-> or whose role, `allowedIps`, `allowedSessions` or expiry no longer matches the snapshot the socket
+> or whose role, `allowedIps`, `allowedSessions`, `allowedChats` or expiry no longer matches the snapshot the socket
 > authenticated with. So a peer node's sockets close within a minute of the change. Before, a revoke,
 > delete or expiry there waited for the client's next subscribe, and a narrowing was never caught at
 > all: it leaves the key valid, so only the new subscribe is rejected while every room joined earlier

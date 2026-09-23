@@ -361,6 +361,26 @@ describe('messageTools', () => {
     expect(sendSticker).toHaveBeenCalledWith('s1', expect.objectContaining({ mentions: ['62811@c.us'] }));
   });
 
+  it('rejects a media url that is not http(s)', async () => {
+    // Both engines decode a non-http(s) string as base64, so an ftp:// URL would send garbage bytes.
+    const sendImage = jest.fn().mockResolvedValue({ id: 'm1' });
+    const tools = makeTools({ sendImage } as unknown as MessageService);
+
+    await expect(
+      run(tools.get('MessageSendImage')!, { sessionId: 's1', chatId: '628111@c.us', url: 'ftp://example.com/a.jpg' }),
+    ).rejects.toMatchObject({
+      response: { message: [expect.stringContaining('http(s)') as unknown as string] },
+    });
+    expect(sendImage).not.toHaveBeenCalled();
+
+    await run(tools.get('MessageSendImage')!, {
+      sessionId: 's1',
+      chatId: '628111@c.us',
+      url: 'http://media_server:8080/a.jpg',
+    });
+    expect(sendImage).toHaveBeenCalledWith('s1', expect.objectContaining({ url: 'http://media_server:8080/a.jpg' }));
+  });
+
   it('MessageForward delegates to forward', async () => {
     const forward = jest.fn().mockResolvedValue({ id: 'm2' });
     const tools = makeTools({ forward } as unknown as MessageService);

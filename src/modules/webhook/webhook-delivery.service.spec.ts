@@ -515,6 +515,56 @@ describe('WebhookDeliveryService', () => {
       expect(headers['X-OpenWA-Signature']).toBe(expected);
     });
 
+    it.each([
+      ['a string', 'rewritten'],
+      ['a number', 42],
+      ['an array', [1, 2]],
+    ])(
+      'sends the original payload when a webhook:before hook returns %s as the payload',
+      async (_label, hookPayload) => {
+        const webhook = createMockWebhook({ events: ['message.received'] });
+        (repository.find as jest.Mock).mockResolvedValue([webhook]);
+        (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+        (hookManager.execute as jest.Mock).mockImplementation((event: string) =>
+          Promise.resolve({ continue: true, data: event === 'webhook:before' ? { payload: hookPayload } : {} }),
+        );
+
+        await service.dispatch('sess-1', 'message.received', { from: '628123456789@c.us' });
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const call = mockFetch.mock.calls[0] as [unknown, { headers: Record<string, string>; body: string }];
+        const body = JSON.parse(call[1].body) as WebhookPayload;
+        expect(body.event).toBe('message.received');
+        expect(body.sessionId).toBe('sess-1');
+        expect(body.data).toEqual({ from: '628123456789@c.us' });
+        expect(body.idempotencyKey).toBe(call[1].headers['X-OpenWA-Idempotency-Key']);
+        expect(failureRepository.insert).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lets HookManager skip a webhook:before result without a plain-object payload', async () => {
+      const webhook = createMockWebhook({ events: ['message.received'] });
+      (repository.find as jest.Mock).mockResolvedValue([webhook]);
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      (hookManager.execute as jest.Mock).mockImplementation((_event: string, data: unknown) =>
+        Promise.resolve({ continue: true, data }),
+      );
+
+      await service.dispatch('sess-1', 'message.received', { from: '628123456789@c.us' });
+
+      const call = (hookManager.execute as jest.Mock).mock.calls.find(([event]) => event === 'webhook:before') as [
+        string,
+        unknown,
+        { accept: (d: unknown) => boolean },
+      ];
+      const { accept } = call[2];
+      expect(accept(null)).toBe(false);
+      expect(accept({})).toBe(false);
+      expect(accept({ payload: 'rewritten' })).toBe(false);
+      expect(accept({ payload: [1] })).toBe(false);
+      expect(accept({ payload: { event: 'message.received' } })).toBe(true);
+    });
+
     it('records (never sends) a hook-mutated payload that exceeds the payload size cap', async () => {
       (configService.get as jest.Mock).mockImplementation(<T>(key: string, def?: T): T | boolean | number => {
         if (key === 'queue.enabled') return false;

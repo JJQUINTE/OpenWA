@@ -2,6 +2,23 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { HookEvent, HookHandler, HookContext, HookRegistration } from './hook.interfaces';
 
+/**
+ * The priority a registration actually runs at: a finite number as given, anything else the default
+ * 100. The chain is sorted by `a.priority - b.priority`; one NaN or string in it makes the comparator
+ * return NaN and the order of EVERY handler for that event implementation-defined (a veto can land
+ * after a rewrite). Sandboxed plugins send their priority over IPC, so no type can be assumed.
+ */
+export function normalizeHookPriority(priority: unknown): number {
+  return typeof priority === 'number' && Number.isFinite(priority) ? priority : 100;
+}
+
+export interface HookExecuteOptions<T> {
+  sessionId?: string;
+  source: string;
+  /** Adopt a handler's `data` only when this returns true; a rejected result is skipped, not applied. */
+  accept?: (data: T) => boolean;
+}
+
 @Injectable()
 export class HookManager {
   private readonly logger = new Logger(HookManager.name);
@@ -23,7 +40,7 @@ export class HookManager {
       pluginId,
       event,
       handler,
-      priority,
+      priority: normalizeHookPriority(priority),
     };
 
     // Add to event handlers
@@ -41,7 +58,7 @@ export class HookManager {
     }
     this.pluginHooks.get(pluginId)!.add(id);
 
-    this.logger.debug(`Hook registered: ${event} by ${pluginId} (priority: ${priority})`);
+    this.logger.debug(`Hook registered: ${event} by ${pluginId} (priority: ${registration.priority})`);
     return id;
   }
 
@@ -67,6 +84,17 @@ export class HookManager {
     }
   }
 
+  /** Move an existing registration to `priority` (normalized like {@link register}) and re-sort its chain. */
+  setPriority(hookId: string, priority: number): void {
+    for (const registrations of this.hooks.values()) {
+      const registration = registrations.find(r => r.id === hookId);
+      if (!registration) continue;
+      registration.priority = normalizeHookPriority(priority);
+      registrations.sort((a, b) => a.priority - b.priority);
+      return;
+    }
+  }
+
   /**
    * Unregister all hooks for a plugin
    */
@@ -87,11 +115,7 @@ export class HookManager {
    * Execute hooks for an event
    * Returns: { continue: boolean, data: T }
    */
-  async execute<T>(
-    event: HookEvent,
-    data: T,
-    options: { sessionId?: string; source: string },
-  ): Promise<{ continue: boolean; data: T }> {
+  async execute<T>(event: HookEvent, data: T, options: HookExecuteOptions<T>): Promise<{ continue: boolean; data: T }> {
     const inFlight = this.inFlightEvents.getStore();
     if (inFlight?.has(event)) {
       this.logger.warn(
@@ -126,12 +150,21 @@ export class HookManager {
     return this.inFlightEvents.getStore()?.has(event) ?? false;
   }
 
+  /** Every event in flight on the active async context, for a caller that must carry the chain across a
+   *  boundary AsyncLocalStorage does not span (the sandbox worker IPC) and re-establish it with
+   *  {@link runInFlight} on the way back. */
+  currentInFlight(): HookEvent[] {
+    return [...(this.inFlightEvents.getStore() ?? [])];
+  }
+
   private async runHandlers<T>(
     event: HookEvent,
     data: T,
-    options: { sessionId?: string; source: string },
+    options: HookExecuteOptions<T>,
   ): Promise<{ continue: boolean; data: T }> {
-    const registrations = this.hooks.get(event) || [];
+    // A snapshot: a registration added or moved while this chain awaits a handler (a sandboxed plugin
+    // re-subscribing at a lower priority) must not make the loop skip or repeat one.
+    const registrations = [...(this.hooks.get(event) ?? [])];
 
     if (registrations.length === 0) {
       return { continue: true, data };
@@ -153,8 +186,16 @@ export class HookManager {
 
         // A handler that reports an error discards its output: do NOT apply its (possibly partial or
         // corrupted) data mutation, even though HookResult allows returning data and error together.
+        // A result the caller cannot use is dropped the same way, so the chain keeps the last usable
+        // value (an earlier handler's redaction included) instead of the caller falling back to the input.
         if (result.error === undefined && result.data !== undefined) {
-          currentData = result.data as T;
+          if (options.accept && !options.accept(result.data as T)) {
+            this.logger.warn(
+              `Hook result from ${registration.pluginId} for ${event} is not usable; keeping the previous data`,
+            );
+          } else {
+            currentData = result.data as T;
+          }
         }
 
         if (!result.continue) {

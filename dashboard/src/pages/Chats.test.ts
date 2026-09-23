@@ -32,6 +32,11 @@ const SESSION: Session = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+// A second session, served only when a test turns `twoSessions` on. Its routes answer with the first
+// session's fixtures (see installFetchStub), so a test can switch sessions without a second data set.
+const SESSION_2: Session = { ...SESSION, id: 'session-2', name: 'Second', phone: '15559876543' };
+let twoSessions = false;
+
 const CHAT: Chat = {
   id: '15550001111@c.us',
   name: 'Alice',
@@ -234,7 +239,9 @@ function installFetchStub(): void {
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
-    const path = url.replace(/^https?:\/\/[^/]+/, '');
+    const path = url
+      .replace(/^https?:\/\/[^/]+/, '')
+      .replace(`/api/sessions/${SESSION_2.id}/`, `/api/sessions/${SESSION.id}/`);
 
     let body: unknown;
     if (typeof init?.body === 'string') {
@@ -246,7 +253,9 @@ function installFetchStub(): void {
     }
     fetchCalls.push({ method, path, body });
 
-    if (method === 'GET' && path === '/api/sessions') return Promise.resolve(jsonResponse([SESSION]));
+    if (method === 'GET' && path === '/api/sessions') {
+      return Promise.resolve(jsonResponse(twoSessions ? [SESSION, SESSION_2] : [SESSION]));
+    }
     if (method === 'GET' && path === '/api/infra/engines/current') {
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
     }
@@ -302,6 +311,9 @@ function installFetchStub(): void {
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-text`) {
       const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
+    }
+    if (method === 'GET' && path.startsWith('/api/search?')) {
+      return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/status/send-text`) {
       return Promise.resolve(jsonResponse({ success: true }));
@@ -585,6 +597,100 @@ test('Escape closes the open room, and is left alone while a dialog owns it', as
   );
 });
 
+test('Escape dismisses the message search results instead of the conversation behind them', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+
+  const search = container.querySelector('.global-search-input') as HTMLInputElement;
+  search.focus();
+  fireEvent.change(search, { target: { value: 'invoice' } });
+  await screen.findByRole('listbox');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  // assert.ok, not assert.equal(node, null): formatting a live jsdom node into the failure message spins.
+  assert.ok(!screen.queryByRole('listbox'), 'Escape left the search results open');
+  assert.ok(screen.queryByRole('button', { name: 'Back' }), 'Escape closed the room while the results owned it');
+
+  fireEvent.keyDown(search, { key: 'Escape' });
+  await waitFor(() => assert.ok(!screen.queryByRole('button', { name: 'Back' }), 'Escape did not close the room'));
+});
+
+test('a read-only key is offered no status compose trigger', async () => {
+  const { screen, fireEvent } = rtl;
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+    // Reading statuses stays open to a viewer; only posting one is withheld.
+    await screen.findByText('No contacts have an active status.');
+    assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
+test('a writer key opening a chat clears its unread badge', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  const { container } = renderChats();
+  await screen.findByText('Main (15551234567)');
+  assert.ok(await screen.findByLabelText('2 unread messages'), 'the fixture chat shows no unread badge');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  await waitFor(() => assert.ok(!screen.queryByLabelText('2 unread messages'), 'opening the chat kept its badge'));
+});
+
+test('a read-only key opening a chat sends no mark-as-read', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+    // Past the mark-as-read quiet window, so a queued call would have gone out.
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+    assert.ok(!findFetchCall('POST', `/api/sessions/${SESSION.id}/chats/read`), 'a viewer key marked the chat read');
+    // The chat is still unread on the gateway, so the sidebar badge keeps its count.
+    assert.ok(
+      screen.queryByLabelText('2 unread messages'),
+      'the unread badge was cleared for a chat never marked read',
+    );
+    // A message arriving in the open chat is unread on the gateway too, so it counts.
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_002_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION.id,
+        data: {
+          id: 'wamid.live.viewer',
+          chatId: CHAT.id,
+          from: CHAT.id,
+          to: 'me',
+          body: 'second from alice',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_001_500,
+        },
+      },
+    });
+    await waitFor(() =>
+      assert.ok(screen.queryByLabelText('3 unread messages'), 'the open chat did not count the arrival'),
+    );
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
 // Stage a file in the open room and wait for the preview banner. A non-image type is used on
 // purpose: the image branch calls URL.createObjectURL, which JSDOM does not implement.
 //
@@ -642,6 +748,71 @@ test('a staged attachment is dropped when a different chat is opened', async () 
     null,
     "Alice's attachment followed the user into Carol's room",
   );
+});
+
+test('a staged reply is kept on reopening its chat and dropped when a different chat is opened', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  let row: HTMLElement | null = await within(container.querySelector('.room-messages') as HTMLElement).findByText(
+    'hello from alice',
+  );
+  while (row && !row.querySelector('button[title="Reply"]')) row = row.parentElement;
+  fireEvent.click(row?.querySelector('button[title="Reply"]') as HTMLElement);
+  await waitFor(() => assert.ok(container.querySelector('.replying-preview-banner')));
+
+  // Close and reopen the same room: the staged reply survives, like a staged attachment does.
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(screen.getByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  assert.ok(container.querySelector('.replying-preview-banner'), 'the reply was lost on reopening its own chat');
+
+  // A reply carried into another chat would quote Alice's message, text and number, to Carol.
+  // Compared as text: a failing assertion on the DOM node itself stalls the runner.
+  fireEvent.click(screen.getByText('Carol'));
+  await within(container.querySelector('.room-header') as HTMLElement).findByText('Carol');
+  assert.equal(
+    container.querySelector('.replying-preview-banner')?.textContent ?? null,
+    null,
+    "Alice's reply followed the user into Carol's room",
+  );
+});
+
+test('a staged reply is dropped when another session is opened', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  twoSessions = true;
+  try {
+    resetFetchCalls();
+    const { container } = renderChats();
+
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    let row: HTMLElement | null = await within(container.querySelector('.room-messages') as HTMLElement).findByText(
+      'hello from alice',
+    );
+    while (row && !row.querySelector('button[title="Reply"]')) row = row.parentElement;
+    fireEvent.click(row?.querySelector('button[title="Reply"]') as HTMLElement);
+    await waitFor(() => assert.ok(container.querySelector('.replying-preview-banner')));
+
+    // The session switch closes the room. The chat opened next has the same id in the other session
+    // (a contact both accounts share), so only the session switch, not a change of chat id, can drop it.
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await waitFor(() => assert.equal(container.querySelector('.room-header'), null));
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-header') as HTMLElement).findByText('Alice');
+    assert.equal(
+      container.querySelector('.replying-preview-banner')?.textContent ?? null,
+      null,
+      "Alice's reply followed the user into the other session",
+    );
+  } finally {
+    twoSessions = false;
+  }
 });
 
 /**

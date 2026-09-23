@@ -557,6 +557,9 @@ export class BaileysMessaging {
   async editMessage(chatId: string, messageId: string, body: string, mentions?: string[]): Promise<MessageResult> {
     this.host.ensureReady();
     const target = await this.requireStored(messageId);
+    // The chat check comes first so a message from another chat answers not-found whichever side
+    // sent it; checking fromMe first would tell an inbound message there from an own one.
+    this.assertStoredInChat(target, chatId, messageId);
     // Only the account's own messages are editable: WhatsApp refuses the edit of an inbound message
     // but the send would still resolve, dressing the refusal up as success (and the service layer
     // would then "update" the stored body). Refuse first — mirrors the wwjs null-edit guard.
@@ -565,7 +568,6 @@ export class BaileysMessaging {
         `the edit of message ${messageId} was rejected — only the account's own messages can be edited`,
       );
     }
-    this.assertStoredInChat(target, chatId, messageId);
     // An edit keeps the original message id, so it is neither re-persisted nor echoed as a new send.
     // The destination is resolved like any other send: a lid-migrated contact rejects PN-addressed
     // sends with ack error 463 (see toDeliverableJid).

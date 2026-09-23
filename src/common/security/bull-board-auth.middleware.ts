@@ -6,7 +6,7 @@ import { ApiKeyRole } from '../../modules/auth/entities/api-key.entity';
 import { AuditService } from '../../modules/audit/audit.service';
 import { AuditAction } from '../../modules/audit/entities/audit-log.entity';
 import { KeyRateLimiter, readIpRateLimitConfig } from '../../modules/mcp/mcp-rate-limit';
-import { resolveClientIp } from '../utils/ip';
+import { limiterKeyForIp, resolveClientIp } from '../utils/ip';
 import { setRequestActor } from '../services/request-context';
 
 /**
@@ -62,7 +62,7 @@ export class BullBoardAuthMiddleware implements NestMiddleware {
       // Pre-auth, per-IP throttle — runs BEFORE the credential check so a login-attempt flood is rejected
       // before the DB lookup. Mirrors MCP's createIpThrottle. Throws HttpException(429) when exceeded;
       // forwarded to Nest's exception layer below as a standard 429.
-      this.ipRateLimiter.check(clientIp);
+      this.ipRateLimiter.check(limiterKeyForIp(clientIp));
 
       const rawKey = this.extractKey(req);
       if (!rawKey) {
@@ -90,6 +90,14 @@ export class BullBoardAuthMiddleware implements NestMiddleware {
       // @RequireUnscopedKey on the REST surface, which cannot reach this raw-Express mount.
       if ((apiKey.allowedSessions?.length ?? 0) > 0) {
         throw new ForbiddenException('API keys restricted to specific sessions cannot access the queue dashboard');
+      }
+
+      // A key restricted to selected chats is refused here too. This mount is the third surface
+      // outside ApiKeyGuard (beside /events and the MCP mount), and the board shows and mutates the
+      // webhook job queue, whose payloads carry every chat's events — so it has no chat dimension to
+      // scope against and must refuse such a key outright.
+      if ((apiKey.allowedChats?.length ?? 0) > 0) {
+        throw new ForbiddenException('API keys restricted to selected chats cannot access the queue dashboard');
       }
 
       // Boundary trace of queue-mutation attempts. GET/HEAD are the UI's read/poll traffic; every

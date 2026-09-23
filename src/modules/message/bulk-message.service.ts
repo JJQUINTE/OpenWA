@@ -19,6 +19,7 @@ import {
   BatchMessageResult,
 } from './entities/message-batch.entity';
 import { SendBulkMessageDto } from './dto/bulk-message.dto';
+import { isMediaUrl } from '../../common/media/media-url';
 import { MessageStatus } from './entities/message.entity';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { MessageService, DEFAULT_TEMPLATE_RENDER_MAX_CHARS } from './message.service';
@@ -215,10 +216,15 @@ export class BulkMessageService implements OnApplicationBootstrap {
     // message:sending gate are applied (see executeBatch).
     for (const { type, content } of messages) {
       this.assertContentMediaWithinCap(content);
-      this.assertItemContent(type, content);
+      this.assertItemContent(type, content, true);
     }
 
     const batchId = dto.batchId || `batch_${randomUUID().split('-')[0]}`;
+    // '.' and '..' are dot segments: URL clients collapse them, so the statusUrl and the status and
+    // cancel routes for such a batch would resolve to a different path and it could never be reached.
+    if (batchId === '.' || batchId === '..') {
+      throw new BadRequestException(`Batch ID '${batchId}' is not allowed`);
+    }
 
     // Check if this batchId already exists FOR THIS SESSION. Scoping by sessionId (matching how
     // getBatchStatus/cancelBatch already query) makes (sessionId, batchId) the namespace: one session
@@ -644,7 +650,7 @@ export class BulkMessageService implements OnApplicationBootstrap {
    * the matching media key otherwise. The DTO cannot express this per type, so it runs at batch
    * creation (a 400) and again per item after variables and the message:sending gate.
    */
-  private assertItemContent(type: string, content: BulkMessageContent): void {
+  private assertItemContent(type: string, content: BulkMessageContent, beforeRender = false): void {
     if (type === 'text') {
       if (typeof content?.text !== 'string' || !content.text) {
         throw new BadRequestException('A text item requires a non-empty content.text');
@@ -652,8 +658,15 @@ export class BulkMessageService implements OnApplicationBootstrap {
       return;
     }
     const media = content?.[type as 'image' | 'video' | 'audio' | 'document'];
-    if (!stripBase64DataUri(media?.base64) && !media?.url) {
+    if (stripBase64DataUri(media?.base64)) return;
+    if (!media?.url) {
       throw new BadRequestException(`A ${type} item requires content.${type}.url or content.${type}.base64`);
+    }
+    // Checked here rather than on the DTO because `variables` may supply the whole URL: before
+    // rendering, a value holding a placeholder is left to the per-item check, which sees the rendered
+    // (and plugin-rewritten) URL.
+    if (!(beforeRender && typeof media.url === 'string' && media.url.includes('{')) && !isMediaUrl(media.url)) {
+      throw new BadRequestException(`content.${type}.url must be an absolute http(s) URL`);
     }
   }
 
@@ -754,14 +767,17 @@ export class BulkMessageService implements OnApplicationBootstrap {
     content: BulkMessageContent,
     result: MessageResult,
   ): Promise<void> {
-    const media = content.image ?? content.video ?? content.audio ?? content.document;
+    // Store what sendMessage sent: the media under the item's own type key, and the caption for a
+    // media item (audio carries none). Other keys on the item were never delivered.
+    const media = type === 'text' ? undefined : content[type as 'image' | 'video' | 'audio' | 'document'];
+    const body = type === 'text' ? content.text : type === 'audio' ? undefined : content.caption;
     // A bulk audio item flagged ptt is a voice note; store it in the 'voice' bucket like inbound PTT.
     const persistType = type === 'audio' && content.audio?.ptt ? 'voice' : type;
     try {
       await this.messageService.saveOutgoingMessage(sessionId, {
         waMessageId: result.id,
         chatId,
-        body: content.text ?? content.caption ?? '',
+        body: body ?? '',
         type: persistType,
         timestamp: result.timestamp,
         status: MessageStatus.SENT,

@@ -178,10 +178,10 @@ export function MessageTester() {
 
   const { data: groups = [], isLoading: loadingGroups } = useSessionGroupsQuery(session, recipientType === 'group');
 
+  // Also re-picks when the chosen session leaves the ready list on a refetch: the select would show
+  // the first option while every send still went to the dropped one.
   useEffect(() => {
-    if (sessions.length > 0 && !session) {
-      setSession(sessions[0].id);
-    }
+    if (!sessions.some(s => s.id === session)) setSession(sessions[0]?.id ?? '');
   }, [sessions, session]);
 
   useEffect(() => {
@@ -197,11 +197,21 @@ export function MessageTester() {
     }
   };
 
-  // Stop polling on unmount; the batch itself keeps running server-side regardless.
-  useEffect(() => stopBatchPolling, []);
+  // Stop polling on unmount; the batch itself keeps running server-side regardless. A send-bulk still
+  // in flight at unmount resolves later, so startBatchPolling must refuse to start once unmounted.
+  // Reset on every mount: StrictMode runs mount, unmount, mount.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      stopBatchPolling();
+    };
+  }, []);
 
   const startBatchPolling = (batchSessionId: string, batchId: string) => {
     stopBatchPolling();
+    if (unmountedRef.current) return;
     batchPollRef.current = setInterval(async () => {
       try {
         const status = await messageApi.getBatchStatus(batchSessionId, batchId);
@@ -311,15 +321,17 @@ export function MessageTester() {
   const bulkCaptionTooLong =
     bulkAttachment !== null && bulkAttachment.kind !== 'audio' && captionLength(content) > BULK_CAPTION_MAX_LENGTH;
 
-  // Per-type required-field validation for the newer types; text/media keep their original behavior
-  // (the backend stays the authoritative validator either way).
+  // Per-type required-field validation (the backend stays the authoritative validator). A multi-group
+  // send repeats the request per group, so a body the backend would refuse must not start the run.
   let formValid = true;
-  if (messageType === 'location') {
+  if (messageType === 'text') {
+    formValid = content.trim().length > 0;
+  } else if (isMediaMessageType) {
+    formValid = !!mediaFile || mediaUrl.trim().length > 0;
+  } else if (messageType === 'location') {
     formValid = !Number.isNaN(lat) && !Number.isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
   } else if (messageType === 'contact') {
     formValid = contactName.trim().length > 0 && contactNumber.trim().length > 0;
-  } else if (messageType === 'sticker') {
-    formValid = !!mediaFile || mediaUrl.trim().length > 0;
   } else if (messageType === 'poll') {
     formValid = pollQuestion.trim().length > 0 && pollOptionsFilled.length >= 2;
   } else if (messageType === 'forward') {

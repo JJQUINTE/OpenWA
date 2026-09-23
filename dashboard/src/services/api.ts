@@ -179,6 +179,7 @@ export interface ApiKey {
   role: 'admin' | 'operator' | 'viewer';
   allowedIps?: string[];
   allowedSessions?: string[];
+  allowedChats?: string[];
   isActive: boolean;
   expiresAt?: string;
   lastUsedAt?: string;
@@ -557,8 +558,8 @@ export interface InfraStatus {
   engine: {
     type: string;
     headless: boolean;
-    // whatsapp-web.js only: the actual WhatsApp Web build in use (distinct from the library version)
-    // and how it was chosen. (#488)
+    // whatsapp-web.js only: the WhatsApp Web build sessions request as their pin (distinct from the
+    // library version, and not necessarily the build a page runs) and how it was chosen. (#488)
     webVersion?: string | null;
     webVersionSource?: 'pinned' | 'auto' | 'native';
   };
@@ -984,6 +985,7 @@ export const apiKeyApi = {
     allowedIps?: string[];
     allowedSessions?: string[];
     expiresAt?: string;
+    allowedChats?: string[];
   }) =>
     request<CreatedApiKey>('/auth/api-keys', {
       method: 'POST',
@@ -997,6 +999,7 @@ export const apiKeyApi = {
       allowedIps?: string[];
       allowedSessions?: string[];
       expiresAt?: string;
+      allowedChats?: string[];
     },
   ) =>
     request<ApiKey>(`/auth/api-keys/${id}`, {

@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { engineCapabilityMatrix } from './engine-capability-matrix';
 
 /**
- * `docs/29` states the same three figures in ten places — the intro, the architecture prose, a
- * mermaid node, two section headings, the §29.4 totals and the §29.8 summary. All ten are
+ * `docs/29` states the matrix's figures in many places: the intro, the architecture prose, a
+ * mermaid node, the §29.4 and §29.6 headings, the §29.4 totals and the §29.8 summary. All of them are
  * hand-written restatements of what `engine-capability-matrix.ts` contains.
  *
  * Adding one interface method updated the matrix and §29.8 and left the other six behind, and
@@ -79,11 +79,22 @@ describe('docs/29 counts match the capability matrix', () => {
     // The REST caller's view counts the two store-backed status reads as neutral rather than
     // wwjs-only; docs/29 states that adjustment explicitly where it uses the figure.
     const neutralRaw = rows.filter(r => ok(r.wwjs) && ok(r.baileys)).length;
-    return { methods: rows.length, cells: rows.length * 2, supported, neutral: neutralRaw + 2 };
+    // 'not-available' exactly, not "not supported": the document states uncertain cells separately.
+    const wwjsNotAvailable = rows.filter(r => r.wwjs === 'not-available').length;
+    const baileysNotAvailable = rows.filter(r => r.baileys === 'not-available').length;
+    return {
+      methods: rows.length,
+      cells: rows.length * 2,
+      supported,
+      neutral: neutralRaw + 2,
+      notAvailable: wwjsNotAvailable + baileysNotAvailable,
+      wwjsNotAvailable,
+      baileysNotAvailable,
+    };
   };
 
   /** Every phrasing in the file that restates one of those figures. */
-  const CLAIMS: { label: string; re: RegExp; of: 'methods' | 'cells' | 'supported' | 'neutral' }[] = [
+  const CLAIMS: { label: string; re: RegExp; of: keyof ReturnType<typeof recount> }[] = [
     { label: 'intro coverage', re: /Coverage is total: all (\d+) `IWhatsAppEngine` methods/, of: 'methods' },
     { label: 'section guide', re: /Rows are the (\d+) `IWhatsAppEngine` methods/, of: 'methods' },
     { label: 'architecture prose', re: /`IWhatsAppEngine` interface \((\d+) methods/, of: 'methods' },
@@ -98,6 +109,11 @@ describe('docs/29 counts match the capability matrix', () => {
     { label: '29.8 supported', re: /adapter cells: \*\*(\d+) ✅\*\*/, of: 'supported' },
     { label: '29.8 restated supported', re: /Of the (\d+) ✅ cells/, of: 'supported' },
     { label: '29.8 REST view', re: /REST caller's view: \*\*(\d+)\*\* engine-neutral/, of: 'neutral' },
+    { label: '29.4 totals not-available', re: /adapter cells: \*\*\d+ ✅, (\d+) ❌\*\*/, of: 'notAvailable' },
+    { label: '29.6 heading', re: /^## 29\.6 The (\d+) not-available cells/m, of: 'notAvailable' },
+    { label: '29.6.1 heading', re: /^### 29\.6\.1 Baileys adapter \((\d+) cells\)/m, of: 'baileysNotAvailable' },
+    { label: '29.6.2 heading', re: /^### 29\.6\.2 wwjs adapter \((\d+) cells\)/m, of: 'wwjsNotAvailable' },
+    { label: '29.8 not-available', re: /\*\*\d+ ✅\*\* \/ \*\*(\d+) ❌\*\*/, of: 'notAvailable' },
   ];
 
   /**
@@ -129,7 +145,16 @@ describe('docs/29 counts match the capability matrix', () => {
     // 29.3's opening sentence and 29.3.2's split spell the figure in prose rather than digits, which
     // is why they drifted while the digit-shaped claims held: a patcher was added to each library and
     // the words stayed at "five" and "1 on Baileys".
-    const WORDS: Record<string, number> = { four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const WORDS: Record<string, number> = {
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
+      eleven: 11,
+    };
     const spelled = doc.match(/OpenWA ships (\w+) exact, self-disabling source transforms/);
     const wrongProse: string[] = [];
     if (!spelled) wrongProse.push('29.3 opening: phrasing no longer found in the document');

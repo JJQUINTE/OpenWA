@@ -78,8 +78,9 @@ test('forward uses the first group as its source chat instead of looping', () =>
   assert.deepEqual(planGroupSend(['111@g.us', '222@g.us'], 'forward'), { mode: 'single', chatId: '111@g.us' });
 });
 
-test('429 and 503 are refusals that stop a run, other failures are not', () => {
+test('409, 429 and 503 are refusals that stop a run, other failures are not', () => {
   const withStatus = (status: number) => Object.assign(new Error('refused'), { status });
+  assert.equal(isGatewayRefusal(withStatus(409)), true);
   assert.equal(isGatewayRefusal(withStatus(429)), true);
   assert.equal(isGatewayRefusal(withStatus(503)), true);
   assert.equal(isGatewayRefusal(withStatus(404)), false);

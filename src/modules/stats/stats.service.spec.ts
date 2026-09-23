@@ -116,6 +116,20 @@ describe('StatsService time-series + hourly activity on SQLite (end-to-end regre
     expect(stats.byType).toEqual({ text: 1, image: 1 });
   });
 
+  it('getMessageStats byType counts only rows inside the period, metadata-carrying rows included', async () => {
+    await ds
+      .getRepository(Session)
+      .save(ds.getRepository(Session).create({ id: 's1', name: 'n', status: SessionStatus.READY, config: {} }));
+    const oldImage = await seedMessage({ type: 'image', body: '', metadata: { media: { mimetype: 'image/png' } } });
+    const oldReply = await seedMessage({ body: '', metadata: { quotedMessageId: 'q1' } });
+    const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    await ds.getRepository(Message).update([oldImage.id, oldReply.id], { createdAt: old });
+    await seedMessage({ type: 'image', body: '', metadata: { media: { mimetype: 'image/png' } } });
+
+    expect((await service.getMessageStats('24h')).byType).toEqual({ image: 1 });
+    expect((await service.getMessageStats('7d')).byType).toEqual({ image: 1 });
+  });
+
   it('time-series query never groups by the bare reserved word `timestamp` (Postgres-safe)', async () => {
     await ds
       .getRepository(Session)

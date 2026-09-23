@@ -464,9 +464,10 @@ function nextRedirectHopInit(init: RequestInit, status: number, nextUrl: string,
  * - Destination PINNING survives only through SOCKS, which carries the destination address in the
  *   request. The whole vetted list goes over, to be dialled in order, so the address-family failover
  *   the direct path gets from happy-eyeballs is not lost to a proxy that can route only one of them.
- *   An HTTP/HTTPS proxy is handed the destination by name in the CONNECT line and resolves it with
- *   its own resolver, so the vetted address cannot be expressed and a DNS rebind between check and
- *   connect is not structurally preventable.
+ *   An HTTP/HTTPS proxy is handed the destination by name (the CONNECT line for an https
+ *   destination, the absolute-form request line for an http one) and resolves it with its own
+ *   resolver, so the vetted address cannot be expressed and a DNS rebind between check and connect
+ *   is not structurally preventable.
  *
  * Without a proxy the behaviour is byte-identical to before: the pinned `Agent` for a vetted
  * hostname, and no dispatcher at all for an IP literal or an unguarded fetch.
@@ -480,12 +481,13 @@ function requestDispatcher(proxyUrl: string | undefined, target: LookupAddress[]
 
 /**
  * Perform an SSRF-safe fetch and hand the response to `use`, then tear down the per-request
- * connection. The host is validated and resolved ONCE; the connection is pinned to the vetted IP(s)
- * via an undici dispatcher so it cannot be re-resolved to an internal address between check and
- * connect (DNS-rebinding TOCTOU). The original hostname is preserved for TLS SNI and the Host header,
- * so virtual hosting and certificate validation are unaffected, and ALL vetted addresses are offered
- * so A-record failover still works (behind a SOCKS proxy the same list is dialled in order, and
- * behind an HTTP/HTTPS proxy the CONNECT line carries the name for the proxy to resolve). Redirects
+ * connection. The host is validated and resolved ONCE; a direct or SOCKS-proxied connection is
+ * pinned to the vetted IP(s) via an undici dispatcher so it cannot be re-resolved to an internal
+ * address between check and connect (DNS-rebinding TOCTOU). The original hostname is preserved for
+ * TLS SNI and the Host header, so virtual hosting and certificate validation are unaffected, and ALL
+ * vetted addresses are offered so A-record failover still works (behind a SOCKS proxy the same list
+ * is dialled in order). Behind an HTTP/HTTPS proxy nothing is pinned: the name goes to the proxy,
+ * which resolves it itself, so that path keeps the check but not the rebind protection. Redirects
  * are refused (the guard only validated the original host).
  *
  * `use` must read everything it needs from the response before returning — the dispatcher (and its

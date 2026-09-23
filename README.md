@@ -44,6 +44,7 @@ Built on a **pluggable architecture**, OpenWA lets you select database engines (
 | 🔗 **n8n Integration**        | Community nodes for workflow automation                                                                                                  |
 | 🧩 **Community Adapters**     | Third-party integrations (e.g. ioBroker) — see [docs](./docs/23-community-integrations.md)                                               |
 | 🔐 **Session-scoped keys**    | Operator and viewer (reader) tokens can be limited to chosen sessions — or all sessions if none are selected                             |
+| 🔒 **Chat-scoped keys**       | Those same tokens can also be limited to chosen chats — a few groups and contacts — so an agent on a shared account sees only its own    |
 
 ### Session-scoped operator & viewer tokens
 
@@ -53,6 +54,24 @@ When you create or edit an **operator** or **viewer** API key in the dashboard, 
 - **One or more sessions selected** — the key can only list, read, and (for operator) manage those sessions. A request naming any other session returns `401`; session-filtered lists (sessions, audit, webhook delivery failures) return that key's rows rather than an error; and the key-management routes and the queue dashboard, which name no session at all, return `403`.
 
 Admin keys stay unscoped in the dashboard so they can keep managing other API keys. The HTTP API still accepts `allowedSessions` on any role if you need that from a client.
+
+### Chat-scoped operator & viewer tokens
+
+A session-scoped key still reaches every chat on the sessions it may use. A key can be narrowed further, to **chats** (a chosen set of groups and individual contacts), with `allowedChats` on `POST /auth/api-keys` or `PUT /auth/api-keys/{id}`. The dashboard does not set or show it yet, and editing a key there leaves its chats unchanged.
+
+- **No chats selected** — the key can reach every chat on its sessions.
+- **One or more selected** — the key reaches only those chats. Every authenticated REST route not explicitly marked as safe for a chat-scoped key refuses it with `403` (a request naming a session outside `allowedSessions` still answers `401` first), including routes added in later releases: the refusal is the default. Inside its chats an operator key can do what the marked routes allow, which is more than reading and sending: it can also delete or clear a chat, leave or rename a group, and block the contact. It cannot change who belongs to a group: adding, removing, promoting or demoting participants, answering join requests and reading or resetting the invite link all stay closed.
+- **The two scopes are independent** — a key may be limited to sessions, to chats, to both, or to neither.
+
+This lets you point an **AI agent or third-party integration at a shared account** without handing it every chat. Give the agent a key scoped to the few groups (or DMs) it is meant to handle: it can send and reply there, but it cannot list your other chats, read any other DM, message a contact outside its set, or reach the queue dashboard. It reads its chats through `GET /sessions/{sessionId}/messages/{chatId}/history`, which works on whatsapp-web.js only; on Baileys it sees just each chat's last-message preview. It receives no pushed events, so it has to poll. It can still read the session's own status (`GET /sessions/{sessionId}`) so an integration can tell whether it is connected.
+
+Identity is matched through the lid mapping table: a contact allowlisted by phone number also matches the same person's `@lid` privacy id once the table maps the two, and an unmapped `@lid` is refused rather than guessed. A lid's digits are never mistaken for a phone number, so `555000111@lid` does not admit `555000111@c.us`.
+
+The default covers REST routes only. Surfaces that authenticate outside the REST guard do not inherit it, so each one that can return chat data refuses a chat-scoped key with its own check: the `/events` WebSocket, the MCP mount (per tool call), and the Bull Board queue dashboard. Of the list routes, only `GET /sessions/{sessionId}/chats` is usable, and it filters to the key's chats before paging.
+
+The API also accepts `allowedChats` on an admin key, but no admin-only route is open to a chat-scoped key, and the last usable admin key cannot be scoped this way.
+
+None of this changes the ban-risk guidance below. It limits what a _key_ can reach, not what WhatsApp makes of the account.
 
 ---
 
@@ -135,6 +154,7 @@ For any deployment where ethical, legal, or regulatory compliance matters (healt
 | Proxy Support       | ✅     | Per-session proxy configuration                                                                                                                                              |
 | Rate Limiting       | ✅     | Configurable request limits                                                                                                                                                  |
 | CIDR Whitelisting   | ✅     | IP-based access control                                                                                                                                                      |
+| Chat Scoping        | ✅     | Per-key `allowedChats` allowlist (groups and contacts): a key reaches only those chats, and routes not marked safe for it refuse it                                          |
 | Audit Logging       | ✅     | Audit trail for API-key, session, integration-instance, and infra admin operations (message sends and webhook deliveries are tracked in their own tables, not the audit log) |
 
 ### Infrastructure

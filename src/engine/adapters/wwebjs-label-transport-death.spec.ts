@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import type { Client } from 'whatsapp-web.js';
 import { WwebjsLabels } from './wwebjs-labels';
 import { createLogger } from '../../common/services/logger.service';
@@ -20,8 +21,11 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
       op === name ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue([]);
     const chat = { getLabels: rejects('getChatLabels') };
     const client = {
-      getLabels: rejects('getLabels'),
-      getLabelById: op === 'getLabelById' ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue(null),
+      // getLabelById reads the full list: Client.getLabelById throws page-side for an unknown id.
+      getLabels:
+        op === 'getLabels' || op === 'getLabelById'
+          ? jest.fn().mockRejectedValue(reject)
+          : jest.fn().mockResolvedValue([]),
       getChatById: jest.fn().mockResolvedValue(chat),
       addOrRemoveLabels:
         op === 'changeChatLabel' ? jest.fn().mockRejectedValue(reject) : jest.fn().mockResolvedValue(undefined),
@@ -71,5 +75,47 @@ describe('label operations distinguish a dead page from an ordinary failure', ()
     const { labels } = makeLabels('changeChatLabel', new Error('[LT01] Only Whatsapp business'));
 
     await expect(labels.addLabelToChat('628123@c.us', '7')).rejects.toThrow(/business/i);
+  });
+
+  // Client.getLabelById never resolves null for an unknown id (its page code serializes undefined),
+  // so the adapter picks from the list; a missing id, or any id on a personal account, is null (404).
+  it('getLabelById resolves a listed label and null for an unknown one', async () => {
+    const client = { getLabels: jest.fn().mockResolvedValue([{ id: '5', name: 'Paid', hexColor: '#25D366' }]) };
+    const host = {
+      ensureReady: jest.fn(),
+      getClient: () => client as unknown as Client,
+      isPageTransportError: () => false,
+      reportIfPageTransportError: jest.fn(),
+      logger,
+    } as unknown as WwebjsEngineHost;
+    const labels = new WwebjsLabels(host);
+
+    await expect(labels.getLabelById('5')).resolves.toEqual({ id: '5', name: 'Paid', hexColor: '#25D366' });
+    await expect(labels.getLabelById('999')).resolves.toBeNull();
+    client.getLabels.mockResolvedValue([]);
+    await expect(labels.getLabelById('5')).resolves.toBeNull();
+  });
+
+  // Client.getChatById resolves undefined for a chat the page cannot resolve; dereferencing it was a
+  // TypeError, a 500 on GET and on both chat-label writes that read the current set first. The read
+  // answers an empty set, but a write must not: upstream resolves it as a silent no-op.
+  it('reads an unresolved chat as unlabelled and refuses to write to it', async () => {
+    const client = {
+      getChatById: jest.fn().mockResolvedValue(undefined),
+      addOrRemoveLabels: jest.fn().mockResolvedValue(undefined),
+    };
+    const host = {
+      ensureReady: jest.fn(),
+      getClient: () => client as unknown as Client,
+      isPageTransportError: () => false,
+      reportIfPageTransportError: jest.fn(),
+      logger,
+    } as unknown as WwebjsEngineHost;
+    const labels = new WwebjsLabels(host);
+
+    await expect(labels.getChatLabels('628999@c.us')).resolves.toEqual([]);
+    await expect(labels.addLabelToChat('628999@c.us', '7')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(labels.removeLabelFromChat('628999@c.us', '7')).rejects.toBeInstanceOf(NotFoundException);
+    expect(client.addOrRemoveLabels).not.toHaveBeenCalled();
   });
 });

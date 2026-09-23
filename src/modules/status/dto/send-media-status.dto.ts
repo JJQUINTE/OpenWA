@@ -12,6 +12,8 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsMediaUrl } from '../../../common/media/media-url';
+import { stripBase64DataUri } from '../../message/media-cap.util';
 
 class StatusMediaInput {
   @ApiPropertyOptional({
@@ -21,6 +23,9 @@ class StatusMediaInput {
   @ValidateIf((media: StatusMediaInput) => media.base64 === undefined || media.url !== undefined)
   @IsString()
   @IsNotEmpty()
+  // base64 wins when both are sent, so a url next to it is not fetched and not checked; a base64 that is
+  // only a data-URI prefix strips to nothing, and then the url is what gets sent.
+  @IsMediaUrl<StatusMediaInput>({ ignoreWhen: media => !!stripBase64DataUri(media.base64) })
   url?: string;
 
   @ApiPropertyOptional({

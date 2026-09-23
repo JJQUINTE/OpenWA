@@ -54,6 +54,13 @@ export async function invokeTool(
     if (tool.requiredRole && !authService.hasPermission(apiKey, tool.requiredRole)) {
       throw new ForbiddenException('API key lacks the required role');
     }
+
+    // A chat-restricted key cannot be filtered on the tool surface yet (chat-scoped tool arguments
+    // are handled in the follow-up slice), so refuse it outright rather than let a tool act on any
+    // chat. Mirrors the REST guard's default-deny for unmarked routes.
+    if ((apiKey.allowedChats?.length ?? 0) > 0) {
+      throw new ForbiddenException('API key is restricted to selected chats');
+    }
   } catch (error) {
     // auditMcpAuthFailure (the only current caller hook) filters to 401/403, so the BadRequestException
     // for a missing sessionId above is NOT audited (parity with the REST guard, which skips 400s).

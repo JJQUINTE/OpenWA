@@ -487,7 +487,7 @@ WEBHOOK_TIMEOUT=10000
 WEBHOOK_RETRY_DELAY=5000
 WEBHOOK_DISPATCH_CONCURRENCY=16
 WEBHOOK_DISPATCH_MAX_QUEUED=1000
-# Retry attempts are configured per webhook with the retryCount API field (default 3, range 0-5).
+# Delivery attempts (total, including the first) are set per webhook with the retryCount API field (default 3, range 0-5).
 
 # ===========================================
 # RATE LIMITING

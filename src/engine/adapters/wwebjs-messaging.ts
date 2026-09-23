@@ -83,8 +83,9 @@ export function isHttpUrl(value: string): boolean {
  * existing MIME-detection behavior.
  */
 export async function loadRemoteMedia(url: string, sessionProxyUrl: string | undefined): Promise<MessageMedia> {
-  // Fetch through the SSRF-pinned path: it validates the host, pins the connection to the vetted IP
-  // (so a DNS rebind can't redirect it to an internal target between check and connect), caps bytes,
+  // Fetch through the SSRF-guarded path: it validates the host, pins a direct or SOCKS connection to
+  // the vetted IP (so a DNS rebind can't redirect it to an internal target between check and connect;
+  // an HTTP/HTTPS session proxy resolves the name itself, so nothing is pinned there), caps bytes,
   // and refuses redirects. We then build the MessageMedia from the returned bytes — NOT via
   // MessageMedia.fromUrl, whose bundled node-fetch performs its own unpinned DNS re-resolution.
   // `sessionProxyUrl` routes the fetch through this session's egress proxy (#1626); the browser's
@@ -95,9 +96,10 @@ export async function loadRemoteMedia(url: string, sessionProxyUrl: string | und
 }
 
 /**
- * True when a send error is whatsapp-web.js's "recipient needs a LID we don't have" failure, raised
- * when sending to a `@c.us` for a contact WhatsApp has migrated to `@lid`.
- * Matched on the wwjs error text — there is no structured code; revisit if wwjs changes it.
+ * True when a send error is WhatsApp Web's "recipient needs a LID we don't have" failure, a bare
+ * Error its own bundle raises when sending to a `@c.us` for a contact WhatsApp has migrated to
+ * `@lid`. Matched on WhatsApp Web's error text — there is no structured code; revisit if WhatsApp
+ * Web changes it.
  */
 export function isNoLidForUserError(err: unknown): boolean {
   return err instanceof Error && err.message.includes('No LID for user');
@@ -541,6 +543,9 @@ export class WwebjsMessaging {
     try {
       // Find the message to quote
       const chat = await this.client().getChatById(chatId);
+      if (!chat) {
+        throw new MessageNotFoundError(quotedMsgId, chatId);
+      }
       const messages = await chat.fetchMessages({ limit: 100 });
       const quotedMsg = messages.find(m => m.id._serialized === quotedMsgId);
 
@@ -569,6 +574,9 @@ export class WwebjsMessaging {
     this.host.ensureReady();
     try {
       const chat = await this.client().getChatById(fromChatId);
+      if (!chat) {
+        throw new MessageNotFoundError(messageId, fromChatId);
+      }
       const messages = await chat.fetchMessages({ limit: 100 });
       const msgToForward = messages.find(m => m.id._serialized === messageId);
 

@@ -81,6 +81,27 @@ describe('BullBoardAuthMiddleware', () => {
     expect((forwarded as ForbiddenException).message).toContain('restricted');
   });
 
+  it('rejects an ADMIN key that is restricted to specific chats', async () => {
+    authService.validateApiKey.mockResolvedValue({
+      id: 'key-chat',
+      name: 'chat-scoped-admin',
+      role: ApiKeyRole.ADMIN,
+      allowedSessions: null,
+      allowedChats: ['123@g.us'],
+    });
+    authService.hasPermission.mockReturnValue(true);
+
+    const req = reqWith({ 'x-api-key': 'raw-key' });
+    const next = jest.fn();
+
+    await mw.use(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const forwarded = (next.mock.calls as Array<Array<unknown>>)[0]?.[0];
+    expect(forwarded).toBeInstanceOf(ForbiddenException);
+    expect((forwarded as ForbiddenException).message).toContain('restricted to selected chats');
+  });
+
   it('admits an ADMIN key with an empty allowedSessions list', async () => {
     authService.validateApiKey.mockResolvedValue({
       id: 'key-2',
@@ -212,6 +233,23 @@ describe('BullBoardAuthMiddleware pre-auth IP throttle (mirrors MCP createIpThro
     await mw.use(reqFromIp('203.0.113.9', headers), res, otherNext);
     expect(otherNext).toHaveBeenCalledWith(); // allowed
     expect(authService.validateApiKey).toHaveBeenCalledWith('admin', '203.0.113.9');
+  });
+
+  it('buckets an IPv6 client on its /64 but validates the key against the full address', async () => {
+    const mw = adminMw(1);
+    const headers = { 'x-api-key': 'admin' };
+    const first = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:2::a', headers), res, first);
+    expect(first).toHaveBeenCalledWith();
+    expect(authService.validateApiKey).toHaveBeenCalledWith('admin', '2001:db8:1:2::a');
+
+    const sameSubnet = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:2::b', headers), res, sameSubnet);
+    expect((firstNextArg(sameSubnet) as HttpException).getStatus()).toBe(429);
+
+    const otherSubnet = jest.fn();
+    await mw.use(reqFromIp('2001:db8:1:3::a', headers), res, otherSubnet);
+    expect(otherSubnet).toHaveBeenCalledWith();
   });
 
   it('a missing key still consumes a throttle slot (pre-auth gate fires first)', async () => {

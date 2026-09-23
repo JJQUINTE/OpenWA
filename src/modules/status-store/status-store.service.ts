@@ -10,7 +10,7 @@ import { StorageService } from '../../common/storage/storage.service';
 import { sweepOrphanedFiles } from '../../common/storage/orphan-sweep';
 import { isUniqueViolation } from '../../common/utils/db-errors';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
-import { userPart } from '../../engine/identity/wa-id';
+import { parseWaId, userPart } from '../../engine/identity/wa-id';
 import { createLogger } from '../../common/services/logger.service';
 
 /** A status/story lives for 24h from posting, matching WhatsApp's own expiry. Exported for the
@@ -243,13 +243,20 @@ export class StatusStoreService implements OnModuleInit, OnModuleDestroy {
     // mid-window) — match every candidate so a resolved-form query doesn't silently miss lid rows.
     const candidates = new Set<string>([contactJid]);
     if (this.lidMappingStore) {
-      const phone = userPart(contactJid);
-      candidates.add(`${phone}@c.us`);
-      // Forward-resolve a @lid query to its phone too, or rows ingested after the mapping was
-      // learned (stored under @c.us) are missed by a consumer querying the raw lid.
-      const resolved = this.lidMappingStore.getCached(phone);
-      if (resolved) candidates.add(`${resolved}@c.us`);
-      for (const lid of this.lidMappingStore.lidsForPhone(phone)) candidates.add(`${lid}@lid`);
+      // parseWaId classifies the input, so an upper-case or hosted.lid input is a lid too.
+      const parsed = parseWaId(contactJid);
+      if (parsed.kind === 'lid') {
+        // A lid's digits are not a phone (the map's keys are raw digits, so a phone could collide
+        // with a lid): add the folded `<lid>@lid` form it is stored under and forward-resolve it, so
+        // rows ingested after the mapping was learned (stored under @c.us) still match.
+        candidates.add(`${parsed.userPart}@lid`);
+        const resolved = await this.lidMappingStore.findPhoneForLid(parsed.userPart);
+        if (resolved) candidates.add(`${resolved}@c.us`);
+      } else {
+        const phone = userPart(contactJid);
+        candidates.add(`${phone}@c.us`);
+        for (const lid of await this.lidMappingStore.findLidsForPhone(phone)) candidates.add(`${lid}@lid`);
+      }
     }
     const rows = await this.repository.find({
       where: { sessionId, contactJid: In([...candidates]), expiresAt: MoreThan(Date.now()) },

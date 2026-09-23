@@ -100,6 +100,7 @@ function resetFetchCalls(): void {
   startFailure = null;
   startGate = null;
   startResult = null;
+  stopFailure = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -124,6 +125,8 @@ let startFailure: { status: number; message: string; leaves?: Partial<Session> }
 // When set, a successful POST .../start answers with the session's row merged with `answer`, and applies
 // `leaves` (by default `answer` itself) to the row the page reads back, instead of answering a stopped row.
 let startResult: { answer: Partial<Session>; leaves?: Partial<Session> } | null = null;
+// When set, POST .../stop answers with this error.
+let stopFailure: { status: number; message: string } | null = null;
 // When set, POST .../start answers, whichever way it answers, only once this settles.
 let startGate: Promise<void> | null = null;
 let sessionProxy = {
@@ -240,6 +243,9 @@ function installFetchStub(): void {
         if (isStart && startFailure) {
           if (found) Object.assign(found, startFailure.leaves);
           return jsonResponse({ message: startFailure.message }, startFailure.status);
+        }
+        if (lifecycleMatch[2] === 'stop' && stopFailure) {
+          return jsonResponse({ message: stopFailure.message }, stopFailure.status);
         }
         if (isStart && startResult) {
           const answered = { ...base, ...startResult.answer };
@@ -1192,4 +1198,19 @@ test('saving without retyping the URL leaves the stored proxy and its credential
     undefined,
     'an untouched form must not write, or it would replace a credentialed URL with nothing',
   );
+});
+
+test('a failed stop is reported instead of only logged', async () => {
+  const { screen, fireEvent, within } = rtl;
+  resetFetchCalls();
+  stopFailure = { status: 409, message: 'Session is busy' };
+  renderSessions();
+
+  const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+  fireEvent.click(within(card).getByRole('button', { name: 'Stop' }));
+
+  const alert = await screen.findByRole('alert');
+  assert.ok(alert.classList.contains('toast-error'), 'the stop failure was not shown as an error toast');
+  within(alert).getByText('Stop Failed');
+  within(alert).getByText('Session is busy');
 });

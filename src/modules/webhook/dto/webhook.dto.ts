@@ -168,7 +168,10 @@ export class CreateWebhookDto {
   filters?: WebhookFilters | null;
 
   @ApiPropertyOptional({
-    description: 'Number of retry attempts on failure',
+    description:
+      'Total delivery attempts per event, including the first (0 and 1 both mean a single attempt with no ' +
+      'retry). An event that exhausts them is recorded in GET /api/webhooks/delivery-failures; the webhook ' +
+      'stays active.',
     example: 3,
     minimum: 0,
     maximum: 5,
@@ -253,7 +256,9 @@ export class UpdateWebhookDto {
   active?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Delivery attempts before the webhook is parked. Same range the create route enforces.',
+    description:
+      'Total delivery attempts per event, including the first (0 and 1 both mean a single attempt). Same ' +
+      'range the create route enforces.',
     example: 3,
     minimum: 0,
     maximum: 5,

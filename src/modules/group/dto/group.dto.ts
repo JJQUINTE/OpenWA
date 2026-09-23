@@ -11,12 +11,13 @@ import {
   IsInt,
   Min,
   IsOptional,
-  IsUrl,
   Matches,
   ValidateIf,
 } from 'class-validator';
 import { ToStrictBoolean, ToStrictNumber } from '../../../common/utils/strict-boolean';
 import type { GroupMemberAddMode } from '../../../engine/interfaces/whatsapp-engine.interface';
+import { IsMediaUrl } from '../../../common/media/media-url';
+import { stripBase64DataUri } from '../../message/media-cap.util';
 
 // Field caps shared with the agent-tool input schemas (src/core/agent-tools/tools/group.tools.ts)
 // so MCP and REST enforce the same limits on the equivalent operations.
@@ -126,8 +127,9 @@ export class JoinGroupDto {
 export class SetGroupPictureDto {
   @ApiPropertyOptional({ description: 'Image URL (http/https)', example: 'https://example.com/group.jpg' })
   @IsOptional()
-  @IsUrl()
-  @ValidateIf((o: SetGroupPictureDto) => !o.base64)
+  // base64 wins when it holds data; a base64 that is only a data-URI prefix strips to nothing, and then
+  // the url is what gets sent, so it is checked.
+  @IsMediaUrl<SetGroupPictureDto>({ ignoreWhen: o => !!stripBase64DataUri(o.base64) })
   url?: string;
 
   @ApiPropertyOptional({ description: 'Base64 encoded image data' })

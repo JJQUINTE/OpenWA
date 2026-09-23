@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOperator, In, Repository } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MessageService, spendInlineMediaBudget } from './message.service';
 import { MessageSendService } from './message-send.service';
@@ -10,7 +10,12 @@ import { MessageProjector } from '../session/message-projector.service';
 import type { IWhatsAppEngine } from '../../engine/interfaces/whatsapp-engine.interface';
 import { HookManager } from '../../core/hooks';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { LidMapping } from '../../engine/identity/lid-mapping.entity';
 import { SendPacingService } from './send-pacing.service';
+
+/** The `In([...])` condition a lid-table fake honours; an absent condition matches every row. */
+const inList = (value: string, cond?: FindOperator<string>): boolean =>
+  cond === undefined || (cond.value as unknown as string[]).includes(value);
 
 /** Pacing is off by default in these tests; the governor's own spec covers its behaviour. */
 const inertPacing = (): SendPacingService =>
@@ -40,7 +45,7 @@ describe('MessageService', () => {
   let engines: EngineRegistry;
   let messageProjector: { recordOutboundMessageEdit: jest.Mock };
   let hookManager: jest.Mocked<Partial<HookManager>>;
-  let lidMappingStore: { lidsForPhone: jest.Mock; getCached: jest.Mock };
+  let lidMappingStore: { findLidsForPhone: jest.Mock; findPhoneForLid: jest.Mock };
   let mockEngine: ReturnType<typeof createMockEngine>;
 
   beforeEach(async () => {
@@ -68,7 +73,10 @@ describe('MessageService', () => {
         .mockImplementation((_event: string, data: unknown) => Promise.resolve({ continue: true, data })),
     };
 
-    lidMappingStore = { lidsForPhone: jest.fn().mockReturnValue([]), getCached: jest.fn().mockReturnValue(undefined) };
+    lidMappingStore = {
+      findLidsForPhone: jest.fn().mockResolvedValue([]),
+      findPhoneForLid: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -315,18 +323,66 @@ describe('MessageService', () => {
     };
 
     it('returns the lid-authored message once the table maps the lid to that phone (the hit)', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue(['111']); // table: lid 111 -> phone 628999
+      lidMappingStore.findLidsForPhone.mockResolvedValue(['111']); // table: lid 111 -> phone 628999
       const qb = makeFilteringQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
       const { messages } = await service.getMessages('sess-1', { from: '628999' });
 
-      expect(lidMappingStore.lidsForPhone).toHaveBeenCalledWith('628999');
+      expect(lidMappingStore.findLidsForPhone).toHaveBeenCalledWith('628999');
+      expect(messages.map(m => m.id).sort()).toEqual(['m-dm', 'm-lid']);
+    });
+
+    it('finds the lid-authored message through a real store whose cache no longer holds the lid', async () => {
+      // The mapping is only in the table: past the preload cap or evicted by the LRU.
+      const table = [{ lid: '111', phone: '628999' }];
+      const store = new LidMappingStoreService({
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
+      } as unknown as Repository<LidMapping>);
+      const qb = makeFilteringQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      const withStore = new MessageService(
+        repository as Repository<Message>,
+        engines,
+        messageProjector as unknown as MessageProjector,
+        hookManager as HookManager,
+        store,
+        inertPacing(),
+        {} as MessageSendService,
+      );
+
+      const { messages } = await withStore.getMessages('sess-1', { from: '628999' });
+
+      expect(store.lidsForPhone('628999')).toEqual([]);
+      expect(messages.map(m => m.id).sort()).toEqual(['m-dm', 'm-lid']);
+    });
+
+    it('finds the phone-form message for a @lid filter through a real store whose cache lacks the lid', async () => {
+      const table = [{ lid: '111', phone: '628999' }];
+      const store = new LidMappingStoreService({
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+      } as unknown as Repository<LidMapping>);
+      const qb = makeFilteringQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      const withStore = new MessageService(
+        repository as Repository<Message>,
+        engines,
+        messageProjector as unknown as MessageProjector,
+        hookManager as HookManager,
+        store,
+        inertPacing(),
+        {} as MessageSendService,
+      );
+
+      const { messages } = await withStore.getMessages('sess-1', { from: '111@lid' });
+
       expect(messages.map(m => m.id).sort()).toEqual(['m-dm', 'm-lid']);
     });
 
     it('misses the lid-authored message when the table has no mapping (the prior silent miss)', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue([]); // unresolved: no lid -> phone row yet
+      lidMappingStore.findLidsForPhone.mockResolvedValue([]); // unresolved: no lid -> phone row yet
       const qb = makeFilteringQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
@@ -346,7 +402,7 @@ describe('MessageService', () => {
       const { messages } = await service.getMessages('sess-1', { from: '628999@hosted' });
 
       expect(messages.map(m => m.id)).toEqual(['m-dm']);
-      expect(lidMappingStore.lidsForPhone).toHaveBeenCalledWith('628999');
+      expect(lidMappingStore.findLidsForPhone).toHaveBeenCalledWith('628999');
       const calls = qb.andWhere.mock.calls as Array<[string, { froms?: string[] }?]>;
       const froms = calls.find(c => c[1]?.froms)?.[1]?.froms;
       expect(froms).toEqual(expect.arrayContaining(['628999@hosted', '628999@c.us', '628999@s.whatsapp.net']));
@@ -395,7 +451,7 @@ describe('MessageService', () => {
     };
 
     it('returns group messages authored by the filtered phone (matched via author, not from)', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue([]);
+      lidMappingStore.findLidsForPhone.mockResolvedValue([]);
       const qb = makeAuthorQb([aliceGroupRow, bobGroupRow, aliceDmRow]);
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
@@ -407,7 +463,7 @@ describe('MessageService', () => {
 
     it('matches a group author stored as a lid once the table maps the lid to the phone', async () => {
       const lidAuthorRow = { id: 'm-grp-lid', from: 'grp@g.us', author: '111@lid', chatId: 'grp@g.us' } as Message;
-      lidMappingStore.lidsForPhone.mockReturnValue(['111']); // table: lid 111 -> phone 628999
+      lidMappingStore.findLidsForPhone.mockResolvedValue(['111']); // table: lid 111 -> phone 628999
       const qb = makeAuthorQb([aliceGroupRow, bobGroupRow, aliceDmRow, lidAuthorRow]);
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
@@ -417,7 +473,7 @@ describe('MessageService', () => {
     });
 
     it('still applies the chatId filter alongside the from/author match', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue([]);
+      lidMappingStore.findLidsForPhone.mockResolvedValue([]);
       const qb = makeAuthorQb([aliceGroupRow, bobGroupRow, aliceDmRow]);
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
@@ -454,6 +510,37 @@ describe('MessageService', () => {
       return { qb, captured };
     };
 
+    it('expands a @lid chatId to the phone the table names, not a stale cached one', async () => {
+      // This node cached lid 111 -> 628999; another node has since re-mapped it to 628777 in the
+      // shared table. The chat fence reads the table, so history must expand to the same phone or a
+      // key allowed only 111@lid would read chat 628999.
+      const table = [{ lid: '111', phone: '628999' }];
+      const store = new LidMappingStoreService({
+        find: ({ where }: { where: { lid?: FindOperator<string>; phone?: FindOperator<string> } }) =>
+          Promise.resolve(table.filter(r => inList(r.lid, where.lid) && inList(r.phone, where.phone))),
+        findOne: ({ where }: { where: { lid: string } }) =>
+          Promise.resolve(table.find(r => r.lid === where.lid) ?? null),
+        upsert: () => Promise.resolve({}),
+      } as unknown as Repository<LidMapping>);
+      await store.remember('111', '628999');
+      table[0].phone = '628777';
+      const { qb, captured } = makeCaptureQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      const withStore = new MessageService(
+        repository as Repository<Message>,
+        engines,
+        messageProjector as unknown as MessageProjector,
+        hookManager as HookManager,
+        store,
+        inertPacing(),
+        {} as MessageSendService,
+      );
+
+      await withStore.getMessages('sess-1', { chatId: '111@lid' });
+
+      expect(captured.chatIds).toEqual(['111@lid', '628777@c.us', '628777@s.whatsapp.net']);
+    });
+
     it('does not expand a group chatId into the user dialects (fail-closed on the literal id)', async () => {
       const { qb, captured } = makeCaptureQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
@@ -462,8 +549,8 @@ describe('MessageService', () => {
 
       // No `120363999@c.us`/`@s.whatsapp.net` and no lid-table probe with the group's digits.
       expect(captured.chatIds).toEqual(['120363999@g.us']);
-      expect(lidMappingStore.lidsForPhone).not.toHaveBeenCalled();
-      expect(lidMappingStore.getCached).not.toHaveBeenCalled();
+      expect(lidMappingStore.findLidsForPhone).not.toHaveBeenCalled();
+      expect(lidMappingStore.findPhoneForLid).not.toHaveBeenCalled();
     });
 
     it('does not expand a status broadcast or newsletter chatId', async () => {
@@ -476,25 +563,25 @@ describe('MessageService', () => {
       await service.getMessages('sess-1', { chatId: '12345@newsletter' });
       expect(captured.chatIds).toEqual(['12345@newsletter']);
 
-      expect(lidMappingStore.lidsForPhone).not.toHaveBeenCalled();
+      expect(lidMappingStore.findLidsForPhone).not.toHaveBeenCalled();
     });
 
     it('forward-resolves a @lid from-filter to its phone instead of minting <lid-digits>@c.us', async () => {
-      lidMappingStore.getCached.mockReturnValue('628999'); // table: lid 111 -> phone 628999
+      lidMappingStore.findPhoneForLid.mockResolvedValue('628999'); // table: lid 111 -> phone 628999
       const { qb, captured } = makeCaptureQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
       await service.getMessages('sess-1', { from: '111@lid' });
 
-      expect(lidMappingStore.getCached).toHaveBeenCalledWith('111');
+      expect(lidMappingStore.findPhoneForLid).toHaveBeenCalledWith('111');
       expect(captured.froms).toEqual(['111@lid', '628999@c.us', '628999@s.whatsapp.net']);
       expect(captured.authorFroms).toEqual(captured.froms); // same candidates drive the author match
       expect(captured.froms).not.toContain('111@c.us'); // the lid's digits are not a phone
-      expect(lidMappingStore.lidsForPhone).not.toHaveBeenCalled();
+      expect(lidMappingStore.findLidsForPhone).not.toHaveBeenCalled();
     });
 
     it('keeps an unresolved @lid filter to the literal id only', async () => {
-      lidMappingStore.getCached.mockReturnValue(null); // known-unresolved
+      lidMappingStore.findPhoneForLid.mockResolvedValue(null); // known-unresolved
       const { qb, captured } = makeCaptureQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
@@ -503,15 +590,28 @@ describe('MessageService', () => {
       expect(captured.froms).toEqual(['111@lid']);
     });
 
+    it('adds the folded <lid>@lid form for an upper-case or hosted lid filter', async () => {
+      lidMappingStore.findPhoneForLid.mockResolvedValue(null);
+      const { qb, captured } = makeCaptureQb();
+      (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.getMessages('sess-1', { from: '111@LID' });
+      expect(captured.froms).toEqual(['111@LID', '111@lid']);
+
+      await service.getMessages('sess-1', { from: '111@hosted.lid' });
+      expect(captured.froms).toEqual(['111@hosted.lid', '111@lid']);
+      expect(lidMappingStore.findPhoneForLid).toHaveBeenCalledWith('111');
+    });
+
     it('keeps the user-dialect expansion for a bare phone filter', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue(['111']);
+      lidMappingStore.findLidsForPhone.mockResolvedValue(['111']);
       const { qb, captured } = makeCaptureQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
       await service.getMessages('sess-1', { from: '628999' });
 
       expect(captured.froms).toEqual(['628999', '628999@c.us', '628999@s.whatsapp.net', '111@lid']);
-      expect(lidMappingStore.lidsForPhone).toHaveBeenCalledWith('628999');
+      expect(lidMappingStore.findLidsForPhone).toHaveBeenCalledWith('628999');
     });
   });
 
@@ -541,7 +641,7 @@ describe('MessageService', () => {
     };
 
     it('returns a @s.whatsapp.net-stored message when filtering by the neutral @c.us chat id', async () => {
-      lidMappingStore.lidsForPhone.mockReturnValue([]);
+      lidMappingStore.findLidsForPhone.mockResolvedValue([]);
       const qb = makeChatQb();
       (repository.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
