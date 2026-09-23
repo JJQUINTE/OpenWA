@@ -4,6 +4,10 @@
  * - bold / italic / strike: container with children (allows nesting)
  * - code: inline `code`; value rendered literally, no link detection
  * - codeblock: ```block```; value rendered literally with newlines preserved
+ * - mention: a resolved "@Name" substitution (see chatMessages.ts#resolveMentions); rendered as
+ *   its own element so Linkify (which walks the rendered tree, not this raw string) never touches
+ *   it — a push name is attacker-controlled text and linkify-react treats a bare word like
+ *   "localhost" as a URL, which character-stripping alone cannot prevent.
  */
 export type MessageNode =
   | { type: 'text'; value: string }
@@ -11,7 +15,8 @@ export type MessageNode =
   | { type: 'italic'; children: MessageNode[] }
   | { type: 'strike'; children: MessageNode[] }
   | { type: 'code'; value: string }
-  | { type: 'codeblock'; value: string };
+  | { type: 'codeblock'; value: string }
+  | { type: 'mention'; value: string };
 
 const FORMATS: Record<string, 'bold' | 'italic' | 'strike'> = {
   '*': 'bold',
@@ -20,6 +25,11 @@ const FORMATS: Record<string, 'bold' | 'italic' | 'strike'> = {
 };
 
 const BOUNDARY_CHAR = /^[\s.,;:!?()[\]{}'"<>]$/;
+
+// Private-use-area delimiters resolveMentions wraps a resolved name in. WhatsApp message text is
+// never PUA, so these can't collide with real content the way a printable marker could.
+export const MENTION_OPEN = '';
+export const MENTION_CLOSE = '';
 
 /**
  * Parse a WhatsApp-formatted text string into a list of MessageNode.
@@ -34,6 +44,10 @@ const BOUNDARY_CHAR = /^[\s.,;:!?()[\]{}'"<>]$/;
  *    segments are emitted iteratively and nesting is depth-capped (MAX_FORMAT_DEPTH), so a
  *    pathological message can't exhaust the call stack; beyond the cap the rest stays literal.
  * 3. Unbalanced or boundary-violating markers fall through as literal text.
+ * 4. Each text leaf is split on the `MENTION_OPEN...MENTION_CLOSE` spans resolveMentions wraps a
+ *    resolved name in (see chatMessages.ts), emitting `mention` nodes. This runs at the leaf, after
+ *    code and format parsing, so a mention inside *bold* keeps the bold; the format scanner steps
+ *    over a span whole, so a `*` in a push name can neither open nor close a span.
  */
 export function parseMessageBody(input: string): MessageNode[] {
   if (input.length === 0) return [];
@@ -136,23 +150,48 @@ function findSingleBacktick(s: string, from: number): number {
 const MAX_FORMAT_DEPTH = 20;
 
 /**
+ * Emit a text leaf, splitting out the `MENTION_OPEN...MENTION_CLOSE` spans resolveMentions wraps a
+ * resolved name in as `mention` nodes. An unterminated marker stays literal text.
+ */
+function pushText(nodes: MessageNode[], value: string): MessageNode[] {
+  let cursor = 0;
+  while (cursor < value.length) {
+    const open = value.indexOf(MENTION_OPEN, cursor);
+    const close = open === -1 ? -1 : value.indexOf(MENTION_CLOSE, open + 1);
+    if (close === -1) {
+      nodes.push({ type: 'text', value: value.slice(cursor) });
+      break;
+    }
+    if (open > cursor) nodes.push({ type: 'text', value: value.slice(cursor, open) });
+    nodes.push({ type: 'mention', value: value.slice(open + 1, close) });
+    cursor = close + 1;
+  }
+  return nodes;
+}
+
+/** Index of the MENTION_CLOSE ending a span that opens at `i`, or -1 when no span opens there. */
+function mentionEnd(input: string, i: number): number {
+  return input[i] === MENTION_OPEN ? input.indexOf(MENTION_CLOSE, i + 1) : -1;
+}
+
+/**
  * Parse a text segment (no code in it) for *bold*, _italic_, ~strike~.
  * Inner content is parsed again (depth-bounded) so *_a_* nests; sibling segments after a
  * formatted span are handled by the loop, not by recursion.
  */
 function parseFormatting(input: string, depth = 0): MessageNode[] {
   if (input.length === 0) return [];
-  if (depth >= MAX_FORMAT_DEPTH) return [{ type: 'text', value: input }];
+  if (depth >= MAX_FORMAT_DEPTH) return pushText([], input);
 
   const nodes: MessageNode[] = [];
   let rest = input;
   while (rest.length > 0) {
     const split = splitFirstFormat(rest);
     if (!split) {
-      nodes.push({ type: 'text', value: rest });
+      pushText(nodes, rest);
       break;
     }
-    if (split.before) nodes.push({ type: 'text', value: split.before });
+    if (split.before) pushText(nodes, split.before);
     nodes.push({ type: split.fmt, children: parseFormatting(split.inner, depth + 1) });
     rest = split.after;
   }
@@ -170,6 +209,11 @@ function splitFirstFormat(
   input: string,
 ): { before: string; fmt: 'bold' | 'italic' | 'strike'; inner: string; after: string } | null {
   for (let i = 0; i < input.length; i++) {
+    const skip = mentionEnd(input, i);
+    if (skip !== -1) {
+      i = skip;
+      continue;
+    }
     const ch = input[i];
     const fmt = FORMATS[ch];
     if (!fmt) continue;
@@ -184,6 +228,11 @@ function splitFirstFormat(
 
     // Find the matching closing marker.
     for (let j = i + 1; j < input.length; j++) {
+      const skipInner = mentionEnd(input, j);
+      if (skipInner !== -1) {
+        j = skipInner;
+        continue;
+      }
       if (input[j] !== ch) continue;
       // Char immediately before closer must NOT be whitespace.
       const beforeCloser = input[j - 1];

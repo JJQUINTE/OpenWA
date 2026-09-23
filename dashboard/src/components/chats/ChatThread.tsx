@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, CornerUpLeft, Loader2, MessageSquare, Smile, Trash2 } from 'lucide-react';
 import { useRole } from '../../hooks/useRole';
 import { sessionApi, type Chat } from '../../services/api';
-import { getMediaSrc, senderKey, type ChatMessageView } from '../../utils/chatMessages';
+import {
+  buildMentionNameMap,
+  getMediaSrc,
+  resolveMentions,
+  senderKey,
+  type ChatMessageView,
+} from '../../utils/chatMessages';
 import { shouldFetchOlderMessages } from '../../utils/scrollDecision';
 import MessageBody from './MessageBody';
 
@@ -66,6 +72,11 @@ function ChatThread({
   // Reply, react, delete and prompt taps all need an operator key, like the composer; a viewer
   // would only reach a 403.
   const { canWrite } = useRole();
+
+  // "@<digits>" in a message body only ever means something once resolved against a participant
+  // this thread has already seen post (see buildMentionNameMap) — recomputed only when the message
+  // list itself changes, not per-render.
+  const mentionNames = useMemo(() => buildMentionNameMap(messages), [messages]);
 
   // Media the message list did not inline. The route serves the bytes as an attachment
   // (Content-Disposition), and the list only carries payloads up to
@@ -401,7 +412,10 @@ function ChatThread({
                   {/* Quoted message display */}
                   {msg.metadata?.quotedMessage && (
                     <div className="message-quote-box">
-                      <MessageBody text={msg.metadata.quotedMessage.body} className="quote-body" />
+                      <MessageBody
+                        text={resolveMentions(msg.metadata.quotedMessage.body, mentionNames)}
+                        className="quote-body"
+                      />
                     </div>
                   )}
 
@@ -415,7 +429,9 @@ function ChatThread({
                     msg.body &&
                     (!mediaInfo || msg.body !== mediaInfo.filename) &&
                     msg.type !== 'location' &&
-                    msg.type !== 'call' && <MessageBody text={msg.body} className="message-text" />
+                    msg.type !== 'call' && (
+                      <MessageBody text={resolveMentions(msg.body, mentionNames)} className="message-text" />
+                    )
                   )}
 
                   {/* Inbound business prompt choices; a tap calls POST .../messages/click-button. */}
