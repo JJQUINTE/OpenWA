@@ -126,7 +126,8 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
     const name = blankMentionName(m.chatName) ? '' : m.chatName.trim();
-    if (name && /^\d+$/.test(local) && !map.has(local)) map.set(local, name);
+    // Rows are ascending by time, so the last write is the participant's current push name.
+    if (name && /^\d+$/.test(local)) map.set(local, name);
   }
   return map;
 }
@@ -138,6 +139,14 @@ const HANGUL_FILLER = /ㅤ/g;
 function blankMentionName(name: string): boolean {
   return name.replace(HANGUL_FILLER, '').trim() === '';
 }
+
+// The left boundary is the start of the text, whitespace, opening punctuation, or a format opener
+// (`*_~`), so `*@digits*` resolves into a bold mention the way WhatsApp renders it.
+const MENTION_TOKEN = /(^|[\s([{"'*_~])@(\d{7,})/gu;
+
+// parseMessageBody peels code after this runs, so a mention inside a code span or block is left as
+// digits here: rewriting it would split the span and render its backticks literally.
+const CODE_SEGMENT = /(```[\s\S]*?```|`[^`]*`)/;
 
 /**
  * Replace "@<digits>" mention tokens with "@<FirstName>" wherever the digits match a known
@@ -160,10 +169,19 @@ function blankMentionName(name: string): boolean {
  */
 export function resolveMentions(text: string, names: Map<string, string>): string {
   if (names.size === 0 || !text.includes('@')) return text;
-  return text.replace(/(^|[\s([{"'])@(\d{7,})/gu, (full: string, prefix: string, digits: string) => {
-    const first = names.get(digits)?.split(' ')[0];
-    return first ? `${prefix}${MENTION_OPEN}@${first}${MENTION_CLOSE}` : full;
-  });
+  return text
+    .split(CODE_SEGMENT)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part.replace(MENTION_TOKEN, (full: string, prefix: string, digits: string) => {
+            // `^` only counts at the start of the whole text, not right after a closing backtick.
+            if (i > 0 && prefix === '') return full;
+            const first = names.get(digits)?.split(' ')[0];
+            return first ? `${prefix}${MENTION_OPEN}@${first}${MENTION_CLOSE}` : full;
+          }),
+    )
+    .join('');
 }
 
 // ChatMessageView extends ChatMessage with the view-only fields the chat page renders.

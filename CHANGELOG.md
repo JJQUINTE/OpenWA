@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The dashboard Chats thread renders an `@<digits>` mention as `@FirstName` when that participant has posted in the loaded thread and their id matches the digits in the body. This covers whatsapp-web.js, where the author id and the mention carry the same digits. On Baileys the author is normalized to the phone number when the lid mapping is known while the body keeps the lid digits, so those mentions stay as WhatsApp sent them, as does any mention of someone who has not posted. The resolved name renders inside its own `<bdi>` element, outside Linkify's `ignoreTags`-respected walk, so a push name can never become a clickable link, however it's spelled. Thanks @TanmayChachra.
+
 ## [0.23.6] - 2026-09-23
 
 ### Added
@@ -37,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The dashboard Chats thread renders an `@<digits>` mention as `@FirstName` when that participant has posted in the loaded thread and their id matches the digits in the body. This covers whatsapp-web.js, where the author id and the mention carry the same digits. On Baileys the author is normalized to the phone number when the lid mapping is known while the body keeps the lid digits, so those mentions stay as WhatsApp sent them, as does any mention of someone who has not posted. The resolved name renders inside its own `<bdi>` element, outside Linkify's `ignoreTags`-respected walk, so a push name can never become a clickable link, however it's spelled. Thanks @TanmayChachra.
 - The dashboard Chats page drops a staged reply when another chat or session is opened, so a text send there no longer fails with `404` and a media send no longer quotes the previous chat's message.
 - whatsapp-web.js chat history resolves each message's sender through `getContact()`, as the live `message` handler already does, so a group participant outside the account's contacts gets a sender label in history too. Thanks @TanmayChachra.
 - A WebSocket client that emits without an ack callback now receives command replies at all. The gateway answered by returning a frame, which Socket.IO delivers through the ack callback and nowhere else, so a client written to the documented `message` event saw no subscribe confirmation, no pong, and none of the refusals, including the session-scope denial. Replies now go out on `message` as well as through the ack.

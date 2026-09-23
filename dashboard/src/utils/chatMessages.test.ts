@@ -509,6 +509,7 @@ test('resolveMentions needs a left boundary: start of text, whitespace, or openi
   assert.equal(resolveMentions('(@12345678)', names), `(${wrap('@Ravi')})`);
   assert.equal(resolveMentions('[@12345678]', names), `[${wrap('@Ravi')}]`);
   assert.equal(resolveMentions('"@12345678"', names), `"${wrap('@Ravi')}"`);
+  assert.equal(resolveMentions('*@12345678*', names), `*${wrap('@Ravi')}*`);
 });
 
 test('resolveMentions does not fire inside an email address', () => {
@@ -559,4 +560,24 @@ test('a later usable name for the same participant is still picked up after a bl
     msg({ author: '6281112345@c.us', chatName: 'Ravi Kumar' }),
   ]);
   assert.equal(resolveMentions('@6281112345', names), wrap('@Ravi'));
+});
+
+test('a participant who changed their push name mid-thread resolves to the newest one, not the oldest', () => {
+  const names = buildMentionNameMap([
+    msg({ author: '6281112345@c.us', chatName: 'Ravi Kumar' }),
+    msg({ author: '6281112345@c.us', chatName: 'RK Office' }),
+    msg({ author: '6281112345@c.us', chatName: ' ' }),
+  ]);
+  assert.equal(resolveMentions('@6281112345', names), wrap('@RK'));
+});
+
+test('resolveMentions leaves a mention inside a ``` code block alone, so the block still renders as code', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('```\n@12345678\n```', names), '```\n@12345678\n```');
+  assert.equal(resolveMentions('see `x` @12345678', names), `see \`x\` ${wrap('@Ravi')}`);
+});
+
+test('resolveMentions does not fire right after a closing backtick', () => {
+  const names = buildMentionNameMap([msg({ author: '12345678@c.us', chatName: 'Ravi' })]);
+  assert.equal(resolveMentions('`x`@12345678', names), '`x`@12345678');
 });

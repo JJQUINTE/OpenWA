@@ -128,3 +128,21 @@ test('two mentions in one message each become their own node', () => {
     { type: 'mention', value: '@Sam' },
   ]);
 });
+
+test('a mention inside *bold* keeps the bold: the split happens at the text leaf, after format parsing', () => {
+  assert.deepEqual(parseMessageBody(`*Reminder ${wrap('@Ravi')} at 10*`), [
+    { type: 'bold', children: [text('Reminder '), { type: 'mention', value: '@Ravi' }, text(' at 10')] },
+  ]);
+});
+
+test('a format marker inside a mention name neither opens nor closes a span around it', () => {
+  assert.deepEqual(parseMessageBody(`*a ${wrap('@*x*')} b*`), [
+    { type: 'bold', children: [text('a '), { type: 'mention', value: '@*x*' }, text(' b')] },
+  ]);
+});
+
+test('a mention that fills a *bold* span on its own resolves and keeps the bold', () => {
+  assert.deepEqual(parseMessageBody(`*${wrap('@Ravi')}*`), [
+    { type: 'bold', children: [{ type: 'mention', value: '@Ravi' }] },
+  ]);
+});
