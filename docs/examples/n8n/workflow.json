@@ -18,14 +18,8 @@
         "method": "POST",
         "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "content",
-              "value": "=*New WhatsApp Message*\n**From:** `{{ $json.body.data.author || $json.body.data.from }}`\n**Message:** {{ $json.body.data.body }}"
-            }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: '*New WhatsApp Message*\\n**From:** `' + ($json.body.data.author || $json.body.data.from) + '`\\n**Message:** ' + ($json.body.data.body || ''), allowed_mentions: { parse: [] } }) }}",
         "options": {}
       },
       "name": "Post to Discord",
