@@ -75,9 +75,9 @@ export class SessionController {
   ) {}
 
   private transformSession(session: Session): SessionResponseDto {
-    // isActive() is the engine map itself, so this is read at response time — a session that just
+    // engineLoaded() reads the engine map itself, so this is read at response time: a session that just
     // finished reconnecting reports the engine in the same response that reports its status.
-    return SessionResponseDto.fromEntity(session, this.sessionService.isActive(session.id));
+    return SessionResponseDto.fromEntity(session, this.sessionService.engineLoaded(session));
   }
 
   @Post()

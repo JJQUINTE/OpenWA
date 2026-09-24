@@ -926,6 +926,16 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   }
 
   /**
+   * The response's `engineLoaded`: an engine in this process, or a live claim by a peer node. A list
+   * is answered by whichever node the request landed on, while the lifecycle routes are forwarded to
+   * the owner, so a session a peer runs must not read as stopped. The local precondition checks keep
+   * using {@link isActive}.
+   */
+  engineLoaded(session: Session): boolean {
+    return this.isActive(session.id) || !!this.ownership?.heldByOtherLiveNode(session);
+  }
+
+  /**
    * Ids of every session with a live engine — including ones mid-initialization (their engine is not
    * in `engines` yet but will register when start() completes). The infra import pre-flight uses this
    * to refuse a full-replace restore that would orphan a running engine.

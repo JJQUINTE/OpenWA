@@ -2025,7 +2025,7 @@ describe('SessionService', () => {
         i.reconnectStates.set('sess-uuid-1', state);
         const exec = jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
-        // Twelve consecutive failed attempts (each timer fires, and its failure schedules the next) —
+        // Twelve consecutive failed attempts (each timer fires, and its failure schedules the next):
         // the pre-fix default (5) would have wedged FAILED at the 6th; with the unlimited default
         // every one schedules another attempt.
         for (let k = 0; k < 12; k++) {
@@ -2405,7 +2405,7 @@ describe('SessionService', () => {
         i.reconnectStates.set('sess-uuid-1', { attempts: 0, timer: null, maxAttempts: 5, baseDelay: 5000 });
 
         // Two disconnect events in a row each schedule a reconnect. The second must leave the first
-        // timer as the only one pending — otherwise both fire and double-init the engine.
+        // timer as the only one pending; otherwise both fire and double-init the engine.
         i.scheduleReconnect('sess-uuid-1', createMockSession());
         i.scheduleReconnect('sess-uuid-1', createMockSession());
 
@@ -7220,6 +7220,41 @@ describe('SessionService', () => {
       await service.start('sess-uuid-1');
 
       expect(service.isActive('sess-uuid-1')).toBe(true);
+    });
+  });
+
+  // A list or stats read is answered by whichever node the load balancer picked, while the lifecycle
+  // routes are forwarded to the owner: a session a live peer runs is loaded as far as a client can act.
+  describe('engineLoaded', () => {
+    const withOwnership = (): void => {
+      const ownership = new SessionOwnershipService(
+        {} as Repository<Session>,
+        {
+          get: (key: string) => ({ 'session.nodeId': 'node-a' })[key],
+        } as unknown as ConfigService,
+      );
+      Object.assign(service as unknown as Record<string, unknown>, { ownership });
+    };
+    const live = new Date(Date.now() + 60_000);
+
+    it('is true for a session a peer node holds on a live lease, with no engine here', () => {
+      withOwnership();
+      const row = createMockSession({ nodeId: 'node-b', leaseExpiresAt: live });
+      expect(service.isActive(row.id)).toBe(false);
+      expect(service.engineLoaded(row)).toBe(true);
+    });
+
+    it('is false for a lapsed peer claim, and for this node’s own claim without an engine', () => {
+      withOwnership();
+      expect(service.engineLoaded(createMockSession({ nodeId: 'node-b', leaseExpiresAt: new Date(0) }))).toBe(false);
+      expect(service.engineLoaded(createMockSession({ nodeId: 'node-a', leaseExpiresAt: live }))).toBe(false);
+    });
+
+    it('is true for this process’s own engine', async () => {
+      (repository.findOne as jest.Mock).mockResolvedValue(createMockSession());
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      await service.start('sess-uuid-1');
+      expect(service.engineLoaded(createMockSession())).toBe(true);
     });
   });
 

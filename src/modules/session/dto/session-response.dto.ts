@@ -93,7 +93,8 @@ export class SessionResponseDto {
       'session keeps its engine for the duration of an automatic reconnect backoff, while a session ' +
       'stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. When `true`, ' +
       '`stop`, `logout` and `force-kill` can act and `start` answers 400; when `false`, the reverse. ' +
-      'Derived per request from live process state, so it is never persisted and never historical.',
+      'Derived per request from live state, so it is never persisted and never historical: an engine in ' +
+      'the answering process or, in a multi-node deployment, a live claim by the node running the session.',
     example: true,
   })
   engineLoaded!: boolean;
@@ -103,7 +104,7 @@ export class SessionResponseDto {
    * engine config fields (`config`, `proxyUrl`, `proxyType`) that must not
    * appear in any API response.
    *
-   * `engineLoaded` is not on the entity — it is live process state owned by the session service, so
+   * `engineLoaded` is not on the entity — it is live state owned by the session service, so
    * every caller must pass it in rather than letting it default. A required parameter is deliberate:
    * a default of `false` would silently tell clients "no engine" for whole surfaces (the MCP tools,
    * any future caller) and the dashboard would then offer Start to a running session.

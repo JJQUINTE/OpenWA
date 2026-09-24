@@ -34,14 +34,17 @@ describe('SessionController — create() response contract', () => {
     updatedAt: new Date('2026-01-01T00:00:00Z'),
   };
 
-  let sessionService: { create: jest.Mock; isActive: jest.Mock };
+  let sessionService: { create: jest.Mock; engineLoaded: jest.Mock };
   let auditService: { logInfo: jest.Mock };
   let controller: SessionController;
 
   beforeEach(() => {
     // transformSession reads live engine state for `engineLoaded`; a freshly created session has no
     // engine yet, which is what the response must say.
-    sessionService = { create: jest.fn().mockResolvedValue({ ...entity }), isActive: jest.fn().mockReturnValue(false) };
+    sessionService = {
+      create: jest.fn().mockResolvedValue({ ...entity }),
+      engineLoaded: jest.fn().mockReturnValue(false),
+    };
     auditService = { logInfo: jest.fn().mockResolvedValue(undefined) };
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
@@ -77,15 +80,15 @@ describe('SessionController — create() response contract', () => {
     });
   });
 
-  // engineLoaded is live process state, not an entity column, so the only thing that can get it wrong
+  // engineLoaded is live state, not an entity column, so the only thing that can get it wrong
   // is the wiring. Assert both answers come from the service rather than from the row's status.
   it('reports engineLoaded from the live engine map, not from the row status', async () => {
-    sessionService.isActive.mockReturnValue(true);
+    sessionService.engineLoaded.mockReturnValue(true);
 
     const result = await controller.create({ name: 'test-session' });
 
     expect(result.engineLoaded).toBe(true);
-    expect(sessionService.isActive).toHaveBeenCalledWith(entity.id);
+    expect(sessionService.engineLoaded).toHaveBeenCalledWith(expect.objectContaining({ id: entity.id }));
   });
 
   it('still audits the creation with the session id and name', async () => {
@@ -121,12 +124,12 @@ describe('SessionController — logout() audit + error forwarding contract', () 
     updatedAt: new Date('2026-01-01T00:00:00Z'),
   };
 
-  let sessionService: { logout: jest.Mock; isActive: jest.Mock };
+  let sessionService: { logout: jest.Mock; engineLoaded: jest.Mock };
   let auditService: { logInfo: jest.Mock };
   let controller: SessionController;
 
   beforeEach(() => {
-    sessionService = { logout: jest.fn(), isActive: jest.fn().mockReturnValue(false) };
+    sessionService = { logout: jest.fn(), engineLoaded: jest.fn().mockReturnValue(false) };
     auditService = { logInfo: jest.fn().mockResolvedValue(undefined) };
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
@@ -186,7 +189,7 @@ describe('SessionController — start/stop lifecycle', () => {
     updatedAt: new Date('2026-01-01T01:00:00Z'),
   };
 
-  let sessionService: { start: jest.Mock; stop: jest.Mock; forceKill: jest.Mock; isActive: jest.Mock };
+  let sessionService: { start: jest.Mock; stop: jest.Mock; forceKill: jest.Mock; engineLoaded: jest.Mock };
   let auditService: { logInfo: jest.Mock };
   let controller: SessionController;
 
@@ -195,7 +198,7 @@ describe('SessionController — start/stop lifecycle', () => {
       start: jest.fn(),
       stop: jest.fn(),
       forceKill: jest.fn(),
-      isActive: jest.fn().mockReturnValue(false),
+      engineLoaded: jest.fn().mockReturnValue(false),
     };
     auditService = { logInfo: jest.fn().mockResolvedValue(undefined) };
     controller = new SessionControllerClass(
@@ -207,13 +210,13 @@ describe('SessionController — start/stop lifecycle', () => {
 
   it('start returns the session with engineLoaded read from the live engine map', async () => {
     sessionService.start.mockResolvedValue({ ...runningEntity });
-    sessionService.isActive.mockReturnValue(true);
+    sessionService.engineLoaded.mockReturnValue(true);
 
     const result = await controller.start('sess-uuid-1');
 
     expect(result.status).toBe(SessionStatus.READY);
     expect(result.engineLoaded).toBe(true);
-    expect(sessionService.isActive).toHaveBeenCalledWith('sess-uuid-1');
+    expect(sessionService.engineLoaded).toHaveBeenCalledWith(expect.objectContaining({ id: 'sess-uuid-1' }));
   });
 
   it('start audits SESSION_STARTED once the service has resolved', async () => {
@@ -312,11 +315,11 @@ describe('SessionController — muteChat', () => {
 
 describe('SessionController findAll name filter', () => {
   const apiKey = { allowedSessions: ['sess-uuid-1'] } as unknown as ApiKey;
-  let sessionService: { findAll: jest.Mock; isActive: jest.Mock };
+  let sessionService: { findAll: jest.Mock; engineLoaded: jest.Mock };
   let controller: SessionController;
 
   beforeEach(() => {
-    sessionService = { findAll: jest.fn().mockResolvedValue([]), isActive: jest.fn().mockReturnValue(false) };
+    sessionService = { findAll: jest.fn().mockResolvedValue([]), engineLoaded: jest.fn().mockReturnValue(false) };
     controller = new SessionControllerClass(
       sessionService as unknown as SessionService,
       { logInfo: jest.fn() } as unknown as AuditService,
