@@ -5,6 +5,7 @@ import { BaileysMessaging } from './baileys-messaging';
 import { BaileysMessageStoreService } from './baileys-message-store.service';
 import { BaileysStoredMessage } from './baileys-stored-message.entity';
 import { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
+import { MessageNotFoundError } from '../../common/errors/message-not-found.error';
 import { createLogger } from '../../common/services/logger.service';
 import { Session, SessionStatus } from '../../modules/session/entities/session.entity';
 import type { IncomingMessage } from '../interfaces/whatsapp-engine.interface';
@@ -14,6 +15,12 @@ const inbound = (id: string): WAMessage => ({
   key: { id, remoteJid: CHAT, fromMe: false },
   messageTimestamp: 1_700_000_000,
   message: { conversation: 'hi' },
+});
+
+const photo = (id: string): WAMessage => ({
+  key: { id, remoteJid: CHAT, fromMe: false },
+  messageTimestamp: 1_700_000_000,
+  message: { imageMessage: { mimetype: 'image/jpeg', caption: 'about to be deleted' } },
 });
 
 /**
@@ -26,6 +33,9 @@ describe('quoting a Baileys message the moment it is announced', () => {
   let repo: Repository<BaileysStoredMessage>;
   let store: BaileysMessageStoreService;
   let release: () => void;
+  let upsert: jest.SpyInstance;
+  /** One release per media download started, in call order: each download is held until released. */
+  let downloads: Array<() => void>;
   const ticks = async (): Promise<void> => {
     for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
   };
@@ -40,13 +50,14 @@ describe('quoting a Baileys message the moment it is announced', () => {
     await ds.initialize();
     repo = ds.getRepository(BaileysStoredMessage);
     store = new BaileysMessageStoreService(repo);
+    downloads = [];
     await ds
       .getRepository(Session)
       .save(ds.getRepository(Session).create({ id: 's1', name: 's1', status: SessionStatus.READY, config: {} }));
     // Hold the first upsert: the database round trip the consumer lands inside.
     const gate = new Promise<void>(resolve => (release = resolve));
     const real = repo.upsert.bind(repo);
-    jest.spyOn(repo, 'upsert').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
+    upsert = jest.spyOn(repo, 'upsert').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
       await gate;
       return real(...args);
     });
@@ -60,6 +71,7 @@ describe('quoting a Baileys message the moment it is announced', () => {
 
   const build = (
     onMessage: (m: IncomingMessage) => void,
+    on: { edited?: () => void; revoked?: () => void } = {},
   ): { events: BaileysEvents; messaging: BaileysMessaging; sock: { sendMessage: jest.Mock } } => {
     const sock = {
       sendMessage: jest
@@ -78,6 +90,17 @@ describe('quoting a Baileys message the moment it is announced', () => {
           normalizeMessageContent: (c: unknown) => c,
           getContentType: (c: Record<string, unknown> | undefined) => Object.keys(c ?? {})[0],
           proto: { Message: { ProtocolMessage: { Type: { REVOKE: 0, MESSAGE_EDIT: 14 } } } },
+          downloadMediaMessage: () =>
+            new Promise(resolve =>
+              downloads.push(() =>
+                resolve({
+                  // eslint-disable-next-line @typescript-eslint/require-await
+                  async *[Symbol.asyncIterator]() {
+                    yield Buffer.from('JPEG');
+                  },
+                }),
+              ),
+            ),
         } as never),
       getFetchDispatcher: () => undefined,
       inboundLimiter: new ConcurrencyLimiter(4),
@@ -86,11 +109,15 @@ describe('quoting a Baileys message the moment it is announced', () => {
       recordMessageEdit: () => undefined,
       putStoredMessage: (m: WAMessage) => store.put('s1', m),
       getStoredMessage: (id: string) => store.getMessage('s1', id),
+      updateStoredMessage: (id: string, change: (stored: WAMessage) => WAMessage | null) =>
+        store.update('s1', id, change),
       consumeOwnSend: () => false,
       rememberOwnSend: () => undefined,
       recordLidMapping: () => undefined,
       getOnMessage: () => onMessage,
       getOnMessageCreate: () => undefined,
+      getOnMessageEdited: () => on.edited,
+      getOnMessageRevoked: () => on.revoked,
       ensureReady: () => undefined,
       sessionProxyUrl: () => undefined,
       getEphemeralExpiration: () => undefined,
@@ -100,9 +127,23 @@ describe('quoting a Baileys message the moment it is announced', () => {
     const messaging = new BaileysMessaging({
       ...host,
       mapMessage: (...a: Parameters<BaileysEvents['mapMessage']>) => events.mapMessage(...a),
+      wasDeletedForEveryone: (id: string) => events.wasDeletedForEveryone(id),
+      markDeletedForEveryone: (id: string) => events.markDeletedForEveryone(id),
     });
     return { events, messaging, sock };
   };
+
+  const change = (protocolMessage: Record<string, unknown>, chat = CHAT): WAMessage => ({
+    key: { id: 'CHANGE', remoteJid: chat, fromMe: false },
+    messageTimestamp: 1_700_000_100,
+    message: { protocolMessage: { key: { id: 'TARGET' }, ...protocolMessage } },
+  });
+
+  /** The content of every row the store was asked to write for `id`, in order. */
+  const writtenContents = (id: string): unknown[] =>
+    (upsert.mock.calls as Array<[{ waMessageId: string; serializedMessage: string }]>)
+      .filter(([row]) => row.waMessageId === id)
+      .map(([row]) => (JSON.parse(row.serializedMessage) as WAMessage).message);
 
   it('lets an onMessage consumer quote the message it was just handed', async () => {
     let reply: Promise<unknown> | undefined;
@@ -128,5 +169,134 @@ describe('quoting a Baileys message the moment it is announced', () => {
     release();
     await ticks();
     expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  describe('an edit or a delete for everyone of a stored message', () => {
+    const stored = async (events: BaileysEvents): Promise<void> => {
+      events.handleMessagesUpsert({ messages: [inbound('TARGET')], type: 'notify' });
+      await ticks();
+      release();
+      await ticks();
+    };
+
+    it('lets a consumer of the edit quote the edited text at once', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging, sock } = build(() => undefined, {
+        edited: () => {
+          reply = messaging.replyToMessage(CHAT, 'TARGET', 'ok');
+        },
+      });
+      await stored(events);
+
+      events.handleMessagesUpsert({
+        messages: [change({ type: 14, editedMessage: { conversation: 'after the edit' } })],
+        type: 'notify',
+      });
+      await ticks();
+
+      await expect(reply).resolves.toMatchObject({ id: 'R1' });
+      const [, , options] = sock.sendMessage.mock.calls[0] as [unknown, unknown, { quoted?: WAMessage }];
+      expect(options.quoted?.message?.conversation).toBe('after the edit');
+    });
+
+    it('refuses a consumer of the delete that quotes the deleted message at once', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging, sock } = build(() => undefined, {
+        revoked: () => {
+          reply = messaging.replyToMessage(CHAT, 'TARGET', 'ok').catch((err: unknown) => err);
+        },
+      });
+      await stored(events);
+
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+
+      expect(await reply).toBeInstanceOf(MessageNotFoundError);
+      expect(sock.sendMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a delete for everyone that arrives while the original is still downloading its media', () => {
+    beforeEach(() => release()); // the held step here is the download, not the store write
+
+    it('keeps the content out of the store and out of a quote of the original announced after it', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging, sock } = build(m => {
+        reply = messaging.replyToMessage(CHAT, m.id, 'ok').catch((err: unknown) => err);
+      });
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+
+      downloads[0]();
+      await ticks();
+
+      expect(await reply).toBeInstanceOf(MessageNotFoundError);
+      expect(sock.sendMessage).not.toHaveBeenCalled();
+      expect(writtenContents('TARGET')).toEqual([null]);
+    });
+
+    it('keeps a repeat delivery that passed the repeat check from restoring the content', async () => {
+      const { events, messaging } = build(() => undefined);
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+      // Nothing is stored yet, so the repeat is not recognised as one and downloads too.
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+
+      downloads[0](); // the first delivery is stored, and the delete lands on top of it
+      await ticks();
+      downloads[1](); // then the repeat is stored
+      await ticks();
+
+      expect((await store.getMessage('s1', 'TARGET'))?.message).toBeNull();
+      expect(writtenContents('TARGET')).toEqual([null, null]);
+      await expect(messaging.forwardMessage(CHAT, '628555@s.whatsapp.net', 'TARGET')).rejects.toBeInstanceOf(
+        MessageNotFoundError,
+      );
+    });
+
+    it('refuses a consumer of the delete while a repeat of the original is already stored', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging, sock } = build(() => undefined, {
+        revoked: () => {
+          reply = messaging.replyToMessage(CHAT, 'TARGET', 'ok').catch((err: unknown) => err);
+        },
+      });
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      downloads[1](); // the repeat is stored with its content; the first delivery still downloads
+      await ticks();
+
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+
+      expect(await reply).toBeInstanceOf(MessageNotFoundError);
+      expect(sock.sendMessage).not.toHaveBeenCalled();
+      downloads[0]();
+      await ticks();
+    });
+
+    it('ignores a delete of the same id sent from another chat', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging } = build(m => {
+        reply = messaging.replyToMessage(CHAT, m.id, 'ok');
+      });
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [change({ type: 0 }, '628999@s.whatsapp.net')], type: 'notify' });
+      await ticks();
+
+      downloads[0]();
+      await ticks();
+
+      await expect(reply).resolves.toMatchObject({ id: 'R1' });
+      expect(writtenContents('TARGET')).toEqual([photo('TARGET').message]);
+    });
   });
 });

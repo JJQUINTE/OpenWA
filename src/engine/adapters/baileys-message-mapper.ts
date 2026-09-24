@@ -166,6 +166,38 @@ export function extractBaileysBody(content: BaileysBodyContent): string {
 }
 
 /**
+ * Write edited text into the slot a message carries its text in, which is where
+ * {@link extractBaileysBody} reads it back: the text itself, or the caption of a photo, video or
+ * document. Everything else the content holds (media keys, thumbnail, link preview) is kept, as
+ * WhatsApp Web keeps it (an edit changes the message's body or caption in place), so the edited
+ * message is still a valid message of its original type when it is quoted or forwarded. Returns
+ * false, changing nothing, when the content has no such slot.
+ * Pass the NORMALIZED content: it is a reference into the message, so the write lands there.
+ */
+export function setBaileysText(
+  content: Pick<
+    BaileysBodyContent,
+    'conversation' | 'extendedTextMessage' | 'imageMessage' | 'videoMessage' | 'documentMessage'
+  >,
+  text: string,
+): boolean {
+  if (typeof content.conversation === 'string') {
+    content.conversation = text;
+    return true;
+  }
+  if (content.extendedTextMessage) {
+    content.extendedTextMessage.text = text;
+    return true;
+  }
+  const media = content.imageMessage ?? content.videoMessage ?? content.documentMessage;
+  if (media) {
+    media.caption = text;
+    return true;
+  }
+  return false;
+}
+
+/**
  * Joins the vCards of a `contactsArrayMessage` into one string, in the order they were shared.
  * Returns `undefined` (not `''`) when there are no vCards to join, so it composes with `??` in
  * {@link extractBaileysBody} the same way every other optional-field lookup there does.

@@ -1699,6 +1699,10 @@ One upstream gap remains on whatsapp-web.js and cannot be switched off from here
 message resolves but the page decides it is not replyable, the message is sent without the quote and
 the call still succeeds.
 
+On Baileys a message deleted for everyone is not found (`404`): the store drops its content, so the
+deleted text or media is never quoted back into the chat. An edited message is quoted with its edited
+text.
+
 Quoting a message from a **different chat** is not validated on these `send-*` routes on either
 engine; the id is passed through as given. `POST /messages/reply` is stricter: both engines refuse a
 quoted id that does not belong to the target chat, with `404`.

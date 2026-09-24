@@ -172,6 +172,7 @@ const fakeStore = {
   getMessage: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
   clearSession: jest.fn().mockResolvedValue(undefined),
+  update: jest.fn().mockResolvedValue(undefined),
 };
 
 // clearAllMocks keeps implementations: a store lookup one test taught to return a message must not
@@ -6772,5 +6773,303 @@ describe('BaileysAdapter voice status', () => {
     await expect(
       adapter.postVoiceStatus({ mimetype: 'audio/ogg; codecs=opus', data: 'QUJD' }, { recipients: [] }),
     ).rejects.toThrow(/recipients is required/);
+  });
+});
+
+describe('BaileysAdapter keeps the message store in step with edits and deletes', () => {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+  const baileys = jest.requireMock('@whiskeysockets/baileys') as {
+    getContentType: jest.Mock;
+    normalizeMessageContent: jest.Mock;
+    downloadMediaMessage: jest.Mock;
+  };
+
+  type StoredShape = { key: Record<string, unknown>; message: Record<string, unknown> | null };
+  const PEER = '628111@s.whatsapp.net';
+  const GROUP = '120363000@g.us';
+
+  beforeEach(() => {
+    fakeSock.user = { id: '628999:1@s.whatsapp.net', name: 'Me' };
+    fakeSock.resetEmitter();
+    jest.clearAllMocks();
+    baileys.getContentType.mockImplementation(realGetContentType);
+    baileys.normalizeMessageContent.mockImplementation((c: unknown) => c);
+    fakeSock.sendMessage.mockResolvedValue({ key: { id: 'ENVELOPE', remoteJid: PEER, fromMe: true } });
+  });
+
+  const settle = () => new Promise(r => setImmediate(r));
+
+  /** The change the adapter handed the store for `id`, applied to `stored`. */
+  const changed = (id: string, stored: StoredShape): StoredShape | null => {
+    const call = (fakeStore.update.mock.calls as Array<[string, string, (m: StoredShape) => StoredShape | null]>).find(
+      c => c[1] === id,
+    );
+    if (!call) throw new Error(`no store update for ${id}`);
+    expect(call[0]).toBe('db-uuid-1');
+    return call[2](structuredClone(stored));
+  };
+
+  const fireProtocol = (key: Record<string, unknown>, protocolMessage: Record<string, unknown>) =>
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [{ key: { id: 'ENVELOPE_IN', ...key }, message: { protocolMessage }, messageTimestamp: 1700000100 }],
+    });
+
+  const loggerOf = (adapter: BaileysAdapter) =>
+    (adapter as unknown as { logger: { warn: (m: string, ctx?: unknown) => void } }).logger;
+
+  const started = async (): Promise<BaileysAdapter> => {
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    return adapter;
+  };
+
+  it('writes an inbound edit into the stored copy, so a later quote carries the new text', async () => {
+    await started();
+    fireProtocol(
+      { remoteJid: PEER, fromMe: false },
+      { key: { id: 'ORIG' }, type: 14, editedMessage: { conversation: 'after the edit' } },
+    );
+    await settle();
+
+    const stored = {
+      key: { remoteJid: PEER, fromMe: false, id: 'ORIG' },
+      message: { extendedTextMessage: { text: 'before the edit', matchedText: 'https://example.com' } },
+    };
+    expect(changed('ORIG', stored)?.message).toEqual({
+      extendedTextMessage: { text: 'after the edit', matchedText: 'https://example.com' },
+    });
+  });
+
+  it('edits only the caption of a stored photo, keeping the media', async () => {
+    await started();
+    fireProtocol(
+      { remoteJid: PEER, fromMe: false },
+      { key: { id: 'PHOTO' }, type: 14, editedMessage: { imageMessage: { caption: 'new caption' } } },
+    );
+    await settle();
+
+    const stored = {
+      key: { remoteJid: PEER, fromMe: false, id: 'PHOTO' },
+      message: { imageMessage: { caption: 'old caption', url: 'https://mmg.example/x', mimetype: 'image/jpeg' } },
+    };
+    expect(changed('PHOTO', stored)?.message).toEqual({
+      imageMessage: { caption: 'new caption', url: 'https://mmg.example/x', mimetype: 'image/jpeg' },
+    });
+  });
+
+  it('ignores an edit from anyone but the author', async () => {
+    await started();
+    fireProtocol(
+      { remoteJid: GROUP, participant: '628222@s.whatsapp.net', fromMe: false },
+      { key: { id: 'THEIRS' }, type: 14, editedMessage: { conversation: 'spoofed' } },
+    );
+    await settle();
+
+    const stored = {
+      key: { remoteJid: GROUP, participant: '628111@s.whatsapp.net', fromMe: false, id: 'THEIRS' },
+      message: { conversation: 'original' },
+    };
+    expect(changed('THEIRS', stored)).toBeNull();
+  });
+
+  it('empties the stored copy of a message deleted for everyone, keeping its key', async () => {
+    await started();
+    fireProtocol({ remoteJid: PEER, fromMe: false }, { key: { id: 'GONE' }, type: 0 });
+    await settle();
+
+    const stored = { key: { remoteJid: PEER, fromMe: false, id: 'GONE' }, message: { conversation: 'secret' } };
+    expect(changed('GONE', stored)).toEqual({ key: stored.key, message: null });
+  });
+
+  it('empties an own message deleted from the phone', async () => {
+    await started();
+    fireProtocol({ remoteJid: PEER, fromMe: true }, { key: { id: 'MINE' }, type: 0 });
+    await settle();
+
+    const stored = { key: { remoteJid: PEER, fromMe: true, id: 'MINE' }, message: { conversation: 'oops' } };
+    expect(changed('MINE', stored)?.message).toBeNull();
+  });
+
+  it('applies a group admin deleting another member message', async () => {
+    await started();
+    fireProtocol(
+      { remoteJid: GROUP, participant: '628333@s.whatsapp.net', fromMe: false },
+      { key: { id: 'G1' }, type: 0 },
+    );
+    await settle();
+
+    const stored = {
+      key: { remoteJid: GROUP, participant: '628111@s.whatsapp.net', fromMe: false, id: 'G1' },
+      message: { conversation: 'removed by an admin' },
+    };
+    expect(changed('G1', stored)?.message).toBeNull();
+  });
+
+  it('ignores a 1:1 delete of an own message sent by the other side, and one from another chat', async () => {
+    await started();
+    fireProtocol({ remoteJid: PEER, fromMe: false }, { key: { id: 'MINE' }, type: 0 });
+    // The same author, from another group: the author check and the group-delete allowance both pass,
+    // so only the chat check refuses it.
+    fireProtocol({ remoteJid: '120363999@g.us', participant: PEER, fromMe: false }, { key: { id: 'OTHER' }, type: 0 });
+    await settle();
+
+    expect(
+      changed('MINE', { key: { remoteJid: PEER, fromMe: true, id: 'MINE' }, message: { conversation: 'x' } }),
+    ).toBeNull();
+    expect(
+      changed('OTHER', {
+        key: { remoteJid: GROUP, participant: PEER, fromMe: false, id: 'OTHER' },
+        message: { conversation: 'y' },
+      }),
+    ).toBeNull();
+  });
+
+  it('applies a delete only after the original, still downloading its media, has been stored', async () => {
+    let release!: () => void;
+    baileys.downloadMediaMessage.mockReturnValueOnce(
+      new Promise(resolve => {
+        release = () => resolve(streamOf(Buffer.from('JPEG')));
+      }),
+    );
+    await started();
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: PEER, fromMe: false, id: 'SLOW' },
+          message: { imageMessage: { mimetype: 'image/jpeg', caption: 'about to be deleted' } },
+          messageTimestamp: 1700000099,
+        },
+      ],
+    });
+    fireProtocol({ remoteJid: PEER, fromMe: false }, { key: { id: 'SLOW' }, type: 0 });
+    await settle();
+    // The delete has been seen, but writing it now would put it under the original's own write.
+    expect(fakeStore.update).not.toHaveBeenCalled();
+
+    release();
+    for (let i = 0; i < 5; i++) await settle();
+
+    expect(fakeStore.put).toHaveBeenCalledTimes(1);
+    expect(fakeStore.update).toHaveBeenCalledTimes(1);
+    expect(fakeStore.put.mock.invocationCallOrder[0]).toBeLessThan(fakeStore.update.mock.invocationCallOrder[0]);
+  });
+
+  it('waits for a first delivery still downloading when its repeat was stored first', async () => {
+    let release!: () => void;
+    baileys.downloadMediaMessage
+      .mockReturnValueOnce(
+        new Promise(resolve => {
+          release = () => resolve(streamOf(Buffer.from('JPEG')));
+        }),
+      )
+      .mockReturnValueOnce(Promise.resolve(streamOf(Buffer.from('JPEG'))));
+    await started();
+    const delivery = () => ({
+      key: { remoteJid: PEER, fromMe: false, id: 'TWICE' },
+      message: { imageMessage: { mimetype: 'image/jpeg', caption: 'about to be deleted' } },
+      messageTimestamp: 1700000099,
+    });
+    fakeSock.fire('messages.upsert', { type: 'notify', messages: [delivery()] });
+    fakeSock.fire('messages.upsert', { type: 'notify', messages: [delivery()] });
+    for (let i = 0; i < 5; i++) await settle();
+    expect(fakeStore.put).toHaveBeenCalledTimes(1); // the repeat, while the first is still downloading
+
+    fireProtocol({ remoteJid: PEER, fromMe: false }, { key: { id: 'TWICE' }, type: 0 });
+    await settle();
+    expect(fakeStore.update).not.toHaveBeenCalled();
+
+    release();
+    for (let i = 0; i < 5; i++) await settle();
+    expect(fakeStore.put).toHaveBeenCalledTimes(2);
+    expect(fakeStore.update).toHaveBeenCalledTimes(1);
+    expect(fakeStore.put.mock.invocationCallOrder[1]).toBeLessThan(fakeStore.update.mock.invocationCallOrder[0]);
+  });
+
+  const ownStored = {
+    key: { id: 'TARGET', remoteJid: PEER, fromMe: true },
+    message: { conversation: 'as sent' },
+    messageTimestamp: '1700000000',
+  };
+
+  it('empties the stored copy when the API deletes a message for everyone', async () => {
+    fakeStore.getMessage.mockResolvedValue(ownStored);
+    const adapter = await started();
+    await adapter.deleteMessage(PEER, 'TARGET', true);
+    expect(changed('TARGET', ownStored)).toEqual({ ...ownStored, message: null });
+  });
+
+  it('still answers a delete for everyone when the store cannot record it', async () => {
+    // The delete already reached WhatsApp; failing the request now would invite a retry of it.
+    fakeStore.getMessage.mockResolvedValue(ownStored);
+    fakeStore.update.mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+    const adapter = await started();
+    const warn = jest.spyOn(loggerOf(adapter), 'warn').mockImplementation(() => undefined);
+    await expect(adapter.deleteMessage(PEER, 'TARGET', true)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to apply an edit or delete to the message store',
+      expect.objectContaining({ msgId: 'TARGET', error: 'SQLITE_BUSY: database is locked' }),
+    );
+  });
+
+  it('refuses a message the API deleted for everyone even when the store could not record the delete', async () => {
+    fakeStore.getMessage.mockResolvedValue(ownStored);
+    fakeStore.update.mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+    const adapter = await started();
+    jest.spyOn(loggerOf(adapter), 'warn').mockImplementation(() => undefined);
+    await adapter.deleteMessage(PEER, 'TARGET', true);
+    fakeSock.sendMessage.mockClear();
+
+    await expect(adapter.replyToMessage(PEER, 'TARGET', 'quoting it')).rejects.toBeInstanceOf(MessageNotFoundError);
+    expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('logs rather than drops an inbound delete the store cannot record', async () => {
+    fakeStore.update.mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+    const adapter = await started();
+    const warn = jest.spyOn(loggerOf(adapter), 'warn').mockImplementation(() => undefined);
+    fireProtocol({ remoteJid: PEER, fromMe: false }, { key: { id: 'GONE' }, type: 0 });
+    await settle();
+    expect(fakeStore.update).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to apply an edit or delete to the message store',
+      expect.objectContaining({ msgId: 'GONE', error: 'SQLITE_BUSY: database is locked' }),
+    );
+  });
+
+  it('writes an API edit into the stored copy before answering', async () => {
+    fakeStore.getMessage.mockResolvedValue(ownStored);
+    const adapter = await started();
+    await adapter.editMessage(PEER, 'TARGET', 'edited body');
+    expect(changed('TARGET', ownStored)?.message).toEqual({ conversation: 'edited body' });
+  });
+
+  it.each([
+    ['replyToMessage', (a: BaileysAdapter) => a.replyToMessage(PEER, 'TARGET', 'quoting it')],
+    [
+      'a quoted send',
+      (a: BaileysAdapter) =>
+        a.sendImageMessage(PEER, { mimetype: 'image/png', data: Buffer.from([1]), quotedMessageId: 'TARGET' }),
+    ],
+    ['forwardMessage', (a: BaileysAdapter) => a.forwardMessage(PEER, '628555@c.us', 'TARGET')],
+    ['reactToMessage', (a: BaileysAdapter) => a.reactToMessage(PEER, 'TARGET', '👍')],
+    ['editMessage', (a: BaileysAdapter) => a.editMessage(PEER, 'TARGET', 'x')],
+  ])('%s refuses a message deleted for everyone as not found', async (_name, call) => {
+    fakeStore.getMessage.mockResolvedValue({ ...ownStored, message: null });
+    const adapter = await started();
+    await expect(call(adapter)).rejects.toBeInstanceOf(MessageNotFoundError);
+    expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('still deletes for me a message already deleted for everyone', async () => {
+    fakeStore.getMessage.mockResolvedValue({ ...ownStored, message: null });
+    const adapter = await started();
+    await adapter.deleteMessage(PEER, 'TARGET', false);
+    expect(fakeSock.chatModify).toHaveBeenCalledWith(
+      { deleteForMe: { deleteMedia: true, key: ownStored.key, timestamp: 1700000000 } },
+      PEER,
+    );
   });
 });
