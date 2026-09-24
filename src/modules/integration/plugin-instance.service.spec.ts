@@ -73,6 +73,13 @@ describe('PluginInstanceService', () => {
     expect(gen.secret).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  // A GET challenge route answers 403 while verifyToken is null, and no update path can set it later.
+  it('keeps a supplied verifyToken, else auto-generates one on create and mint', async () => {
+    expect((await service.create('meta', 'a1', { verifyToken: 'hub-token' })).verifyToken).toBe('hub-token');
+    expect((await service.create('meta', 'a2', {})).verifyToken).toMatch(/^[0-9a-f]{32}$/);
+    expect((await service.mint('meta', 'a3', {})).verifyToken).toMatch(/^[0-9a-f]{32}$/);
+  });
+
   it('masks a NESTED secret:true config field on masked reads (recursive redaction)', () => {
     const schema = {
       type: 'object',

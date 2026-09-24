@@ -45,7 +45,7 @@ export class PluginInstanceService implements PluginInstancePort {
       instanceId,
       sessionScope: opts.sessionScope || null,
       secret: normalizeSecret(opts.secret),
-      verifyToken: opts.verifyToken ?? null,
+      verifyToken: opts.verifyToken || randomBytes(16).toString('hex'),
       config: opts.config ?? null,
       enabled: true,
     });
@@ -80,7 +80,7 @@ export class PluginInstanceService implements PluginInstancePort {
       instanceId,
       sessionScope: opts.sessionScope || null,
       secret: normalizeSecret(opts.secret),
-      verifyToken: opts.verifyToken ?? null,
+      verifyToken: opts.verifyToken || randomBytes(16).toString('hex'),
       config: opts.config ?? null,
       enabled: true,
     });
