@@ -902,6 +902,19 @@
     "refresh": "刷新",
     "builtIn": "内置",
     "noDescription": "没有可用描述",
+    "statuses": {
+      "installed": "已安装",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "error": "错误"
+    },
+    "types": {
+      "engine": "引擎",
+      "storage": "存储",
+      "queue": "队列",
+      "auth": "认证",
+      "extension": "扩展"
+    },
     "enable": "启用",
     "disable": "禁用",
     "healthCheck": "健康检查",

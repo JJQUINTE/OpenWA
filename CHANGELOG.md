@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The dashboard Chats thread renders an `@<digits>` mention as `@FirstName` when that participant has posted in the loaded thread and their id matches the digits in the body. This covers whatsapp-web.js, where the author id and the mention carry the same digits. On Baileys the author is normalized to the phone number when the lid mapping is known while the body keeps the lid digits, so those mentions stay as WhatsApp sent them, as does any mention of someone who has not posted. The resolved name renders inside its own `<bdi>` element, outside Linkify's `ignoreTags`-respected walk, so a push name can never become a clickable link, however it's spelled. Thanks @TanmayChachra.
+- The dashboard Plugins page shows a plugin's status and type in the selected language; they rendered as raw English values (`installed`, `extension`) in every locale.
 
 ### Documentation
 

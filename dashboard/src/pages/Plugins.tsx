@@ -864,7 +864,7 @@ export default function Plugins() {
                   <li key={p.id} className="rail-active-item">
                     <span className="status-dot enabled" />
                     <span className="rail-active-name">{localizePlugin(p, i18n.language).name}</span>
-                    <span className="rail-active-type">{p.type}</span>
+                    <span className="rail-active-type">{t(`plugins.types.${p.type}`, { defaultValue: p.type })}</span>
                   </li>
                 ))}
               </ul>
@@ -917,9 +917,13 @@ export default function Plugins() {
                     <div className="plugin-status-row">
                       <div className="plugin-status">
                         <span className={`status-dot ${plugin.status}`} />
-                        <span className="status-text">{plugin.status}</span>
+                        <span className="status-text">
+                          {t(`plugins.statuses.${plugin.status}`, { defaultValue: plugin.status })}
+                        </span>
                       </div>
-                      <span className="plugin-type-label">{plugin.type}</span>
+                      <span className="plugin-type-label">
+                        {t(`plugins.types.${plugin.type}`, { defaultValue: plugin.type })}
+                      </span>
                     </div>
 
                     {plugin.error && (

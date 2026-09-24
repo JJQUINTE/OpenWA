@@ -911,6 +911,19 @@
     "refresh": "רענון",
     "builtIn": "מובנה",
     "noDescription": "אין תיאור זמין",
+    "statuses": {
+      "installed": "מותקן",
+      "enabled": "מופעל",
+      "disabled": "מושבת",
+      "error": "שגיאה"
+    },
+    "types": {
+      "engine": "מנוע",
+      "storage": "אחסון",
+      "queue": "תור",
+      "auth": "אימות",
+      "extension": "הרחבה"
+    },
     "enable": "הפעלה",
     "disable": "השבתה",
     "healthCheck": "בדיקת תקינות",

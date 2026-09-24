@@ -902,6 +902,19 @@
     "refresh": "रीफ़्रेश करें",
     "builtIn": "अंतर्निहित",
     "noDescription": "कोई विवरण उपलब्ध नहीं",
+    "statuses": {
+      "installed": "इंस्टॉल किया गया",
+      "enabled": "सक्षम",
+      "disabled": "अक्षम",
+      "error": "त्रुटि"
+    },
+    "types": {
+      "engine": "इंजन",
+      "storage": "स्टोरेज",
+      "queue": "कतार",
+      "auth": "प्रमाणीकरण",
+      "extension": "एक्सटेंशन"
+    },
     "enable": "सक्षम करें",
     "disable": "अक्षम करें",
     "healthCheck": "स्वास्थ्य जाँच",

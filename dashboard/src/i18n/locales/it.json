@@ -902,6 +902,19 @@
     "refresh": "Aggiorna",
     "builtIn": "Integrato",
     "noDescription": "Nessuna descrizione disponibile",
+    "statuses": {
+      "installed": "Installato",
+      "enabled": "Abilitato",
+      "disabled": "Disabilitato",
+      "error": "Errore"
+    },
+    "types": {
+      "engine": "Motore",
+      "storage": "Archiviazione",
+      "queue": "Coda",
+      "auth": "Autenticazione",
+      "extension": "Estensione"
+    },
     "enable": "Abilita",
     "disable": "Disabilita",
     "healthCheck": "Controllo dello Stato (Health Check)",
