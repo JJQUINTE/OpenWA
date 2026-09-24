@@ -98,12 +98,17 @@ OpenWA v0.2+ includes built-in migration API endpoints that leverage the **Dual-
 curl -s 'http://localhost:2785/api/infra/export-data' \
   -H 'X-API-Key: YOUR_KEY' > data-backup.json
 
-# Step 2: Change database configuration in .env or Dashboard
-# From: DATABASE_TYPE=sqlite
-# To:   DATABASE_TYPE=postgres
-#       POSTGRES_BUILTIN=true
+# Step 2: Change the database configuration
+# Dashboard: Infrastructure > PostgreSQL + "Use Built-in PostgreSQL Container"; save, then
+#   restart from the dashboard, which starts the container itself (skip Step 3).
+# Or in the .env next to docker-compose.yml (compose does not forward POSTGRES_BUILTIN, so
+#   name the host and set a real password):
+#   DATABASE_TYPE=postgres
+#   DATABASE_HOST=postgres
+#   DATABASE_USERNAME=openwa
+#   DATABASE_PASSWORD=<strong password>
 
-# Step 3: Restart with new configuration
+# Step 3: Restart with the new configuration (.env route)
 docker compose --profile postgres up -d
 
 # Step 4: Import data to new database

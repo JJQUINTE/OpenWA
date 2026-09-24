@@ -261,10 +261,10 @@ For production, use the main `docker-compose.yml` with optional services:
 # Basic production (SQLite, local storage)
 docker compose up -d
 
-# With PostgreSQL database
+# Also start the PostgreSQL container (configure it first, see below)
 docker compose --profile postgres up -d
 
-# Full stack (PostgreSQL, Redis, MinIO)
+# Also start PostgreSQL, Redis and MinIO (configure them first, see below)
 docker compose --profile full up -d
 ```
 
@@ -274,6 +274,20 @@ docker compose --profile full up -d
 | `redis`    | Redis cache           |
 | `minio`    | S3-compatible storage |
 | `full`     | All services above    |
+
+A profile only starts the container; OpenWA keeps using SQLite and local storage until it is told
+to use the new service. The simplest route is **Dashboard > Infrastructure**: pick the built-in
+option, save, and restart from there, and OpenWA starts the container itself. To use a profile
+directly, set these in the `.env` next to `docker-compose.yml` first:
+
+- PostgreSQL: `DATABASE_TYPE=postgres`, `DATABASE_HOST=postgres`, `DATABASE_USERNAME=openwa`,
+  `DATABASE_PASSWORD=<strong password>`
+- Redis: `REDIS_ENABLED=true`, `REDIS_HOST=redis`
+- MinIO: `STORAGE_TYPE=s3`, `S3_ENDPOINT=http://minio:9000`, `S3_ACCESS_KEY_ID=<user>`,
+  `S3_SECRET_ACCESS_KEY=<strong password>`
+
+PostgreSQL and MinIO refuse to initialize with an empty password, and a production boot rejects
+default credentials such as `openwa` or `minioadmin`.
 
 > The dashboard is bundled into the API image and served by NestJS on the API port, so it
 > needs no profile — it is always available wherever `openwa-api` runs. For TLS/public exposure,
