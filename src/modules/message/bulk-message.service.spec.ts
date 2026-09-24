@@ -652,11 +652,21 @@ describe('BulkMessageService.processBatch', () => {
 
     await runProcessBatch();
 
+    // The recipient is in `input`, as on a single send, so a recipient-based plugin can decide.
     expect(hookManager.execute).toHaveBeenCalledWith(
       'message:sending',
-      expect.objectContaining({ type: 'text', sessionId: 's1' }),
+      expect.objectContaining({ type: 'text', sessionId: 's1', input: { text: 'hi', chatId: 'c0@c.us' } }),
       expect.objectContaining({ source: 'BulkMessageService' }),
     );
+    expect(engine.sendTextMessage).toHaveBeenCalledWith('c0@c.us', 'hi');
+  });
+
+  it('keeps sending an item to its own recipient when the gate rewrites input.chatId', async () => {
+    repo.findOne.mockResolvedValue(makeBatch(1));
+    hookManager.execute.mockResolvedValueOnce({ continue: true, data: { input: { text: 'hi', chatId: 'x@c.us' } } });
+
+    await runProcessBatch();
+
     expect(engine.sendTextMessage).toHaveBeenCalledWith('c0@c.us', 'hi');
   });
 
@@ -677,7 +687,7 @@ describe('BulkMessageService.processBatch', () => {
 
     expect(hookManager.execute).toHaveBeenCalledWith(
       'message:failed',
-      expect.objectContaining({ type: 'text', error: 'boom' }),
+      expect.objectContaining({ type: 'text', error: 'boom', input: { text: 'hi', chatId: 'c0@c.us' } }),
       expect.objectContaining({ source: 'BulkMessageService' }),
     );
   });

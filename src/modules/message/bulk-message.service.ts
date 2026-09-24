@@ -464,9 +464,11 @@ export class BulkMessageService implements OnApplicationBootstrap {
       // Per-message moderation gate — the SAME message:sending hook single sends use, so a
       // compliance/moderation plugin sees bulk traffic too (bulk previously bypassed it entirely).
       // A block fails just THIS message (honouring stopOnError below); a plugin may also rewrite it.
+      // `input` carries the recipient like a single send's DTO does, so a recipient-based plugin can
+      // decide; a rewritten chatId is ignored, the item always goes to its own msg.chatId.
       const gate = await this.hookManager.execute(
         'message:sending',
-        { sessionId: batch.sessionId, input: content, type: msg.type },
+        { sessionId: batch.sessionId, input: { ...content, chatId: msg.chatId }, type: msg.type },
         { sessionId: batch.sessionId, source: 'BulkMessageService' },
       );
       if (!gate.continue) {
@@ -551,7 +553,12 @@ export class BulkMessageService implements OnApplicationBootstrap {
       if (!blockedByPlugin && !isPacingLimitedError(error)) {
         await this.hookManager.execute(
           'message:failed',
-          { sessionId: batch.sessionId, error: sanitized.message, input: content, type: msg.type },
+          {
+            sessionId: batch.sessionId,
+            error: sanitized.message,
+            input: { ...content, chatId: msg.chatId },
+            type: msg.type,
+          },
           { sessionId: batch.sessionId, source: 'BulkMessageService' },
         );
       }
