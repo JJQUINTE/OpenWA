@@ -8,6 +8,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { SessionService } from '../session/session.service';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { ChatStateStoreService } from '../../engine/adapters/baileys-chat-state-store.service';
 import { SessionOwnershipService } from '../session/session-ownership.service';
 import { Session as SessionEntity, SessionStatus } from '../session/entities/session.entity';
 import { In } from 'typeorm';
@@ -291,6 +292,8 @@ export class InfraDataService {
     // direct-construction unit tests, and every use is `?.`-guarded.
     @Optional()
     private readonly ownership?: SessionOwnershipService,
+    @Optional()
+    private readonly chatStateStore?: ChatStateStoreService,
   ) {}
 
   /**
@@ -801,7 +804,10 @@ export class InfraDataService {
         // reach it — resolution would keep serving stale entries (and miss restored ones) until the next
         // process start. Reload from the new DB contents. Best-effort: a miss falls back to engine
         // re-resolution, so a reload failure degrades instead of failing the (already committed) import.
+        // The chat-state mirror has the same shape: left stale, GET /chats would serve the old
+        // archived/pinned/muted flags and the next live update would write them back over the restore.
         await this.lidMappingStore?.reload();
+        await this.chatStateStore?.reload();
 
         // Audit the destructive replace-all restore, only on the committed-success path (the rollback /
         // refused-empty branches above return without emitting, since no data actually changed). Any
