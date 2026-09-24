@@ -23,7 +23,7 @@ import {
   CONNECTION_REPLACED_REASON,
   LOGOUT_CLEANUP_FAILED_REASON,
 } from '../terminal-engine-failure';
-import type { BaileysEvents } from './baileys-events';
+import { differentWaIds, type BaileysEvents } from './baileys-events';
 import type { BaileysHistory } from './baileys-history';
 import type { BaileysSessionStore } from './baileys-session-store';
 
@@ -134,6 +134,7 @@ export interface BaileysLifecycleHost {
   readonly liveCalls: Map<string, { callFrom: string; expiresAt: number }>;
   /** `628999:12@s.whatsapp.net` / `628999@s.whatsapp.net` -> `628999`. */
   extractPhone(id: string | undefined): string | null;
+  toNeutralJid(jid: string): string;
   /** Persist contact records pushed by the socket (contacts.upsert/update, messaging-history.set). */
   upsertContacts: BaileysSessionStore['upsertContacts'];
   /** Persist chat records pushed by the socket (chats.upsert/update, messaging-history.set). */
@@ -373,12 +374,18 @@ export class BaileysLifecycle {
       // implementation, WhatsApp's message-retry protocol — triggered whenever a recipient's client
       // fails to decrypt on the first attempt — has nothing to resend, so the recipient is stuck on
       // "waiting for this message" indefinitely instead of the retry resolving it within seconds.
-      // Backed by the same messageStore used for reply/forward/react/delete-by-id.
+      // Backed by the same messageStore used for reply/forward/react/delete-by-id. Baileys relays the
+      // answer to key.remoteJid, and a retry receipt names its message by id alone, so a stored message
+      // from a provably different chat is refused: a forged receipt must not pull it into this one.
       getMessage: async key => {
         if (!key.id) {
           return undefined;
         }
         const stored = await this.host.config.messageStore?.getMessage(this.host.config.dbSessionId, key.id);
+        const neutral = (jid: string): string => this.host.toNeutralJid(jid);
+        if (stored && differentWaIds([stored.key.remoteJid, stored.key.remoteJidAlt], [key.remoteJid], neutral)) {
+          return undefined;
+        }
         return stored?.message ?? undefined;
       },
       logger: baileysLogger,

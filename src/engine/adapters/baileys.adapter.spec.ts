@@ -272,6 +272,26 @@ describe('BaileysAdapter lifecycle & status', () => {
     expect(onReady).toHaveBeenCalledWith('628999', 'Me');
   });
 
+  it('answers a decryption retry only with a stored message from the chat that asks for it', async () => {
+    await newAdapter().initialize(noopCallbacks({}));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const makeWASocket = jest.requireMock('@whiskeysockets/baileys').default as jest.Mock;
+    const [[{ getMessage }]] = makeWASocket.mock.calls as Array<
+      [{ getMessage: (key: { remoteJid?: string; id?: string }) => Promise<unknown> }]
+    >;
+    const content = { conversation: 'hi' };
+    fakeStore.getMessage.mockResolvedValue({
+      key: { remoteJid: '628111@s.whatsapp.net', fromMe: true, id: 'M1' },
+      message: content,
+    });
+
+    await expect(getMessage({ remoteJid: '628111@s.whatsapp.net', id: 'M1' })).resolves.toBe(content);
+    await expect(getMessage({ remoteJid: '628222@s.whatsapp.net', id: 'M1' })).resolves.toBeUndefined();
+    await expect(getMessage({ remoteJid: '120363000@g.us', id: 'M1' })).resolves.toBeUndefined();
+    // A lid the session cannot map may be that same chat, so the retry is still answered.
+    await expect(getMessage({ remoteJid: '99887766@lid', id: 'M1' })).resolves.toBe(content);
+  });
+
   it('on a logged-out close: DISCONNECTED, onDisconnected, and NO reconnect', async () => {
     const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
     try {
