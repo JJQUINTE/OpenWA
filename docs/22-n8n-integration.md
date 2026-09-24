@@ -120,8 +120,8 @@ Start workflows when WhatsApp events occur.
   "event": "message.received",
   "timestamp": "2024-01-15T10:30:00Z",
   "sessionId": "default",
-  "idempotencyKey": "a1b2c3d4e5f6...",
-  "deliveryId": "9f8e7d6c5b4a...",
+  "idempotencyKey": "msg_default_3EB0F5A2B4C..._f1e2d3c4-b5a6-7890-1234-567890abcdef",
+  "deliveryId": "dlv_0f8c1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
   "data": {
     "id": "3EB0F5A2B4C...",
     "chatId": "628123456789@c.us",
