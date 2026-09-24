@@ -7821,7 +7821,7 @@
             }
           },
           "403": {
-            "description": "Key lacks OPERATOR role; on whatsapp-web.js, the id is not one of the account's own statuses; on Baileys, the status was not posted by this session in the last 24 hours (or was posted before a restart, from the phone or from another node), so its recipients are unknown and the revoke cannot be addressed to them."
+            "description": "Key lacks OPERATOR role; on whatsapp-web.js, the id is not one of the account's own statuses; on Baileys, the status was not posted by this session in the last 24 hours (or was posted before the session last started or reconnected, before a restart, from the phone or from another node), so its recipients are unknown and the revoke cannot be addressed to them."
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
@@ -10457,7 +10457,7 @@
           },
           "engineLoaded": {
             "type": "boolean",
-            "description": "Whether the gateway currently holds a live engine for this session. This is the precondition the lifecycle routes actually enforce, and `status` alone does not imply it: a `disconnected` session keeps its engine for the duration of an automatic reconnect backoff, while a session stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. When `true`, `stop`, `logout` and `force-kill` can act and `start` answers 400; when `false`, the reverse. Derived per request from live state, so it is never persisted and never historical: an engine in the answering process or, in a multi-node deployment, a live claim by the node running the session.",
+            "description": "Whether the gateway currently holds a live engine for this session: an engine in the answering process or, in a multi-node deployment, a live claim by the node running the session. `status` alone does not imply it: a `disconnected` session keeps its engine for the duration of an automatic reconnect backoff, while a session stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. On the node running the session, `true` means `stop`, `logout` and `force-kill` can act and `start` answers 400; `false` means the reverse. For a session another node runs, request routing (NODE_URL set on every node) forwards the lifecycle routes to that node, where they act; without routing, only that node can act on it, and any other node answers 409 to `start` and `stop` and 400 to `logout` and `force-kill`. Derived per request from live state, so it is never persisted and never historical.",
             "example": true
           }
         },
@@ -16154,7 +16154,7 @@
           "mediaUrl": {
             "type": "string",
             "description": "Same-origin path to GET /sessions/{sessionId}/status/{statusId}/media, which needs X-API-Key like any other route. Present only when the stored status kept its media.",
-            "example": "/api/sessions/my-session/status/ABCD1234/media"
+            "example": "/api/sessions/0a941dac-a965-45e7-b318-74ae8be134f0/status/ABCD1234/media"
           },
           "backgroundColor": {
             "type": "string",
