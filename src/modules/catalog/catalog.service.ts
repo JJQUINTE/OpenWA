@@ -6,7 +6,7 @@ import type {
   PaginatedProducts,
   MessageResult,
 } from '../../engine/interfaces/whatsapp-engine.interface';
-import { SendPacingService } from '../message/send-pacing.service';
+import { SendPacingService, countsTowardSendBreaker } from '../message/send-pacing.service';
 
 @Injectable()
 export class CatalogService {
@@ -51,7 +51,7 @@ export class CatalogService {
       sessionId,
       () => new NotFoundException(`Session ${sessionId} not found or not connected`),
     );
-    return engine.sendProduct(chatId, productId, body);
+    return this.recordedSend(sessionId, () => engine.sendProduct(chatId, productId, body));
   }
 
   /**
@@ -65,6 +65,23 @@ export class CatalogService {
       sessionId,
       () => new NotFoundException(`Session ${sessionId} not found or not connected`),
     );
-    return engine.sendCatalog(chatId, body);
+    return this.recordedSend(sessionId, () => engine.sendCatalog(chatId, body));
+  }
+
+  /**
+   * Report the engine send's outcome to the pacing breaker, as every other send path does. The pacing
+   * check and the session lookup stay outside, so a policy 429 or a 404 never feeds the breaker.
+   */
+  private async recordedSend(sessionId: string, send: () => Promise<MessageResult>): Promise<MessageResult> {
+    try {
+      const result = await send();
+      this.pacing.recordSendSuccess(sessionId);
+      return result;
+    } catch (error) {
+      if (countsTowardSendBreaker(error)) {
+        this.pacing.recordSendFailure(sessionId);
+      }
+      throw error;
+    }
   }
 }
