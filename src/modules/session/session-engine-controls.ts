@@ -7,6 +7,8 @@ import { MessageBatch } from '../message/entities/message-batch.entity';
 import { Webhook } from '../webhook/entities/webhook.entity';
 import { Template } from '../template/entities/template.entity';
 import { BaileysStoredMessage } from '../../engine';
+import { ChatState } from '../../engine/adapters/baileys-chat-state.entity';
+import { StatusUpdate } from '../status-store/entities/status-update.entity';
 import { EngineFactory } from '../../engine/engine.factory';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { IWhatsAppEngine } from '../../engine/interfaces/whatsapp-engine.interface';
@@ -568,10 +570,13 @@ export class SessionEngineControls {
       // better-sqlite3 defaults `foreign_keys` ON and TypeORM's driver re-asserts it at connection
       // creation — so their explicit deletes are belt-and-braces rather than required; they stay
       // because depending on a pragma neither this file nor a test pins is a thinner guarantee than
-      // an explicit delete, and the ordering mirrors the restore path's explicit-clear.
+      // an explicit delete, and the ordering mirrors the restore path's explicit-clear. chat_states and
+      // status_updates are in the no-FK group too.
       await this.host.dataSource().transaction(async manager => {
         await manager.delete(Message, { sessionId: id });
         await manager.delete(MessageBatch, { sessionId: id });
+        await manager.delete(ChatState, { sessionId: id });
+        await manager.delete(StatusUpdate, { sessionId: id });
         await manager.delete(Webhook, { sessionId: id });
         await manager.delete(Template, { sessionId: id });
         await manager.delete(BaileysStoredMessage, { sessionId: id });
