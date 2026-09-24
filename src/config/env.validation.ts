@@ -72,18 +72,26 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
   };
 
-  const dbType = str('DATABASE_TYPE');
+  // The engine/storage/database selectors are checked RAW, like NODE_ENV below: every reader compares
+  // process.env verbatim, so a padded 'postgres ' that only matched after trimming validated clean and
+  // then booted SQLite. Whitespace-only still means unset, as a blank compose forward does everywhere.
+  const rawEnum = (key: string): string | undefined => {
+    const value = config[key];
+    return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  };
+
+  const dbType = rawEnum('DATABASE_TYPE');
   if (dbType && dbType !== 'sqlite' && dbType !== 'postgres') {
-    errors.push(`DATABASE_TYPE must be "sqlite" or "postgres" (got "${dbType}")`);
+    errors.push(`DATABASE_TYPE must be "sqlite" or "postgres" (got ${JSON.stringify(dbType)})`);
   }
 
   // Whitelist the registered engine/storage ids so a typo fails fast at boot instead of silently
   // falling back to the default (engine.factory swallows an unknown ENGINE_TYPE → legacy wwebjs;
   // STORAGE_TYPE → local). Values must match the ids registered in engine.factory / configuration.
   const checkEnum = (key: string, allowed: string[]): void => {
-    const value = str(key);
+    const value = rawEnum(key);
     if (value !== undefined && !allowed.includes(value)) {
-      errors.push(`${key} must be one of ${allowed.map(v => `"${v}"`).join(', ')} (got "${value}")`);
+      errors.push(`${key} must be one of ${allowed.map(v => `"${v}"`).join(', ')} (got ${JSON.stringify(value)})`);
     }
   };
   checkEnum('ENGINE_TYPE', ['whatsapp-web.js', 'baileys']);

@@ -97,6 +97,22 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ STORAGE_TYPE: 's3' })).not.toThrow();
   });
 
+  // The runtime compares these raw (`=== 'postgres'`, the engine plugin lookup, `=== 's3'`), so a
+  // padded value that only matches after trimming would validate here and then take the default branch.
+  it.each([
+    ['DATABASE_TYPE', 'postgres '],
+    ['DATABASE_TYPE', 'sqlite\r'],
+    ['ENGINE_TYPE', 'baileys '],
+    ['STORAGE_TYPE', ' s3'],
+  ])('rejects a padded %s %j instead of validating the trimmed value', (key, value) => {
+    const pg = { DATABASE_HOST: 'db', DATABASE_USERNAME: 'u', DATABASE_PASSWORD: 'p' };
+    expect(() => validateEnv({ ...pg, [key]: value })).toThrow(new RegExp(`${key} must be`));
+  });
+
+  it('still treats a whitespace-only enum (a blank compose forward) as unset', () => {
+    expect(() => validateEnv({ DATABASE_TYPE: '  ', ENGINE_TYPE: '', STORAGE_TYPE: ' ' })).not.toThrow();
+  });
+
   // Every production hardening in the repo compares NODE_ENV against the exact string 'production',
   // so an unrecognised value silently selects the permissive branch of each one — including the
   // ALLOW_DEV_API_KEY rejection that stops the public `dev-admin-key` being seeded as an ADMIN
