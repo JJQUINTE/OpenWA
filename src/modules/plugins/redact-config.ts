@@ -155,7 +155,7 @@ function restoreValue(
             const unbound = restoreValue(item, undefined, itemField);
             if (stableStringify(unbound) !== stableStringify(restoreValue(item, group[0], itemField))) {
               throw new BadRequestException(
-                'Removing an entry that shares its masked content with another is ambiguous; re-enter the remaining secret values',
+                'This change to a list of masked secrets cannot be matched to the stored values; re-enter the remaining secret values, or make the change in two saves',
               );
             }
             return unbound;
