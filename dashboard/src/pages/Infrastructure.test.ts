@@ -591,6 +591,37 @@ test('an operator engine pick under a pin is deliberate and still saved', async 
   });
 });
 
+// ── Built-in containers the restart stops ────────────────────────────────────
+
+test('turning a running built-in Redis off asks the restart to stop its container', async () => {
+  const { screen, waitFor, fireEvent, within } = rtl;
+  resetFetchCalls();
+  // Built-in Redis is running and saved as built-in; the operator switches it to an external Redis.
+  overrides = {
+    status: { ...INFRA_STATUS, redis: { enabled: true, connected: true, host: 'redis', port: 6379, builtIn: true } },
+    saved: {
+      ...SAVED_CONFIG,
+      redis: { enabled: true, builtIn: true, host: 'redis', port: '6379', passwordSet: false },
+    },
+  };
+  const { container } = renderInfrastructure();
+
+  await screen.findByText('Database Configuration');
+  await awaitConfigHydrated(container);
+  const builtInRedis = toggleInput(container, 'Use Built-in Redis Container');
+  await waitFor(() => assert.equal(builtInRedis.checked, true));
+  fireEvent.click(builtInRedis);
+  fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Restart Now' }));
+
+  await waitFor(() => assert.ok(findFetchCall('POST', '/api/infra/restart'), 'expected the restart POST'));
+  // The page reloads after every restart, so the first save of a page visit is the normal case: the
+  // container to stop must come from what is running, not from an earlier save on this page.
+  assert.deepEqual(findFetchCall('POST', '/api/infra/restart')!.body, { profiles: [], profilesToRemove: ['redis'] });
+});
+
 // ── Restart-flow timer cleanup on unmount ────────────────────────────────────
 
 test('unmounting mid-restart cancels the health poll and countdown timers', { timeout: 10_000 }, async () => {

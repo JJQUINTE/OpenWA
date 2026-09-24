@@ -418,9 +418,9 @@ export class InfraConfigController {
       // Remove only the profiles the Save flow explicitly asked to remove, and never one we're about to
       // (re)start. We deliberately do NOT infer teardown from the saved *_BUILTIN flag: the default
       // data/.env.generated carries POSTGRES_BUILTIN=false, so a bare compose-profile restart would
-      // otherwise tear down the very backend the app is running on. (Known minor limitation: switching
-      // away from a built-in backend and then reloading the page before restarting can leave the old
-      // container running until the next explicit change.)
+      // otherwise tear down the very backend the app is running on. The dashboard fills this list from the
+      // live /infra/status builtIn flags at save time (running minus the new profiles), so a container is
+      // left running only when that status read had failed and the dashboard had nothing to go on.
       // Only ever tear down OpenWA-managed services. An arbitrary profile name (or the empty string)
       // would otherwise reach stopManagedService and, via container-name matching, could stop an unrelated
       // container — so constrain teardown to the managed allowlist and drop anything else.
