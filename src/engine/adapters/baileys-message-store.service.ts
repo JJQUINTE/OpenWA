@@ -36,6 +36,13 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
   private readonly logger = createLogger('BaileysMessageStore');
   /** Sessions already warned about a missing parent row — keeps the orphan log to once per session. */
   private readonly orphanWarnedSessions = new Set<string>();
+  /**
+   * Writes still in flight, by `${sessionId}:${waMessageId}`. A message is announced while its write
+   * is still running, and whoever hears about it may look it up at once (a quoted reply, a reaction,
+   * a read receipt). A read of an id held here waits for that write instead of reporting the message
+   * missing. An entry lives exactly as long as its write, so the map only ever holds writes in flight.
+   */
+  private readonly pendingWrites = new Map<string, Promise<void>>();
 
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first use, not at boot). */
   private baileysLib?: typeof BaileysLib;
@@ -54,6 +61,19 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     if (!waMessageId) {
       return;
     }
+    // Registered before the first await, so a read issued any time after put() is called sees this write.
+    const key = `${sessionId}:${waMessageId}`;
+    const write = this.write(sessionId, waMessageId, msg);
+    this.pendingWrites.set(key, write);
+    try {
+      await write;
+    } finally {
+      // A later put of the same id replaced the entry and owns it now.
+      if (this.pendingWrites.get(key) === write) this.pendingWrites.delete(key);
+    }
+  }
+
+  private async write(sessionId: string, waMessageId: string, msg: WAMessage): Promise<void> {
     const { BufferJSON } = await this.loadLib();
     const serializedMessage = JSON.stringify(msg, BufferJSON.replacer);
     // Idempotent: the same message arrives from the send return AND the messages.upsert echo.
@@ -91,6 +111,7 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     // Baileys retry/poll paths can hand over a key with no id; treat that as not-found rather than
     // letting an undefined criterion reach the ORM (TypeORM 1.x throws; 0.3 matched an arbitrary row).
     if (!messageId) return null;
+    await this.settled(sessionId, messageId);
     const row = await this.repo.findOne({ where: { sessionId, waMessageId: messageId } });
     if (!row) {
       return null;
@@ -106,12 +127,18 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     if (ids.length === 0) {
       return [];
     }
+    await Promise.all(ids.map(id => this.settled(sessionId, id)));
     const rows = await this.repo.find({ where: { sessionId, waMessageId: In(ids) } });
     if (rows.length === 0) {
       return [];
     }
     const { BufferJSON } = await this.loadLib();
     return rows.map(row => JSON.parse(row.serializedMessage, BufferJSON.reviver) as WAMessage);
+  }
+
+  /** Wait out an in-flight write of this id. A failed write is the writer's to report; the read goes ahead. */
+  private async settled(sessionId: string, messageId: string): Promise<void> {
+    await this.pendingWrites.get(`${sessionId}:${messageId}`)?.catch(() => undefined);
   }
 
   async clearSession(sessionId: string): Promise<void> {

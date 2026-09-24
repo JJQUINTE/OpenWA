@@ -177,7 +177,7 @@ export class BaileysEvents {
       // does not gate dispatch on the own-send path at all, which is also why the echo is caught here.
       //
       // Only ids this session SENT are consumed here. Claiming every inbound fromMe id instead, to
-      // close the window where two deliveries of one id arrive before the store write commits, costs
+      // close the window where two deliveries of one id arrive before the first is stored, costs
       // more than it buys: a first delivery that reports nothing (a partial decrypt arrives as
       // protocol noise and is dropped below) would claim the id, and the decryption-retry delivery
       // that carries the real body would then be swallowed as a repeat and the message lost. A
@@ -372,7 +372,7 @@ export class BaileysEvents {
       // whose ack was lost on a drop, so the second copy has to stop here. Downstream would not catch
       // it: the own-send path dispatches message.sent whatever its insert did, and the inbound path
       // runs the message:received plugin hook before its insert oracle dedupes. The store is written
-      // by the inbound path below, only after dispatch, and by the send path, and it survives a
+      // by the inbound path below, just before dispatch, and by the send path, and it survives a
       // restart, which the registry consulted in handleMessagesUpsert does not. The read fails open
       // (see readStoredMessage).
       const storedId = msg.key.id ?? null;
@@ -390,16 +390,18 @@ export class BaileysEvents {
       const incoming = await this.mapMessage(msg, contentType, {
         skipMediaDownload: opts?.skipMedia || ownStatusPost,
       });
-      if (msg.key.fromMe === true) {
-        this.host.getOnMessageCreate()?.(incoming);
-      } else {
-        this.host.getOnMessage()?.(incoming);
-      }
+      // Stored before it is announced: whoever hears about this message may act on it at once (a quoted
+      // reply, a reaction, a read receipt), and the store holds a read of an id until its write lands.
       void this.host.putStoredMessage(msg)?.catch(err =>
         this.host.logger.warn('Failed to persist message to store', {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
+      if (msg.key.fromMe === true) {
+        this.host.getOnMessageCreate()?.(incoming);
+      } else {
+        this.host.getOnMessage()?.(incoming);
+      }
       this.host.recordMessage(msg);
     } catch (err) {
       this.host.logger.error(
