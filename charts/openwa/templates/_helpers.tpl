@@ -43,3 +43,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- include "openwa.fullname" . }}
 {{- end }}
 {{- end }}
+
+{{/*
+An env/secretEnv value as a quoted string. A values file hands an unquoted number to the template as
+a float64, and `quote` prints one of a million or more in exponent form ("5.24288e+07"), which the app
+rejects or misreads. Whole numbers are printed as integers; anything else is quoted as given.
+*/}}
+{{- define "openwa.envValue" -}}
+{{- if and (kindIs "float64" .) (eq . (floor .)) -}}
+{{- . | int64 | quote -}}
+{{- else -}}
+{{- . | quote -}}
+{{- end -}}
+{{- end }}
