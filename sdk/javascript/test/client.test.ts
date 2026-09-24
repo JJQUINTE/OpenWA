@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   OpenWAClient,
   OpenWAApiError,
@@ -266,5 +266,19 @@ describe('OpenWAClient', () => {
     // JSON wins (matches the Python/PHP SDKs), but an unrelated default header is still preserved.
     expect(t.lastCall!.headers['content-type']).toBe('application/json');
     expect(t.lastCall!.headers['x-trace']).toBe('keep');
+  });
+
+  it('calls the global fetch unbound from the client config when none is injected', async () => {
+    // Browsers and Workers reject a fetch invoked as a method of another object ("Illegal invocation").
+    vi.stubGlobal('fetch', function (this: unknown) {
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    });
+    try {
+      const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k' });
+      await expect(c.sessions.list()).resolves.toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
