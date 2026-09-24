@@ -274,6 +274,22 @@ describe('OpenWAClient', () => {
     }
   });
 
+  it('arms the timeout for a numeric string from untyped config', async () => {
+    // A plain-JS caller passing process.env.OPENWA_TIMEOUT_MS hands over a string.
+    const slowFetch: FetchLike = async (_url, init) => {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (init?.signal?.aborted) {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return new Response('[]', { status: 200 });
+    };
+    const timeoutMs = '5' as unknown as number;
+    const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs, fetch: slowFetch });
+    await expect(c.sessions.list()).rejects.toThrow(new OpenWATimeoutError(5));
+  });
+
   it('keeps X-API-Key winning over defaultHeaders', async () => {
     const t = new MockTransport().on('GET', '/api/sessions', { body: [] });
     const c = new OpenWAClient({

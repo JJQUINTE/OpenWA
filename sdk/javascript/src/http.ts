@@ -125,11 +125,13 @@ async function send<T>(
   consume: (res: Response) => Promise<T>,
 ): Promise<T> {
   const url = buildUrl(config.baseUrl, options.path, options.query);
-  const timeoutMs = options.timeoutMs ?? config.timeoutMs;
+  // Coerced once: untyped JS config can pass a numeric string (process.env), which Number.isFinite
+  // below would otherwise read as "no timeout".
+  const timeoutMs = Number(options.timeoutMs ?? config.timeoutMs);
 
   const controller = new AbortController();
-  // 0 or Infinity means no client timeout. setTimeout fires after 1 ms for a delay that is not finite
-  // or exceeds 2^31-1, so cap it rather than abort every request.
+  // 0, Infinity or NaN means no client timeout. setTimeout fires after 1 ms for a delay that is not
+  // finite or exceeds 2^31-1, so cap it rather than abort every request.
   const timer =
     Number.isFinite(timeoutMs) && timeoutMs > 0
       ? setTimeout(() => controller.abort(), Math.min(timeoutMs, 2_147_483_647))
