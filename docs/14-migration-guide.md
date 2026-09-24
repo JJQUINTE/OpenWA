@@ -214,7 +214,7 @@ curl -s 'http://localhost:2785/api/infra/storage/files/count' \
 # Step 2: Export all files as tar.gz
 curl -s 'http://localhost:2785/api/infra/storage/export' \
   -H 'X-API-Key: YOUR_KEY'
-# Response: { "message": "Storage export completed", "download": "/app/data/exports/storage-export-xxx.tar.gz" }
+# Response: { "message": "Storage export completed", "download": "data/exports/storage-export-xxx.tar.gz" }
 # The archive is auto-removed after STORAGE_EXPORT_TTL_MS (default 1h), so re-import it before then.
 # It is written under data/ so it survives the restart in Step 4 and stays import-able.
 
@@ -237,7 +237,7 @@ docker compose --profile minio up -d
 curl -X POST 'http://localhost:2785/api/infra/storage/import' \
   -H 'X-API-Key: YOUR_KEY' \
   -H 'Content-Type: application/json' \
-  -d '{"filePath": "/app/data/exports/storage-export-xxx.tar.gz"}'
+  -d '{"filePath": "data/exports/storage-export-xxx.tar.gz"}'
 ```
 
 | Scenario                     | Support | Method                   |

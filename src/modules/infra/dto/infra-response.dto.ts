@@ -534,7 +534,12 @@ export class StorageExportResponseDto {
   @ApiProperty({ example: 'Storage archive created.' })
   message!: string;
 
-  @ApiProperty({ description: 'Path to download the archive from.', example: '/api/infra/storage/download/xyz.tar' })
+  @ApiProperty({
+    description:
+      'Server-side path of the archive, relative to the gateway working directory. Not a download URL: ' +
+      'pass it as `filePath` to POST /api/infra/storage/import.',
+    example: 'data/exports/storage-export-1750000000000-abc.tar.gz',
+  })
   download!: string;
 }
 

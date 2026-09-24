@@ -4488,7 +4488,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "JSON pointing at the archive that was written under data/exports/. This route does NOT stream the tar.gz itself — fetch it from the returned `download` path.",
+            "description": "JSON pointing at the archive that was written under data/exports/. This route does NOT stream the tar.gz, and no route serves it: `download` is a server-side path to pass as `filePath` to POST /api/infra/storage/import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14683,8 +14683,8 @@
           },
           "download": {
             "type": "string",
-            "description": "Path to download the archive from.",
-            "example": "/api/infra/storage/download/xyz.tar"
+            "description": "Server-side path of the archive, relative to the gateway working directory. Not a download URL: pass it as `filePath` to POST /api/infra/storage/import.",
+            "example": "data/exports/storage-export-1750000000000-abc.tar.gz"
           }
         },
         "required": [
