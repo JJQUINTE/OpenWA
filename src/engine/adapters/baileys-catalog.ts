@@ -135,9 +135,9 @@ function mapProduct(p: BaileysProduct): Product {
     id: p.id,
     name: p.name,
     description: p.description || undefined,
-    price: p.price,
+    // A catalog item without a price parses as NaN, which would reach clients as "price":null.
+    ...(Number.isFinite(p.price) && { price: p.price, priceFormatted: formatPrice(p.price, p.currency) }),
     currency: p.currency,
-    priceFormatted: formatPrice(p.price, p.currency),
     imageUrl: Object.values(p.imageUrls ?? {})[0],
     url: p.url ?? '',
     isAvailable: p.availability === 'in stock',

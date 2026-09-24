@@ -1290,9 +1290,11 @@ export interface CatalogProduct {
   id: string;
   name: string;
   description?: string | null;
-  price: number;
+  /** Absent when the product has no price. */
+  price?: number;
   currency: string;
-  priceFormatted: string;
+  /** Absent when `price` is. */
+  priceFormatted?: string;
   imageUrl?: string | null;
   url: string;
   isAvailable: boolean;

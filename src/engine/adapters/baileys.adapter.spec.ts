@@ -6316,6 +6316,18 @@ describe('BaileysAdapter catalog (#905)', () => {
     });
   });
 
+  // Baileys parses the <price> child with a unary +, so a catalog item without one arrives as NaN.
+  it('getProducts omits price and priceFormatted for a product without a price', async () => {
+    const adapter = await ready();
+    fakeSock.getCatalog.mockResolvedValue({ products: [baileysProduct({ price: NaN })], nextPageCursor: undefined });
+
+    const { products } = await adapter.getProducts({ page: 1, limit: 10 });
+
+    expect(products[0]).not.toHaveProperty('price');
+    expect(products[0]).not.toHaveProperty('priceFormatted');
+    expect(JSON.parse(JSON.stringify(products[0]))).not.toHaveProperty('price');
+  });
+
   it('getProduct returns the product with the matching id', async () => {
     const adapter = await ready();
     fakeSock.getCatalog.mockResolvedValue({
@@ -6358,6 +6370,17 @@ describe('BaileysAdapter catalog (#905)', () => {
       body: 'check this',
     });
     expect(res).toEqual({ id: 'M1', timestamp: 1700000005 });
+  });
+
+  it('sendProduct sends a product without a price with no priceAmount1000, never NaN', async () => {
+    const adapter = await ready();
+    fakeSock.getCatalog.mockResolvedValue({ products: [baileysProduct({ price: NaN })], nextPageCursor: undefined });
+    fakeSock.sendMessage.mockResolvedValue({ key: { id: 'M1' }, messageTimestamp: 1700000005 });
+
+    await adapter.sendProduct('628111@s.whatsapp.net', 'p1');
+
+    const [, content] = fakeSock.sendMessage.mock.calls[0] as [string, { product: { priceAmount1000?: number } }];
+    expect(content.product.priceAmount1000).toBeUndefined();
   });
 
   it('sendProduct rejects NotFound when the product id is unknown', async () => {

@@ -318,7 +318,7 @@ export class BaileysMessaging {
         title: product.name,
         description: product.description,
         currencyCode: product.currency,
-        priceAmount1000: Math.round(product.price * 1000),
+        priceAmount1000: product.price === undefined ? undefined : Math.round(product.price * 1000),
         retailerId: product.retailerId,
         url: product.url || undefined,
         productImage: { url: product.imageUrl },
