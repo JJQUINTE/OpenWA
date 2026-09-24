@@ -4379,6 +4379,12 @@ describe('outbound document mode (#989)', () => {
         'image/png',
         'image/png',
       ],
+      [
+        'declared image type for a sticker survives binary/octet-stream',
+        'binary/octet-stream',
+        'image/png',
+        'image/png',
+      ],
     ])('%s', async (_name, fetchedContentType, declaredMimetype, expectedMimetype) => {
       (undiciFetch as jest.Mock).mockResolvedValue(remoteResponse({ 'content-type': fetchedContentType }));
       const sendMessage = jest.fn().mockResolvedValue(sentMessage);
@@ -4476,6 +4482,67 @@ describe('outbound document mode (#989)', () => {
         '628@c.us',
         expect.objectContaining({ mimetype: 'image/jpeg' }),
         expect.anything(),
+      );
+    });
+
+    // WA Web classifies an attachment from its mimetype, so a photo whose host says nothing useful
+    // (no Content-Type, or the S3 default for an object uploaded without one) would reach the
+    // recipient as a document. The route already says what kind of media it is.
+    it.each<[string, 'sendImageMessage' | 'sendVideoMessage' | 'sendAudioMessage', string, string]>([
+      ['an image with application/octet-stream', 'sendImageMessage', 'application/octet-stream', 'image/jpeg'],
+      ['an image with no Content-Type', 'sendImageMessage', '', 'image/jpeg'],
+      ['a video with binary/octet-stream', 'sendVideoMessage', 'binary/octet-stream', 'video/mp4'],
+      [
+        'an audio with a mixed-case, parameterised octet-stream',
+        'sendAudioMessage',
+        'Application/Octet-Stream; x=1',
+        'audio/mpeg',
+      ],
+    ])('falls back to the kind default for %s and no declared type', async (_name, send, fetched, expected) => {
+      (undiciFetch as jest.Mock).mockResolvedValue(remoteResponse({ 'content-type': fetched }));
+      const sendMessage = jest.fn().mockResolvedValue(sentMessage);
+
+      await ready({ sendMessage })[send]('628@c.us', {
+        mimetype: 'application/octet-stream',
+        data: 'https://files.example.com/media',
+      });
+
+      expect(sendMessage).toHaveBeenCalledWith(
+        '628@c.us',
+        expect.objectContaining({ mimetype: expected }),
+        expect.anything(),
+      );
+    });
+
+    it('keeps a specific fetched type on the video path', async () => {
+      (undiciFetch as jest.Mock).mockResolvedValue(remoteResponse({ 'content-type': 'video/webm' }));
+      const sendMessage = jest.fn().mockResolvedValue(sentMessage);
+
+      await ready({ sendMessage }).sendVideoMessage('628@c.us', {
+        mimetype: 'application/octet-stream',
+        data: 'https://files.example.com/clip',
+      });
+
+      expect(sendMessage).toHaveBeenCalledWith(
+        '628@c.us',
+        expect.objectContaining({ mimetype: 'video/webm' }),
+        expect.anything(),
+      );
+    });
+
+    it('leaves a document with a generic fetched type as it is', async () => {
+      (undiciFetch as jest.Mock).mockResolvedValue(remoteResponse({ 'content-type': 'binary/octet-stream' }));
+      const sendMessage = jest.fn().mockResolvedValue(sentMessage);
+
+      await ready({ sendMessage }).sendDocumentMessage('628@c.us', {
+        mimetype: 'application/octet-stream',
+        data: 'https://files.example.com/blob',
+      });
+
+      expect(sendMessage).toHaveBeenCalledWith(
+        '628@c.us',
+        expect.objectContaining({ mimetype: 'binary/octet-stream' }),
+        expect.objectContaining({ sendMediaAsDocument: true }),
       );
     });
   });

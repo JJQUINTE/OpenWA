@@ -129,7 +129,7 @@ export function isQuoteUnresolvedError(err: unknown): boolean {
 export async function toMessageMedia(
   media: MediaInput,
   sessionProxyUrl: string | undefined,
-  opts?: { trustDeclaredType?: boolean },
+  opts?: { trustDeclaredType?: boolean; fallbackType?: string },
 ): Promise<MessageMedia> {
   if (typeof media.data === 'string' && isHttpUrl(media.data)) {
     const fetched = await loadRemoteMedia(media.data, sessionProxyUrl);
@@ -154,10 +154,19 @@ export async function toMessageMedia(
     const normalizeMediaType = (value?: string): string => (value ?? '').split(';', 1)[0].trim().toLowerCase();
     const fetchedType = normalizeMediaType(fetched.mimetype);
     const declaredType = normalizeMediaType(media.mimetype);
-    const fetchedTypeIsGeneric = !fetchedType || fetchedType === 'application/octet-stream';
+    const fetchedTypeIsGeneric =
+      !fetchedType || fetchedType === 'application/octet-stream' || fetchedType === 'binary/octet-stream';
     const declaredTypeIsConvertible = declaredType.startsWith('image/') || declaredType.startsWith('video/');
     if (opts?.trustDeclaredType === false && fetchedTypeIsGeneric && declaredTypeIsConvertible) {
       fetched.mimetype = declaredType;
+    }
+    // An image, video or audio route already says what kind of media it carries. When neither the
+    // caller nor the host says more (the placeholder over an empty or generic response, the S3
+    // default for an object uploaded without a type), WA Web would classify the bytes from that
+    // generic type and deliver a photo as a document, so the route's default type stands in.
+    const declaredTypeIsUnknown = !declaredType || declaredType === 'application/octet-stream';
+    if (opts?.fallbackType && fetchedTypeIsGeneric && declaredTypeIsUnknown) {
+      fetched.mimetype = opts.fallbackType;
     }
     if (media.filename) {
       fetched.filename = media.filename;
@@ -408,15 +417,15 @@ export class WwebjsMessaging {
   }
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media);
+    return this.sendMediaMessage(chatId, media, undefined, 'image/jpeg');
   }
 
   async sendVideoMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media);
+    return this.sendMediaMessage(chatId, media, undefined, 'video/mp4');
   }
 
   async sendAudioMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media, media.ptt ? { sendAudioAsVoice: true } : undefined);
+    return this.sendMediaMessage(chatId, media, media.ptt ? { sendAudioAsVoice: true } : undefined, 'audio/mpeg');
   }
 
   /**
@@ -441,12 +450,13 @@ export class WwebjsMessaging {
     chatId: string,
     media: MediaInput,
     extraOptions?: { sendAudioAsVoice?: boolean; sendMediaAsDocument?: boolean },
+    fallbackType?: string,
   ): Promise<MessageResult> {
     this.host.ensureReady();
     this.host.ensureNotChannelRecipient(chatId);
 
     // Build the media once (a remote URL is fetched here); sendResolved may retry the send itself.
-    const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url);
+    const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url, { fallbackType });
     // A nameless document reaches WA Web as `new File([blob], undefined)` and is labelled literally
     // "undefined". Only documents render a filename, so default just this path — as Baileys does.
     if (extraOptions?.sendMediaAsDocument && !messageMedia.filename) {
