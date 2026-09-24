@@ -7,10 +7,10 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // another tab signed in with a different key) would gate the UI for the wrong actor.
   const [role, setRoleState] = useState<UserRole | null>(() => {
     // Older builds kept the role in localStorage, shared by every tab. A tab that already holds its
-    // key adopts that copy once, so the first reload after an upgrade does not drop the role until
-    // /auth/validate answers; the shared copy goes either way.
+    // key but no role of its own adopts that copy, so its first reload after an upgrade does not drop
+    // the role until /auth/validate answers. The copy is left in place for the other tabs signed in
+    // before the upgrade; every sign-in since stores a role with its key, so no newer tab adopts it.
     const legacy = localStorage.getItem('openwa_user_role');
-    localStorage.removeItem('openwa_user_role');
     if (legacy && !sessionStorage.getItem('openwa_user_role') && sessionStorage.getItem('openwa_api_key')) {
       sessionStorage.setItem('openwa_user_role', legacy);
     }
