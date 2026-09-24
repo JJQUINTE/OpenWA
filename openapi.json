@@ -2415,7 +2415,7 @@
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
           },
           "501": {
-            "description": "A caller-supplied `customLinkPreview` is not supported by the whatsapp-web.js engine — only Baileys can attach one. The send itself is supported on both; omit the field, or use `linkPreview`."
+            "description": "A caller-supplied `customLinkPreview` is not supported by the whatsapp-web.js engine — only Baileys can attach one. The send itself is supported on both; omit the field, or use `linkPreview`. whatsapp-web.js also refuses a send with `quotedMessageId` to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           }
         },
         "summary": "Send a text message",
@@ -2530,7 +2530,7 @@
             "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
-            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
+            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works. whatsapp-web.js also refuses a send with `quotedMessageId` to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           },
           "503": {
             "description": "The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out before any response arrived, so the request was not carried out. The proxy or the target behind it may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy works points at the `url`. Without a session proxy the same failure answers `400`."
@@ -2596,7 +2596,7 @@
             "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
-            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
+            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works. whatsapp-web.js also refuses a send with `quotedMessageId` to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           },
           "503": {
             "description": "The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out before any response arrived, so the request was not carried out. The proxy or the target behind it may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy works points at the `url`. Without a session proxy the same failure answers `400`."
@@ -2663,7 +2663,7 @@
             "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
-            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
+            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works. whatsapp-web.js also refuses a send with `quotedMessageId` to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           },
           "503": {
             "description": "The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out before any response arrived, so the request was not carried out. The proxy or the target behind it may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy works points at the `url`. Without a session proxy the same failure answers `400`."
@@ -2730,7 +2730,7 @@
             "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
-            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
+            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works. whatsapp-web.js also refuses a send with `quotedMessageId` to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           },
           "503": {
             "description": "The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out before any response arrived, so the request was not carried out. The proxy or the target behind it may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy works points at the `url`. Without a session proxy the same failure answers `400`."
@@ -2793,6 +2793,9 @@
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
+          },
+          "501": {
+            "description": "whatsapp-web.js cannot send a location to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           }
         },
         "summary": "Send a location message",
@@ -2851,6 +2854,9 @@
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
+          },
+          "501": {
+            "description": "whatsapp-web.js cannot send a contact card to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           }
         },
         "summary": "Send a contact card message",
@@ -2913,7 +2919,7 @@
             "description": "The decoded base64 media, or the media downloaded from `url`, exceeds the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`, 50 MiB by default). A whole request is separately bounded by `BODY_SIZE_LIMIT` (25 mb by default), and base64 inflates by about a third, so a large send usually meets that coarser limit first: the body parser rejects the request before this check runs."
           },
           "501": {
-            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works."
+            "description": "Sending media to a channel (`<id>@newsletter`) is not supported by the whatsapp-web.js engine — the page method it needs was removed by a WhatsApp Web update. Text to a channel still works. whatsapp-web.js cannot send a sticker to a status or broadcast list (`@broadcast`) either; nothing is sent."
           },
           "503": {
             "description": "The session routes its `url` fetches through an egress proxy, and the fetch failed or timed out before any response arrived, so the request was not carried out. The proxy or the target behind it may be at fault; the gateway cannot tell which. Retryable, but a `503` that persists while the proxy works points at the `url`. Without a session proxy the same failure answers `400`."
@@ -2978,6 +2984,9 @@
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
+          },
+          "501": {
+            "description": "whatsapp-web.js cannot send a poll to a status or broadcast list (`@broadcast`), nor one with `quotedMessageId` to a channel (`<id>@newsletter`); nothing is sent."
           }
         },
         "summary": "Send a native WhatsApp poll",
@@ -3029,6 +3038,9 @@
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
+          },
+          "501": {
+            "description": "whatsapp-web.js cannot send a reply to a channel (`<id>@newsletter`) or a status or broadcast list (`@broadcast`); nothing is sent."
           }
         },
         "summary": "Reply to a message",
@@ -6923,7 +6935,7 @@
             }
           },
           "404": {
-            "description": "The chat does not exist on this session, so nothing was written (whatsapp-web.js)"
+            "description": "The chat does not exist on this session, or the account has no label with this id, so nothing was written (whatsapp-web.js)"
           },
           "409": {
             "description": "The session is not connected: an engine exists for it but is not `ready`, meaning disconnected, reconnecting, or still initializing, so the request never reached WhatsApp. Wait for `ready` and retry. A session that was never started answers `400` instead, and the session lifecycle routes answer `409` for a conflicting state rather than this. One window answers this while the session still reads `ready`: WhatsApp Web periodically reloads its own page and the engine re-injects into it, and for those few seconds the answer is a `409` naming the reload; retry shortly."
@@ -7690,6 +7702,9 @@
           },
           "404": {
             "description": "Metrics endpoint is disabled (METRICS_TOKEN unset)"
+          },
+          "429": {
+            "description": "Too many failed token attempts from this client; retry after a minute"
           }
         },
         "security": [
@@ -7806,7 +7821,7 @@
             }
           },
           "403": {
-            "description": "Key lacks OPERATOR role, or (whatsapp-web.js) the id is not one of the account's own statuses"
+            "description": "Key lacks OPERATOR role; on whatsapp-web.js, the id is not one of the account's own statuses; on Baileys, the status was not posted by this session in the last 24 hours (or was posted before a restart, from the phone or from another node), so its recipients are unknown and the revoke cannot be addressed to them."
           },
           "404": {
             "description": "No session is running under that id — it was never started, was stopped, or does not exist. These routes report an unstarted session as `404`, where the message and group routes report it as `400`."
@@ -10442,7 +10457,7 @@
           },
           "engineLoaded": {
             "type": "boolean",
-            "description": "Whether the gateway currently holds a live engine for this session. This is the precondition the lifecycle routes actually enforce, and `status` alone does not imply it: a `disconnected` session keeps its engine for the duration of an automatic reconnect backoff, while a session stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. When `true`, `stop`, `logout` and `force-kill` can act and `start` answers 400; when `false`, the reverse. Derived per request from live process state, so it is never persisted and never historical.",
+            "description": "Whether the gateway currently holds a live engine for this session. This is the precondition the lifecycle routes actually enforce, and `status` alone does not imply it: a `disconnected` session keeps its engine for the duration of an automatic reconnect backoff, while a session stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. When `true`, `stop`, `logout` and `force-kill` can act and `start` answers 400; when `false`, the reverse. Derived per request from live state, so it is never persisted and never historical: an engine in the answering process or, in a multi-node deployment, a live claim by the node running the session.",
             "example": true
           }
         },
@@ -11149,7 +11164,7 @@
           },
           "headers": {
             "type": "object",
-            "description": "Custom headers to include in webhook requests. Never returned by any webhook route. At delivery, `content-type` and `x-openwa-*` names are stripped so a custom header cannot shadow a system one.",
+            "description": "Custom headers to include in webhook requests. Never returned by any webhook route. At delivery, `content-type` and `x-openwa-*` names are stripped so a custom header cannot shadow a system one, and so are the connection-level names the HTTP client owns (`connection`, `content-length`, `expect`, `keep-alive`, `te`, `trailer`, `transfer-encoding`, `upgrade`).",
             "example": {
               "X-Custom-Header": "value"
             }
@@ -13633,7 +13648,7 @@
             }
           },
           "library": {
-            "description": "Absent when the plugin does not report a library, which includes any disabled engine.",
+            "description": "Absent when the plugin does not report a library. Built-in engines report it whether or not they are enabled.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/EngineLibraryDto"
@@ -16138,11 +16153,8 @@
           },
           "mediaUrl": {
             "type": "string",
-            "description": "Media URL as the engine reported it."
-          },
-          "media": {
-            "type": "object",
-            "description": "Downloaded media bytes, present only when the engine fetched them and they fit the inbound media cap. Absent is not an error — fetch the bytes from the media route instead."
+            "description": "Same-origin path to GET /sessions/{sessionId}/status/{statusId}/media, which needs X-API-Key like any other route. Present only when the stored status kept its media.",
+            "example": "/api/sessions/my-session/status/ABCD1234/media"
           },
           "backgroundColor": {
             "type": "string",
@@ -16495,17 +16507,17 @@
           },
           "price": {
             "type": "number",
-            "description": "Price in the currency’s minor-unit-free numeric form.",
+            "description": "Price in the currency’s minor-unit-free numeric form. Absent when the product has no price.",
             "example": 85000
           },
           "currency": {
             "type": "string",
-            "description": "ISO currency code.",
+            "description": "ISO currency code. Absent when the product carries no currency.",
             "example": "IDR"
           },
           "priceFormatted": {
             "type": "string",
-            "description": "Price rendered for display. Synthesized by the gateway from price + currency, so an unrecognised currency code falls back to a plain \"CODE amount\" pair.",
+            "description": "Price rendered for display. Synthesized by the gateway from price + currency, so an unrecognised currency code falls back to a plain \"CODE amount\" pair, and a product with no currency shows the bare amount. Present only when price is.",
             "example": "IDR 85,000.00"
           },
           "imageUrl": {
@@ -16532,9 +16544,6 @@
         "required": [
           "id",
           "name",
-          "price",
-          "currency",
-          "priceFormatted",
           "url",
           "isAvailable"
         ]
@@ -16754,7 +16763,7 @@
         "properties": {
           "url": {
             "type": "string",
-            "description": "URL of the plugin .zip to download and install (SSRF-guarded; private-network hosts remain subject to the guard). https:// is accepted as-is. Plain http:// is only accepted when the URL pins the package content — append `#sha256=<64 hex>` (fragment — never sent to the server; query params are ignored) — because the package is executable code and must be integrity-protected in transit. A pinned digest that does not match the downloaded archive fails the install."
+            "description": "URL of the plugin .zip to download and install (SSRF-guarded; private-network hosts remain subject to the guard). https:// is accepted without a pin, except that NODE_ENV=production (the Docker image default) requires the `#sha256=` pin described below on every URL unless PLUGIN_INSTALL_REQUIRE_PIN=false, and PLUGIN_INSTALL_REQUIRE_PIN=true requires it everywhere. Plain http:// is only accepted when the URL pins the package content — append `#sha256=<64 hex>` (fragment — never sent to the server; query params are ignored) — because the package is executable code and must be integrity-protected in transit. A pinned digest that does not match the downloaded archive fails the install."
           }
         },
         "required": [
@@ -17072,7 +17081,8 @@
           },
           "sessionScope": {
             "type": "string",
-            "description": "Session id the instance is scoped to. Omit for all sessions."
+            "description": "Session id to bind the instance to, or null for all sessions. Omit to leave the scope unchanged.",
+            "nullable": true
           },
           "config": {
             "type": "object",
