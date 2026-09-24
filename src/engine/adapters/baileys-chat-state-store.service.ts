@@ -46,6 +46,12 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
   private readonly states = new Map<string, ChatStateValue>();
   /** Repository fallbacks in flight, one per key, so a hot miss path can't stack duplicate queries. */
   private readonly pendingLookups = new Set<string>();
+  /**
+   * Keys the table has no row for, so a chat never muted, archived or pinned (most of them) is not
+   * queried again on every chat-list read. Kept apart from `states` so it never evicts a real row;
+   * bounded by the same cap, and a key leaves it the moment a state is indexed for it.
+   */
+  private readonly absent = new Set<string>();
   private readonly maxEntries: number;
 
   constructor(
@@ -66,6 +72,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
         take: this.maxEntries > 0 ? this.maxEntries : undefined,
       });
       this.states.clear();
+      this.absent.clear();
       for (const row of rows) {
         this.index(this.key(row.sessionId, row.chatId), {
           muteEndTime: row.muteEndTime,
@@ -89,7 +96,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       this.states.set(k, value);
       return value;
     }
-    this.warmFromTable(k, sessionId, chatId);
+    if (!this.absent.has(k)) this.warmFromTable(k, sessionId, chatId);
     return undefined;
   }
 
@@ -109,7 +116,9 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       try {
         row = await this.repo.findOne({ where: { sessionId, chatId } });
       } catch {
-        return this.persist(sessionId, chatId, patch);
+        await this.persist(sessionId, chatId, patch);
+        this.absent.delete(k);
+        return;
       }
       existing = row ? { muteEndTime: row.muteEndTime, archived: row.archived, pinned: row.pinned } : DEFAULT_STATE;
     }
@@ -152,8 +161,14 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     void this.repo
       .findOne({ where: { sessionId, chatId } })
       .then(row => {
-        if (row && !this.states.has(k)) {
+        if (this.states.has(k)) return;
+        if (row) {
           this.index(k, { muteEndTime: row.muteEndTime, archived: row.archived, pinned: row.pinned });
+        } else {
+          this.absent.add(k);
+          if (this.maxEntries && this.absent.size > this.maxEntries) {
+            this.absent.delete(this.absent.values().next().value!);
+          }
         }
       })
       .catch(() => undefined)
@@ -161,6 +176,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
   }
 
   private index(k: string, value: ChatStateValue): void {
+    this.absent.delete(k);
     this.states.delete(k); // re-insert so the entry moves to the most-recent end even on update
     this.states.set(k, value);
     this.evictIfOverCap();

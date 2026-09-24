@@ -135,6 +135,28 @@ describe('ChatStateStoreService', () => {
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: 5, archived: false, pinned: true });
   });
 
+  it('does not query again for a chat the table has no row for', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(repo.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads through again once a chat known to have no row gets one and is evicted', async () => {
+    process.env[ENV] = '1';
+    const svc = svcWith(makeRepo());
+    svc.get('s', 'c');
+    await tick(); // 'c' is now known to have no row
+    await svc.remember('s', 'c', { archived: true });
+    await svc.remember('s', 'd', { pinned: true }); // cap 1: evicts 'c' from the cache
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
+  });
+
   it('swallows a repo error on reload and remember (table may not exist yet)', async () => {
     const repo = {
       find: jest.fn(() => Promise.reject(new Error('no such table'))),
