@@ -66,7 +66,7 @@ was never carried out: a forward that fails after the request reached the owner 
 use OpenWA\Exceptions\OpenWANotFoundException;
 
 try {
-    $client->sessions->get('missing');
+    $client->sessions->get('00000000-0000-0000-0000-000000000000');
 } catch (OpenWANotFoundException $e) {
     echo $e->getStatus();  // 404
 }

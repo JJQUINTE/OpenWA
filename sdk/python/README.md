@@ -80,7 +80,7 @@ the owner node answers 502 or 504.
 from openwa import OpenWANotFoundError
 
 try:
-    client.sessions.get("missing")
+    client.sessions.get("00000000-0000-0000-0000-000000000000")
 except OpenWANotFoundError as e:
     print(e.status)  # 404
 ```
