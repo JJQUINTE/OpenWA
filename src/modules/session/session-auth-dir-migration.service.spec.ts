@@ -223,42 +223,20 @@ describe('SessionAuthDirMigration', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  // A UUID-shaped name's legacy directory cannot be told apart from a deleted session's id-keyed
-  // leftover, so it is not moved; but on an upgrade it may be this session's own login, which must
-  // not be stranded without a word.
-  it('never moves a directory named by a UUID-shaped name, and names it so it can be moved by hand', async () => {
+  // Only an exact live id is held back. On an upgrade from a release that keyed directories by name,
+  // a session named after, say, a tenant UUID owns the directory its name points at, and leaving it
+  // there would bring the session back at a QR code.
+  it('moves the directories of a UUID-shaped name that is not a session id onto the session id', async () => {
     const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+    seed(path.join(sessionsDir, `session-${uuidName}`), 'wwjs-legacy');
     seed(path.join(baileysDir, uuidName), 'baileys-legacy');
-    const migration = buildMigration([{ id: ALICE_ID, name: uuidName }]);
-    const warn = jest
-      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
-      .mockImplementation(() => undefined);
 
-    await migration.onModuleInit();
+    await buildMigration([{ id: ALICE_ID, name: uuidName }]).onModuleInit();
 
-    expect(markerAt(path.join(baileysDir, uuidName))).toBe('baileys-legacy');
-    expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(path.join(baileysDir, uuidName)),
-      expect.objectContaining({ action: 'auth_dir_migration_ambiguous_name', engine: 'baileys' }),
-    );
-  });
-
-  it('says nothing about a UUID-shaped name once its session has an id-keyed directory', async () => {
-    const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
-    seed(path.join(baileysDir, uuidName), 'baileys-leftover');
-    seed(path.join(baileysDir, ALICE_ID), 'baileys-alice');
-    const migration = buildMigration([{ id: ALICE_ID, name: uuidName }]);
-    const warn = jest
-      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
-      .mockImplementation(() => undefined);
-
-    await migration.onModuleInit();
-
-    expect(markerAt(path.join(baileysDir, uuidName))).toBe('baileys-leftover');
-    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-alice');
-    expect(warn).not.toHaveBeenCalled();
+    expect(markerAt(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe('wwjs-legacy');
+    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-legacy');
+    expect(fs.existsSync(path.join(sessionsDir, `session-${uuidName}`))).toBe(false);
+    expect(fs.existsSync(path.join(baileysDir, uuidName))).toBe(false);
   });
 
   it('skips the query and the filesystem entirely when there are no sessions', async () => {
