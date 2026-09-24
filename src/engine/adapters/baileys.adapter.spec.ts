@@ -4528,6 +4528,46 @@ describe('BaileysAdapter store-backed ops', () => {
     });
   });
 
+  describe('an API send addressed in another dialect than the chat is keyed by', () => {
+    /** Baileys keys the sent message by exactly the jid it was handed, whatever its dialect. */
+    const echoSend = () =>
+      fakeSock.sendMessage.mockImplementation((jid: string, content: { text?: string }) =>
+        Promise.resolve({
+          key: { id: 'OUT', remoteJid: jid, fromMe: true },
+          message: { extendedTextMessage: { text: content.text } },
+          messageTimestamp: 1700000100,
+        }),
+      );
+    afterEach(() => {
+      fakeSock.signalRepository = undefined;
+    });
+
+    it.each([
+      ['an unmapped @c.us id to a phone-keyed chat', '628111@c.us', '628111@s.whatsapp.net', null],
+      ['a phone id to a phone-keyed chat whose lid is known', '628111@c.us', '628111@s.whatsapp.net', '484848@lid'],
+      ['a phone id to a lid-keyed chat', '628111@s.whatsapp.net', '484848@lid', '484848@lid'],
+    ])('%s still becomes the chat preview and sort time', async (_label, sendTo, chatKey, lid) => {
+      fakeSock.signalRepository = { lidMapping: { getLIDForPN: jest.fn().mockResolvedValue(lid) } };
+      echoSend();
+      const adapter = await ready();
+      fakeSock.fire('chats.upsert', [{ id: chatKey, conversationTimestamp: 1700000000 }]);
+      await adapter.sendTextMessage(sendTo, 'on its way');
+      expect(await adapter.getChats()).toEqual([
+        expect.objectContaining({ id: '628111@c.us', timestamp: 1700000100, lastMessage: 'on its way' }),
+      ]);
+
+      fakeStore.getMessage.mockResolvedValue({
+        key: { id: 'OUT', remoteJid: lid ?? sendTo, fromMe: true },
+        message: { extendedTextMessage: { text: 'on its way' } },
+        messageTimestamp: 1700000100,
+      });
+      await adapter.editMessage('628111@c.us', 'OUT', 'arriving tomorrow');
+      expect((await adapter.getChats())[0]?.lastMessage).toBe('arriving tomorrow');
+      await adapter.deleteMessage('628111@c.us', 'OUT', true);
+      expect((await adapter.getChats())[0]?.lastMessage).toBe('');
+    });
+  });
+
   it('clears the store on logout', async () => {
     const adapter = await ready();
     await adapter.logout();

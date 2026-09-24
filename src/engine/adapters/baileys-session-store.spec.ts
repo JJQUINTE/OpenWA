@@ -339,6 +339,7 @@ describe('BaileysSessionStore', () => {
     expect(store.lastMessage('628111@s.whatsapp.net')).toEqual({
       key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'NEW' },
       timestamp: 200,
+      jid: '628111@s.whatsapp.net',
     });
   });
 
@@ -598,6 +599,67 @@ describe('BaileysSessionStore', () => {
     it('keeps group ids unchanged', () => {
       store.upsertChats([{ id: '120363-9@g.us', name: 'Team' }]);
       expect(store.listChats()[0].id).toBe('120363-9@g.us');
+    });
+  });
+
+  describe('one preview per chat across id dialects', () => {
+    const PHONE = '628111@s.whatsapp.net';
+    const LID = '484848@lid';
+    const msg = (remoteJid: string, id: string, ts: number, fromMe = false) => ({
+      key: { remoteJid, fromMe, id },
+      message: { conversation: id },
+      messageTimestamp: ts,
+    });
+
+    it('files an own send addressed as @c.us under the chat Baileys keyed by phone', () => {
+      store.upsertChats([{ id: PHONE, conversationTimestamp: 5 }]);
+      store.recordMessage(msg('628111@c.us', 'OUT', 100, true));
+      expect(store.listChats()).toEqual([
+        expect.objectContaining({ id: '628111@c.us', timestamp: 100, lastMessage: 'OUT' }),
+      ]);
+      expect(store.lastMessage('628111@c.us')).toEqual(expect.objectContaining({ jid: PHONE }));
+    });
+
+    it('files a lid-addressed send under the phone-keyed chat once the mapping is known', () => {
+      store.upsertChats([{ id: PHONE }]);
+      store.addLidMappings([{ lid: LID, pn: PHONE }]);
+      store.recordMessage(msg(LID, 'OUT', 100, true));
+      expect(store.listChats()).toEqual([expect.objectContaining({ timestamp: 100, lastMessage: 'OUT' })]);
+    });
+
+    it('finds a lid-keyed chat from the @c.us id the listing publishes', () => {
+      store.upsertChats([{ id: LID }]);
+      store.recordKeyLidMappings({ remoteJid: LID, remoteJidAlt: PHONE });
+      store.recordMessage(msg(LID, 'IN', 100));
+      expect(store.listChats()[0].id).toBe('628111@c.us');
+      expect(store.lastMessage('628111@c.us')).toEqual({
+        key: { remoteJid: LID, fromMe: false, id: 'IN' },
+        timestamp: 100,
+        jid: LID,
+      });
+      store.recordMessageEdit('628111@c.us', 'IN', 'edited');
+      expect(store.listChats()[0].lastMessage).toBe('edited');
+    });
+
+    it('finds the lid twin through the persisted table as well', () => {
+      const lidStore = {
+        getCached: jest.fn(() => undefined),
+        resolveLid: jest.fn(() => null),
+        lidsForPhone: jest.fn((phone: string) => (phone === '628111' ? ['484848'] : [])),
+        remember: jest.fn(() => Promise.resolve()),
+      };
+      const s = new BaileysSessionStore(lidStore, 'sess-1');
+      s.upsertChats([{ id: LID }]);
+      s.recordMessage(msg(LID, 'IN', 100));
+      expect(s.lastMessage('628111@c.us')?.jid).toBe(LID);
+    });
+
+    it('keeps one entry when a chat with no record yet is addressed in both dialects', () => {
+      store.recordMessage(msg('628111@c.us', 'OUT', 100, true));
+      store.recordKeyLidMappings({ remoteJid: LID, remoteJidAlt: PHONE });
+      store.recordMessage(msg(LID, 'IN', 200));
+      expect(store.lastMessage('628111@c.us')?.key.id).toBe('IN');
+      expect(store.lastMessage(LID)?.key.id).toBe('IN');
     });
   });
 

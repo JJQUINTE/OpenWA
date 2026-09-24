@@ -114,6 +114,11 @@ class LruMap<K, V> {
   values(): IterableIterator<V> {
     return this.map.values();
   }
+
+  /** LIVE iterator with the same caveat as {@link values}. */
+  entries(): IterableIterator<[K, V]> {
+    return this.map.entries();
+  }
 }
 
 /** A projected contact with the raw store key it came from, so twins can be folded deterministically. */
@@ -331,13 +336,14 @@ export class BaileysSessionStore {
     // newest-message guard so every inbound refreshes it; the timer is cached under both the raw and
     // neutral JID so an outbound send addressed in either dialect (phone or @lid) finds it.
     this.recordEphemeralFromMessage(chatId, msg);
+    const key = this.chatKey(chatId);
     const timestamp = this.toUnixSeconds(msg.messageTimestamp);
-    const existing = this.lastMessages.get(chatId);
+    const existing = this.lastMessages.get(key);
     if (existing && existing.timestamp >= timestamp) {
       return; // keep the newest
     }
     const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? '';
-    this.lastMessages.set(chatId, { key: msg.key, timestamp, text });
+    this.lastMessages.set(key, { key: msg.key, timestamp, text });
   }
 
   /**
@@ -346,10 +352,42 @@ export class BaileysSessionStore {
    */
   recordMessageEdit(chatId: string, messageId: string, text: string): void {
     if (!messageId) return;
-    const rawChatId = this.lastMessages.has(chatId) ? chatId : this.toEngineJid(chatId);
-    const existing = this.lastMessages.get(rawChatId);
+    const key = this.chatKey(chatId);
+    const existing = this.lastMessages.get(key);
     if (!existing || existing.key.id !== messageId) return;
-    this.lastMessages.set(rawChatId, { ...existing, text });
+    this.lastMessages.set(key, { ...existing, text });
+  }
+
+  /**
+   * The key a chat's preview is kept under, for an id in any dialect. One conversation reaches this
+   * store as `<phone>@c.us` (the API and the listing), `<phone>@s.whatsapp.net` and `<lid>@lid`
+   * (Baileys, which addresses a lid-migrated contact by its lid and sends to whatever it is given).
+   * Keying each spelling separately left an API send or an inbound message on a twin the chat row
+   * never reads, so the chat showed no preview and chat actions found no history. The chat record
+   * decides: the twin Baileys keyed the chat under wins, then a twin that already holds a preview,
+   * and a chat known under neither falls back to the engine dialect.
+   */
+  private chatKey(jid: string): string {
+    if (this.chats.has(jid)) return jid;
+    const twins = this.chatTwins(jid);
+    return twins.find(k => this.chats.has(k)) ?? twins.find(k => this.lastMessages.has(k)) ?? this.toEngineJid(jid);
+  }
+
+  /** Every spelling of one chat this session can connect: the id, its engine form, and its lid or phone twin. */
+  private chatTwins(jid: string): string[] {
+    const parsed = parseWaId(jid);
+    const twins = [jid, this.toEngineJid(jid)];
+    if (parsed.kind === 'lid') {
+      twins.push(`${parsed.userPart}@lid`);
+      const phone = this.resolvePhone(jid);
+      if (phone) twins.push(`${phone}@s.whatsapp.net`);
+    } else if (parsed.kind === 'user') {
+      for (const [lid, pn] of this.lidToPn.entries()) {
+        if (userPart(pn) === parsed.userPart) twins.push(lid);
+      }
+      for (const lid of this.lidStore?.lidsForPhone(parsed.userPart) ?? []) twins.push(`${lid}@lid`);
+    }
+    return twins;
   }
 
   /**
@@ -474,9 +512,11 @@ export class BaileysSessionStore {
     return [...this.chats.values()].map(c => this.toNeutralChat(c));
   }
 
-  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
-    const m = this.lastMessages.get(chatId) ?? this.lastMessages.get(this.toEngineJid(chatId));
-    return m ? { key: m.key, timestamp: m.timestamp } : null;
+  /** The chat's newest message, with `jid`, the id the chat itself is keyed under. */
+  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null {
+    const jid = this.chatKey(chatId);
+    const m = this.lastMessages.get(jid);
+    return m ? { key: m.key, timestamp: m.timestamp, jid } : null;
   }
 
   /**
