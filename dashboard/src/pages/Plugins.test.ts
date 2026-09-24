@@ -122,9 +122,14 @@ test('PluginConfigUi replies to config:get with localized schema and locale', as
 
   // We spy on the iframe's contentWindow postMessage
   // JSDOM creates an empty contentWindow for the iframe
-  let postedMessage: any = null;
-  iframe.contentWindow!.postMessage = (message: any) => {
-    postedMessage = message;
+  interface ConfigMessage {
+    type?: string;
+    locale?: string;
+    schema?: { properties: { field1: { title: string } } };
+  }
+  let postedMessage: ConfigMessage | null = null;
+  iframe.contentWindow!.postMessage = (message: unknown) => {
+    postedMessage = message as ConfigMessage;
   };
 
   // Dispatch the handshake message from the iframe to the window
@@ -136,12 +141,13 @@ test('PluginConfigUi replies to config:get with localized schema and locale', as
 
   // Assert that PluginConfigUi replied with the correct schema and locale
   assert.ok(postedMessage, 'No postMessage received by iframe');
-  assert.equal(postedMessage.type, 'config:value');
+  const msg = postedMessage as ConfigMessage;
+  assert.equal(msg.type, 'config:value');
 
   // Bug #1522: The schema must be localized and locale must be present
-  assert.equal(postedMessage.locale, 'es', 'locale was not sent in config:value');
+  assert.equal(msg.locale, 'es', 'locale was not sent in config:value');
   assert.equal(
-    postedMessage.schema.properties.field1.title,
+    msg.schema?.properties.field1.title,
     'Spanish Title',
     'schema was not localized in config:value',
   );
