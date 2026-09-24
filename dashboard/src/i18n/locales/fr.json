@@ -621,7 +621,10 @@
     },
     "empty": {
       "title": "Aucune clé API créée",
-      "description": "Créez une clé API pour authentifier vos requêtes"
+      "description": "Créez une clé API pour authentifier vos requêtes",
+      "loadErrorTitle": "Impossible de charger les clés API",
+      "forbiddenTitle": "Aucun accès aux clés API",
+      "forbiddenDesc": "La gestion des clés API nécessite une clé administrateur qui n'est pas limitée à des sessions précises."
     },
     "confirm": {
       "deleteTitle": "Supprimer la clé API",

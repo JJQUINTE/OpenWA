@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "Keine API-Schlüssel erstellt",
-      "description": "Erstelle einen API-Schlüssel, um deine Anfragen zu authentifizieren"
+      "description": "Erstelle einen API-Schlüssel, um deine Anfragen zu authentifizieren",
+      "loadErrorTitle": "API-Schlüssel konnten nicht geladen werden",
+      "forbiddenTitle": "Kein Zugriff auf API-Schlüssel",
+      "forbiddenDesc": "Zum Verwalten von API-Schlüsseln ist ein Admin-Schlüssel erforderlich, der nicht auf bestimmte Sitzungen beschränkt ist."
     },
     "confirm": {
       "deleteTitle": "API-Schlüssel löschen",

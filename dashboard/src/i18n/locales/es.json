@@ -572,7 +572,10 @@
     },
     "empty": {
       "title": "No hay claves API creadas",
-      "description": "Crea una clave API para autenticar tus peticiones"
+      "description": "Crea una clave API para autenticar tus peticiones",
+      "loadErrorTitle": "No se pudieron cargar las claves API",
+      "forbiddenTitle": "Sin acceso a las claves API",
+      "forbiddenDesc": "Para gestionar las claves API se necesita una clave de administrador que no esté restringida a sesiones específicas."
     },
     "confirm": {
       "deleteTitle": "Eliminar clave API",

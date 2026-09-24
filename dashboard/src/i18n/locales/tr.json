@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "Oluşturulmuş API anahtarı yok",
-      "description": "İsteklerinizin kimliğini doğrulamak için bir API anahtarı oluşturun"
+      "description": "İsteklerinizin kimliğini doğrulamak için bir API anahtarı oluşturun",
+      "loadErrorTitle": "API anahtarları yüklenemedi",
+      "forbiddenTitle": "API anahtarlarına erişim yok",
+      "forbiddenDesc": "API anahtarlarını yönetmek, belirli oturumlarla sınırlı olmayan bir yönetici anahtarı gerektirir."
     },
     "confirm": {
       "deleteTitle": "API Anahtarını Sil",

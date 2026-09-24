@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "생성된 API 키가 없습니다",
-      "description": "요청을 인증하려면 API 키를 생성하세요"
+      "description": "요청을 인증하려면 API 키를 생성하세요",
+      "loadErrorTitle": "API 키를 불러올 수 없습니다",
+      "forbiddenTitle": "API 키에 접근할 수 없습니다",
+      "forbiddenDesc": "API 키를 관리하려면 특정 세션으로 제한되지 않은 관리자 키가 필요합니다."
     },
     "confirm": {
       "deleteTitle": "API 키 삭제",

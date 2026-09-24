@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "No API keys created",
-      "description": "Create an API key to authenticate your requests"
+      "description": "Create an API key to authenticate your requests",
+      "loadErrorTitle": "Could not load API keys",
+      "forbiddenTitle": "No access to API keys",
+      "forbiddenDesc": "Managing API keys requires an admin key that is not restricted to specific sessions."
     },
     "confirm": {
       "deleteTitle": "Delete API Key",

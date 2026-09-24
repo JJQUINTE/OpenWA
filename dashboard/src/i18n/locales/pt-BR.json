@@ -572,7 +572,10 @@
     },
     "empty": {
       "title": "Nenhuma chave API criada",
-      "description": "Crie uma chave API para autenticar suas requisições"
+      "description": "Crie uma chave API para autenticar suas requisições",
+      "loadErrorTitle": "Não foi possível carregar as chaves API",
+      "forbiddenTitle": "Sem acesso às chaves API",
+      "forbiddenDesc": "Gerenciar chaves API exige uma chave de administrador que não esteja restrita a sessões específicas."
     },
     "confirm": {
       "deleteTitle": "Excluir chave API",

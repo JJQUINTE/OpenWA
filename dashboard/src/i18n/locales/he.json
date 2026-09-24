@@ -626,7 +626,10 @@
     },
     "empty": {
       "title": "לא נוצרו מפתחות API",
-      "description": "יש ליצור מפתח API לאימות הבקשות"
+      "description": "יש ליצור מפתח API לאימות הבקשות",
+      "loadErrorTitle": "לא ניתן לטעון את מפתחות ה-API",
+      "forbiddenTitle": "אין גישה למפתחות ה-API",
+      "forbiddenDesc": "ניהול מפתחות API דורש מפתח מנהל שאינו מוגבל לסשנים מסוימים."
     },
     "confirm": {
       "deleteTitle": "מחיקת מפתח API",

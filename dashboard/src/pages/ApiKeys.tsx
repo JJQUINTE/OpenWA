@@ -64,7 +64,7 @@ export function ApiKeys() {
   const { t } = useTranslation();
   const toast = useToast();
   useDocumentTitle(t('apiKeys.title'));
-  const { data: apiKeys = [], isLoading: loading, isError: apiKeysError } = useApiKeysQuery();
+  const { data: apiKeys = [], isLoading: loading, error: apiKeysError } = useApiKeysQuery();
   const { data: sessions = [] } = useSessionsQuery();
   const createMutation = useCreateApiKeyMutation();
   const updateMutation = useUpdateApiKeyMutation();
@@ -296,7 +296,7 @@ export function ApiKeys() {
         }
       />
 
-      {apiKeysError && (
+      {apiKeysError && apiKeys.length > 0 && (
         <div className="error-banner" role="alert">
           <AlertCircle size={20} />
           <span className="error-banner-text">{t('dashboard.loadError')}</span>
@@ -422,7 +422,25 @@ export function ApiKeys() {
 
       <div className="api-keys-content">
         <div className="keys-table-container">
-          {apiKeys.length === 0 ? (
+          {apiKeysError && apiKeys.length === 0 ? (
+            // A failed read is not an empty list: an admin key restricted to sessions always gets 403
+            // here (the route needs an unscoped key), and "No API keys created" would read as a gateway
+            // with no keys at all.
+            <div className="empty-table-state" role="alert">
+              <AlertCircle size={48} strokeWidth={1} />
+              {(apiKeysError as { status?: number }).status === 403 ? (
+                <>
+                  <h3>{t('apiKeys.empty.forbiddenTitle')}</h3>
+                  <p>{t('apiKeys.empty.forbiddenDesc')}</p>
+                </>
+              ) : (
+                <>
+                  <h3>{t('apiKeys.empty.loadErrorTitle')}</h3>
+                  <p>{apiKeysError.message}</p>
+                </>
+              )}
+            </div>
+          ) : apiKeys.length === 0 ? (
             <div className="empty-table-state">
               <KeyRound size={48} strokeWidth={1} />
               <h3>{t('apiKeys.empty.title')}</h3>

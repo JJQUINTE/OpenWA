@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "尚未建立 API 金鑰",
-      "description": "建立 API 金鑰以認證你的請求"
+      "description": "建立 API 金鑰以認證你的請求",
+      "loadErrorTitle": "無法載入 API 金鑰",
+      "forbiddenTitle": "無權存取 API 金鑰",
+      "forbiddenDesc": "管理 API 金鑰需要一個不受特定工作階段限制的管理員金鑰。"
     },
     "confirm": {
       "deleteTitle": "刪除 API 金鑰",

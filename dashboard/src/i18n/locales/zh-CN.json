@@ -617,7 +617,10 @@
     },
     "empty": {
       "title": "尚未创建 API 密钥",
-      "description": "创建 API 密钥以认证你的请求"
+      "description": "创建 API 密钥以认证你的请求",
+      "loadErrorTitle": "无法加载 API 密钥",
+      "forbiddenTitle": "无权访问 API 密钥",
+      "forbiddenDesc": "管理 API 密钥需要一个不受特定会话限制的管理员密钥。"
     },
     "confirm": {
       "deleteTitle": "删除 API 密钥",

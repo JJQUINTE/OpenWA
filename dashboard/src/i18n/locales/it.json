@@ -621,7 +621,10 @@
     },
     "empty": {
       "title": "Nessuna chiave API creata",
-      "description": "Crea una chiave API per autenticare le tue richieste"
+      "description": "Crea una chiave API per autenticare le tue richieste",
+      "loadErrorTitle": "Impossibile caricare le chiavi API",
+      "forbiddenTitle": "Nessun accesso alle chiavi API",
+      "forbiddenDesc": "Per gestire le chiavi API serve una chiave amministratore non limitata a sessioni specifiche."
     },
     "confirm": {
       "deleteTitle": "Elimina Chiave API",

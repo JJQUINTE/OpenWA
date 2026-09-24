@@ -634,7 +634,10 @@
     },
     "empty": {
       "title": "لا توجد مفاتيح API",
-      "description": "أنشئ مفتاح API للمصادقة على طلباتك"
+      "description": "أنشئ مفتاح API للمصادقة على طلباتك",
+      "loadErrorTitle": "تعذر تحميل مفاتيح API",
+      "forbiddenTitle": "لا يوجد وصول إلى مفاتيح API",
+      "forbiddenDesc": "تتطلب إدارة مفاتيح API مفتاح مسؤول غير مقيد بجلسات محددة."
     },
     "confirm": {
       "deleteTitle": "حذف مفتاح API",
