@@ -60,6 +60,12 @@
 > which is exactly how a takeover begins. Without `NODE_URL` the whole path is inert and
 > single-node deployments pay nothing.
 >
+> A path on `NODE_URL` is kept (0.23.7 and later) and put in front of the forwarded request's own
+> path, which already starts with `/api`. Give one only when the node is reached through a reverse
+> proxy under that prefix (`NODE_URL=https://gw.example.com/node-a`); a node reached directly takes
+> none. A `NODE_URL` ending in `/api` forwards to `/api/api/...`, and every routed request answers
+> `404`.
+>
 > **List and stats routes answer from the node that received them.** `GET /api/sessions` and
 > `GET /api/sessions/stats/overview` name no session, so they are never forwarded. `lastError`,
 > `restriction`, the stats `active` count and `memoryUsage` are that node's own view, not the owner's:
