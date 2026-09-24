@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { IntegrationInstanceController } from './integration-instance.controller';
 import { PluginInstanceService } from './plugin-instance.service';
 import { PluginLoaderService } from '../../core/plugins/plugin-loader.service';
@@ -728,13 +728,14 @@ describe('IntegrationInstanceController reveal masking', () => {
 // values, since a config patch can carry credentials and audit metadata is not a credential store.
 describe('IntegrationInstanceController update audit', () => {
   function build() {
+    const setPluginSessions = jest.fn();
     const loader = {
       getPlugin: jest.fn().mockReturnValue({
         manifest: { id: 'chatwoot-adapter', ingress: [{ route: 'chatwoot' }], permissions: ['webhook:ingress'] },
         activeSessions: [],
       }),
       setPluginSessionConfig: jest.fn(),
-      setPluginSessions: jest.fn(),
+      setPluginSessions,
       updatePluginConfig: jest.fn(),
     } as unknown as PluginLoaderService;
     const audit = { logInfo: jest.fn(), logWarn: jest.fn() };
@@ -750,10 +751,12 @@ describe('IntegrationInstanceController update audit', () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     };
+    const setEnabled = jest.fn().mockResolvedValue({ ...instance, enabled: false });
+    const update = jest.fn().mockResolvedValue({ ...instance, config: { apiToken: 'rotated-token' } });
     const instances = {
       resolve: jest.fn().mockResolvedValue(instance),
-      setEnabled: jest.fn().mockResolvedValue({ ...instance, enabled: false }),
-      update: jest.fn().mockResolvedValue({ ...instance, config: { apiToken: 'rotated-token' } }),
+      setEnabled,
+      update,
       list: jest.fn().mockResolvedValue([]),
       maskedView: (i: unknown) => i,
     } as unknown as PluginInstanceService;
@@ -763,7 +766,7 @@ describe('IntegrationInstanceController update audit', () => {
       audit as unknown as AuditService,
       new ScopeBindingService(instances, loader, audit as unknown as AuditService, sessions),
     );
-    return { controller, audit, instances };
+    return { controller, audit, instances, setEnabled, update, setPluginSessions };
   }
 
   it('emits INTEGRATION_INSTANCE_UPDATED (INFO) on a successful patch with clean metadata', async () => {
@@ -798,6 +801,22 @@ describe('IntegrationInstanceController update audit', () => {
     (instances.resolve as jest.Mock).mockResolvedValue(null);
 
     await expect(controller.patch('chatwoot-adapter', 'acct1', { enabled: false })).rejects.toThrow(NotFoundException);
+    expect(audit.logInfo).not.toHaveBeenCalledWith(AuditAction.INTEGRATION_INSTANCE_UPDATED, expect.anything());
+  });
+
+  // update() can refuse the config with a 400 (a masked secret it cannot restore). Nothing may be
+  // written before that: an `enabled` already saved would stay flipped in the row while the scope
+  // binding and the audit entry are skipped, so the DB and the runtime disagree after a failed PATCH.
+  it('persists nothing when the config is rejected, even with enabled in the same body', async () => {
+    const { controller, audit, setEnabled, update, setPluginSessions } = build();
+    update.mockRejectedValue(new BadRequestException('re-enter the remaining secret values'));
+
+    await expect(
+      controller.patch('chatwoot-adapter', 'acct1', { enabled: false, config: { apiToken: '***' } }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(setEnabled).not.toHaveBeenCalled();
+    expect(setPluginSessions).not.toHaveBeenCalled();
     expect(audit.logInfo).not.toHaveBeenCalledWith(AuditAction.INTEGRATION_INSTANCE_UPDATED, expect.anything());
   });
 });
