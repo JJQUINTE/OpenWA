@@ -151,12 +151,15 @@ describe('PluginInstanceService provisioning', () => {
     expect(rotated.secret).not.toBe(created.secret);
   });
 
-  it('setEnabled toggles enabled; update patches scope/config; remove deletes', async () => {
+  it('update patches enabled/scope/config in one save; remove deletes', async () => {
     await service.create('chatwoot', 'acct1', { sessionScope: 'a' });
-    expect((await service.setEnabled('chatwoot', 'acct1', false))?.enabled).toBe(false);
-    const patched = await service.update('chatwoot', 'acct1', { sessionScope: 'b', config: { k: 1 } });
+    const save = jest.spyOn(ds.getRepository(PluginInstance), 'save');
+    const patched = await service.update('chatwoot', 'acct1', { enabled: false, sessionScope: 'b', config: { k: 1 } });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(patched?.enabled).toBe(false);
     expect(patched?.sessionScope).toBe('b');
     expect(patched?.config).toEqual({ k: 1 });
+    expect((await service.resolve('chatwoot', 'acct1'))?.enabled).toBe(false);
     expect(await service.remove('chatwoot', 'acct1')).toBe(true);
     expect(await service.resolve('chatwoot', 'acct1')).toBeNull();
     expect(await service.remove('chatwoot', 'acct1')).toBe(false);

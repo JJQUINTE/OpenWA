@@ -103,21 +103,15 @@ export class PluginInstanceService implements PluginInstancePort {
     return this.repo.save(inst);
   }
 
-  async setEnabled(pluginId: string, instanceId: string, enabled: boolean): Promise<PluginInstance | null> {
-    const inst = await this.resolve(pluginId, instanceId);
-    if (!inst) return null;
-    inst.enabled = enabled;
-    return this.repo.save(inst);
-  }
-
   async update(
     pluginId: string,
     instanceId: string,
-    patch: { sessionScope?: string | null; config?: Record<string, unknown> },
+    patch: { enabled?: boolean; sessionScope?: string | null; config?: Record<string, unknown> },
     schema?: PluginConfigSchema,
   ): Promise<PluginInstance | null> {
     const inst = await this.resolve(pluginId, instanceId);
     if (!inst) return null;
+    if (patch.enabled !== undefined) inst.enabled = patch.enabled;
     if (patch.sessionScope !== undefined) inst.sessionScope = patch.sessionScope || null;
     if (patch.config !== undefined) {
       // The operator view masks secrets as the sentinel, so a round-tripped config carries '***' for

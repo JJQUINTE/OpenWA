@@ -126,17 +126,16 @@ export class IntegrationInstanceController {
     let inst: PluginInstance | null = await this.resolveVisible(pluginId, instanceId, apiKey);
     if (dto.sessionScope !== undefined) this.assertScopeWritable(apiKey, dto.sessionScope);
     const previousScope = inst.sessionScope;
-    // update() first: restoring the masked config can refuse the PATCH with a 400, and it does so
-    // before its own save, so a rejected body must reach it before `enabled` is written.
-    if (dto.sessionScope !== undefined || dto.config !== undefined) {
+    // One update() writes every field in a single save. Restoring the masked config can refuse the
+    // PATCH with a 400 before that save, so a rejected body changes nothing, `enabled` included.
+    if (dto.enabled !== undefined || dto.sessionScope !== undefined || dto.config !== undefined) {
       inst = await this.instances.update(
         pluginId,
         instanceId,
-        { sessionScope: dto.sessionScope, config: dto.config },
+        { enabled: dto.enabled, sessionScope: dto.sessionScope, config: dto.config },
         this.schemaFor(pluginId),
       );
     }
-    if (dto.enabled !== undefined) inst = await this.instances.setEnabled(pluginId, instanceId, dto.enabled);
     const updated = inst as PluginInstance;
     // If the bound session changed, tear down the OLD scope (incl. a wildcard/null scope) so it stops
     // firing with stale config. The new scope is (re)bound right after; teardown runs first with the new

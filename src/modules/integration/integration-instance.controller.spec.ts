@@ -83,8 +83,7 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     };
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, enabled: true }),
-      setEnabled: jest.fn().mockResolvedValue({ ...base, enabled: false }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ ...base, enabled: false }),
       list: jest.fn().mockResolvedValue([]), // no sibling shares the scope
       maskedView: (i: unknown) => i,
     } as unknown as PluginInstanceService;
@@ -111,8 +110,7 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     const base = { pluginId: 'chatwoot-adapter', instanceId: 'acct1', sessionScope: '*', config: {} };
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, enabled: true }),
-      setEnabled: jest.fn().mockResolvedValue({ ...base, enabled: false }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ ...base, enabled: false }),
       list: jest.fn().mockResolvedValue([{ ...base, enabled: false }]), // only this one, now disabled
       maskedView: (i: unknown) => i,
     } as unknown as PluginInstanceService;
@@ -138,8 +136,7 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     const base = { pluginId: 'chatwoot-adapter', instanceId: 'acct1', sessionScope: '*', config: {} };
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, enabled: true }),
-      setEnabled: jest.fn().mockResolvedValue({ ...base, enabled: false }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ ...base, enabled: false }),
       list: jest.fn().mockResolvedValue([
         { ...base, enabled: false },
         { pluginId: 'chatwoot-adapter', instanceId: 'acct2', sessionScope: '*', config: {}, enabled: true },
@@ -173,7 +170,6 @@ describe('IntegrationInstanceController provisioning bridge', () => {
         config: { baseUrl: 'https://x' },
         enabled: true,
       }),
-      setEnabled: jest.fn(),
       update: jest.fn().mockResolvedValue({
         pluginId: 'chatwoot-adapter',
         instanceId: 'acct1',
@@ -207,7 +203,6 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     const update = jest.fn().mockResolvedValue({ ...base, sessionScope: null });
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, sessionScope: 'sess-1' }),
-      setEnabled: jest.fn(),
       update,
       // The row is already unscoped when the old scope's teardown lists instances.
       list: jest.fn().mockResolvedValue([{ ...base, sessionScope: null }]),
@@ -243,8 +238,7 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     const base = { pluginId: 'chatwoot-adapter', instanceId: 'acct1', sessionScope: 'sess-1', config: {} };
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, enabled: true }),
-      setEnabled: jest.fn().mockResolvedValue({ ...base, enabled: false }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ ...base, enabled: false }),
       // The row is already disabled when the teardown lists instances; an ENABLED sibling still binds sess-1.
       list: jest.fn().mockResolvedValue([
         { ...base, enabled: false },
@@ -351,7 +345,6 @@ describe('IntegrationInstanceController provisioning bridge', () => {
         config: { baseUrl: 'https://x' },
         enabled: true,
       }),
-      setEnabled: jest.fn(),
       update: jest.fn().mockResolvedValue({
         pluginId: 'chatwoot-adapter',
         instanceId: 'acct1',
@@ -391,8 +384,7 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     const base = { pluginId: 'chatwoot-adapter', instanceId: 'acct1', sessionScope: 'sess-1', config: {} };
     const instances = {
       resolve: jest.fn().mockResolvedValue({ ...base, enabled: true }),
-      setEnabled: jest.fn().mockResolvedValue({ ...base, enabled: false }),
-      update: jest.fn(),
+      update: jest.fn().mockResolvedValue({ ...base, enabled: false }),
       list: jest.fn().mockResolvedValue([
         { ...base, enabled: false },
         { pluginId: 'chatwoot-adapter', instanceId: 'acct2', sessionScope: null, config: {}, enabled: true },
@@ -586,12 +578,17 @@ describe('IntegrationInstanceController session-scope fence', () => {
 
   it('lets a scoped key patch an in-scope instance without touching sessionScope', async () => {
     const inst = { ...baseInstance, sessionScope: 'sess-1' };
-    const setEnabled = jest.fn().mockResolvedValue({ ...inst, enabled: false });
-    const { controller } = build({ resolve: jest.fn().mockResolvedValue(inst), setEnabled, update: jest.fn() });
+    const update = jest.fn().mockResolvedValue({ ...inst, enabled: false });
+    const { controller } = build({ resolve: jest.fn().mockResolvedValue(inst), update });
 
     await controller.patch('chatwoot-adapter', 'acct1', { enabled: false }, scopedKey);
 
-    expect(setEnabled).toHaveBeenCalledWith('chatwoot-adapter', 'acct1', false);
+    expect(update).toHaveBeenCalledWith(
+      'chatwoot-adapter',
+      'acct1',
+      { enabled: false, sessionScope: undefined, config: undefined },
+      undefined,
+    );
   });
 });
 
@@ -751,11 +748,9 @@ describe('IntegrationInstanceController update audit', () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     };
-    const setEnabled = jest.fn().mockResolvedValue({ ...instance, enabled: false });
     const update = jest.fn().mockResolvedValue({ ...instance, config: { apiToken: 'rotated-token' } });
     const instances = {
       resolve: jest.fn().mockResolvedValue(instance),
-      setEnabled,
       update,
       list: jest.fn().mockResolvedValue([]),
       maskedView: (i: unknown) => i,
@@ -766,7 +761,7 @@ describe('IntegrationInstanceController update audit', () => {
       audit as unknown as AuditService,
       new ScopeBindingService(instances, loader, audit as unknown as AuditService, sessions),
     );
-    return { controller, audit, instances, setEnabled, update, setPluginSessions };
+    return { controller, audit, instances, update, setPluginSessions };
   }
 
   it('emits INTEGRATION_INSTANCE_UPDATED (INFO) on a successful patch with clean metadata', async () => {
@@ -804,18 +799,39 @@ describe('IntegrationInstanceController update audit', () => {
     expect(audit.logInfo).not.toHaveBeenCalledWith(AuditAction.INTEGRATION_INSTANCE_UPDATED, expect.anything());
   });
 
-  // update() can refuse the config with a 400 (a masked secret it cannot restore). Nothing may be
-  // written before that: an `enabled` already saved would stay flipped in the row while the scope
-  // binding and the audit entry are skipped, so the DB and the runtime disagree after a failed PATCH.
+  // `enabled` rides in the same update() as scope and config, so the row is written by ONE save. A
+  // second write could fail after the first landed, leaving the row half-patched with the scope
+  // binding and the audit entry skipped.
+  it('writes enabled, sessionScope and config in a single update() call', async () => {
+    const { controller, update } = build();
+
+    await controller.patch('chatwoot-adapter', 'acct1', {
+      enabled: false,
+      sessionScope: 'sess-2',
+      config: { apiToken: 'rotated-token' },
+    });
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      'chatwoot-adapter',
+      'acct1',
+      { enabled: false, sessionScope: 'sess-2', config: { apiToken: 'rotated-token' } },
+      undefined,
+    );
+  });
+
+  // update() can refuse the config with a 400 (a masked secret it cannot restore), before its save.
+  // Nothing may be written ahead of it: an `enabled` already saved would stay flipped in the row while
+  // the scope binding and the audit entry are skipped, so the DB and the runtime disagree.
   it('persists nothing when the config is rejected, even with enabled in the same body', async () => {
-    const { controller, audit, setEnabled, update, setPluginSessions } = build();
+    const { controller, audit, update, setPluginSessions } = build();
     update.mockRejectedValue(new BadRequestException('re-enter the remaining secret values'));
 
     await expect(
       controller.patch('chatwoot-adapter', 'acct1', { enabled: false, config: { apiToken: '***' } }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(setEnabled).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(1);
     expect(setPluginSessions).not.toHaveBeenCalled();
     expect(audit.logInfo).not.toHaveBeenCalledWith(AuditAction.INTEGRATION_INSTANCE_UPDATED, expect.anything());
   });
