@@ -531,7 +531,7 @@ export class StorageFileCountResponseDto {
 }
 
 export class StorageExportResponseDto {
-  @ApiProperty({ example: 'Storage archive created.' })
+  @ApiProperty({ example: 'Storage export completed' })
   message!: string;
 
   @ApiProperty({

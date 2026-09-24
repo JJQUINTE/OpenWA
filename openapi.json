@@ -14679,7 +14679,7 @@
         "properties": {
           "message": {
             "type": "string",
-            "example": "Storage archive created."
+            "example": "Storage export completed"
           },
           "download": {
             "type": "string",
