@@ -1015,7 +1015,6 @@
       "title": "实例",
       "description": "为此集成按账户配置实例。每个实例都有自己的签名密钥和接入 URL。",
       "create": "创建实例",
-      "save": "Save",
       "empty": "暂无实例。创建一个以获取接入 URL 和密钥。",
       "loadError": "加载实例失败。",
       "allSessions": "所有会话",

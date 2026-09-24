@@ -1019,7 +1019,6 @@
       "title": "Instances",
       "description": "Provisionnez des instances par compte pour cette intégration. Chaque instance dispose de son propre secret de signature et de sa propre URL d'entrée.",
       "create": "Créer une instance",
-      "save": "Save",
       "empty": "Aucune instance pour le moment. Créez-en une pour obtenir une URL d'entrée et un secret.",
       "loadError": "Échec du chargement des instances.",
       "allSessions": "Toutes les sessions",

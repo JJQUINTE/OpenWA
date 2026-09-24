@@ -1015,7 +1015,6 @@
       "title": "執行個體",
       "description": "為此整合按帳戶佈建執行個體。每個執行個體都有專屬的簽署密鑰和連入 URL。",
       "create": "建立執行個體",
-      "save": "Save",
       "empty": "尚無執行個體。建立一個即可取得連入 URL 和密鑰。",
       "loadError": "載入執行個體失敗。",
       "allSessions": "所有工作階段",

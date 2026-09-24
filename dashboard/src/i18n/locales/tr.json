@@ -1015,7 +1015,6 @@
       "title": "Örnekler (Instances)",
       "description": "Bu entegrasyon için hesap başına örnekler tanımlayın. Her örneğin kendi imzalama gizli anahtarı ve giriş URL'si vardır.",
       "create": "Örnek oluştur",
-      "save": "Save",
       "empty": "Henüz örnek yok. Giriş URL'si ve gizli anahtar almak için bir tane oluşturun.",
       "loadError": "Örnekler yüklenemedi.",
       "allSessions": "Tüm oturumlar",

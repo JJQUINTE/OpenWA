@@ -1015,7 +1015,6 @@
       "title": "Instanzen",
       "description": "Erstelle kontobezogene Instanzen für diese Integration. Jede Instanz besitzt ein eigenes Signaturgeheimnis und eine eigene Ingress-URL.",
       "create": "Instanz erstellen",
-      "save": "Save",
       "empty": "Noch keine Instanzen vorhanden. Erstelle eine, um eine Ingress-URL und ein Geheimnis zu erhalten.",
       "loadError": "Instanzen konnten nicht geladen werden.",
       "allSessions": "Alle Sitzungen",

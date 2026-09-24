@@ -1019,7 +1019,6 @@
       "title": "Istanze",
       "description": "Effettua il provisioning di istanze per account per questa integrazione. Ogni istanza ha il proprio segreto di firma e URL di ingresso.",
       "create": "Crea istanza",
-      "save": "Save",
       "empty": "Nessuna istanza ancora. Creane una per ottenere un URL di ingresso e un segreto.",
       "loadError": "Impossibile caricare le istanze.",
       "allSessions": "Tutte le sessioni",

@@ -1019,7 +1019,6 @@
       "title": "Instâncias",
       "description": "Provisione instâncias por conta para esta integração. Cada instância tem seu próprio segredo de assinatura e URL de entrada.",
       "create": "Criar instância",
-      "save": "Save",
       "empty": "Ainda não há instâncias. Crie uma para obter uma URL de entrada e um segredo.",
       "loadError": "Falha ao carregar as instâncias.",
       "allSessions": "Todas as sessões",

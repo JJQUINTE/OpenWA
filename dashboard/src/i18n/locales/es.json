@@ -1019,7 +1019,6 @@
       "title": "Instancias",
       "description": "Aprovisiona instancias por cuenta para esta integración. Cada instancia tiene su propio secreto de firma y URL de entrada.",
       "create": "Crear instancia",
-      "save": "Save",
       "empty": "Aún no hay instancias. Crea una para obtener una URL de entrada y un secreto.",
       "loadError": "Error al cargar las instancias.",
       "allSessions": "Todas las sesiones",
