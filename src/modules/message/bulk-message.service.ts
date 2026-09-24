@@ -800,14 +800,18 @@ export class BulkMessageService implements OnApplicationBootstrap {
 
   /**
    * The mimetype a media item is sent with, and so the one its row must record: a stored row with no
-   * mimetype cannot be served back from the media endpoint.
+   * mimetype cannot be served back from the media endpoint. An undeclared URL item gets the
+   * 'application/octet-stream' placeholder buildMediaInput uses, which both engines read as "unknown",
+   * so the fetched Content-Type wins. A voice note keeps ogg/opus either way, as on the single send.
    */
   private mediaMimetype(type: string, content: BulkMessageContent): string {
-    const declared = content[type as 'image' | 'video' | 'audio' | 'document']?.mimetype;
-    if (declared) return declared;
+    const media = content[type as 'image' | 'video' | 'audio' | 'document'];
+    if (media?.mimetype) return media.mimetype;
+    if (type === 'audio' && content.audio?.ptt) return 'audio/ogg; codecs=opus';
+    if (!stripBase64DataUri(media?.base64)) return 'application/octet-stream';
     if (type === 'image') return 'image/jpeg';
     if (type === 'video') return 'video/mp4';
-    if (type === 'audio') return content.audio?.ptt ? 'audio/ogg; codecs=opus' : 'audio/mpeg';
+    if (type === 'audio') return 'audio/mpeg';
     return 'application/octet-stream';
   }
 

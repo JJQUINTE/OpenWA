@@ -626,6 +626,27 @@ describe('BulkMessageService.processBatch', () => {
     );
   });
 
+  it('lets a URL item with no declared mimetype take the fetched type, as a single send does', async () => {
+    const batch = makeBatch(2);
+    batch.messages = [
+      { chatId: 'c0@c.us', type: 'image', content: { image: { url: 'https://x/y.png' } } },
+      { chatId: 'c1@c.us', type: 'audio', content: { audio: { url: 'https://x/v.ogg' } } },
+    ];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    // The placeholder both engines read as "unknown", so the fetched Content-Type wins.
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ mimetype: 'application/octet-stream', data: 'https://x/y.png' }),
+    );
+    expect(engine.sendAudioMessage).toHaveBeenCalledWith(
+      'c1@c.us',
+      expect.objectContaining({ mimetype: 'application/octet-stream', data: 'https://x/v.ogg' }),
+    );
+  });
+
   it('runs the message:sending gate for each bulk message (bulk no longer bypasses moderation)', async () => {
     repo.findOne.mockResolvedValue(makeBatch(1));
 
