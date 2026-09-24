@@ -274,6 +274,19 @@ export function Chats() {
   const activePhoneText =
     activePhoneDisplay ?? (resolvedPhoneQ.data ? formatPhoneForDisplay(resolvedPhoneQ.data) : null);
 
+  // The list loaders below reach the translator and the error toast through a ref, not as
+  // dependencies: both change identity on a language switch, which re-ran the session load (it
+  // reselected the first session) and, through loadChats, the session-reset effect (it closed the
+  // open chat and dropped a staged file or reply).
+  const loadErrorRef = useRef({ t, showErrorToast });
+  useEffect(() => {
+    loadErrorRef.current = { t, showErrorToast };
+  });
+  const showLoadError = useCallback((key: string, err: unknown) => {
+    const current = loadErrorRef.current;
+    current.showErrorToast(current.t(key), err instanceof Error ? err.message : undefined);
+  }, []);
+
   // 1. Fetch available connected sessions on mount
   useEffect(() => {
     const loadSessions = async () => {
@@ -286,13 +299,13 @@ export function Chats() {
           setSelectedSessionId(readySessions[0].id);
         }
       } catch (err) {
-        showErrorToast(t('chats.errors.loadSessions'), err instanceof Error ? err.message : undefined);
+        showLoadError('chats.errors.loadSessions', err);
       } finally {
         setLoadingSessions(false);
       }
     };
     void loadSessions();
-  }, [t, showErrorToast]);
+  }, [showLoadError]);
 
   // 2. Fetch chats when active session changes. Only the newest call may write: a session switch
   // does not cancel the list still loading for the session left behind, and a list that lands
@@ -310,13 +323,13 @@ export function Chats() {
         setChats(sorted);
       } catch (err) {
         if (request !== chatsRequestRef.current) return;
-        showErrorToast(t('chats.errors.loadChats'), err instanceof Error ? err.message : undefined);
+        showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {
         if (request === chatsRequestRef.current) setLoadingChats(false);
       }
     },
-    [t, showErrorToast],
+    [showLoadError],
   );
 
   useEffect(() => {

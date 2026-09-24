@@ -851,6 +851,35 @@ test('a chat list that answers after the user switched sessions does not replace
   }
 });
 
+test('changing the UI language keeps the selected session and the open chat', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  const { default: i18n } = await import('../i18n/index.ts');
+  twoSessions = true;
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    const selector = container.querySelector('select.session-selector') as HTMLSelectElement;
+    fireEvent.change(selector, { target: { value: SESSION_2.id } });
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+
+    const sessionLoads = countFetchCalls('GET', '/api/sessions');
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    await flush();
+
+    assert.equal(countFetchCalls('GET', '/api/sessions'), sessionLoads, 'the language change reloaded the sessions');
+    assert.equal(selector.value, SESSION_2.id, 'the language change reselected the first session');
+    await waitFor(() => assert.ok(container.querySelector('.room-header'), 'the language change closed the chat'));
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
+    twoSessions = false;
+  }
+});
+
 /**
  * The server-side inline-media budget replaces an over-budget payload with `{ omitted: true }`. This
  * thread requests the largest page size and caches it with staleTime Infinity, so without a fetch of
