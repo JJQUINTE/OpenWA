@@ -680,13 +680,13 @@ curl -H "X-API-Key: $API_KEY" \
 
 **Common Causes:**
 
-| Cause                  | Symptom                | Solution                    |
-| ---------------------- | ---------------------- | --------------------------- |
-| Invalid phone number   | 400 error              | Format: `628123456789@c.us` |
-| Rate limited           | 429 error              | Reduce sending rate         |
-| Session disconnected   | 503 error              | Reconnect session           |
-| Media too large        | 413 error              | Compress or reduce size     |
-| Number not on WhatsApp | Message fails silently | Verify number first         |
+| Cause                            | Symptom                      | Solution                       |
+| -------------------------------- | ---------------------------- | ------------------------------ |
+| Invalid phone number             | 400 error                    | Format: `628123456789@c.us`    |
+| Rate limited                     | 429 error                    | Reduce sending rate            |
+| Session not started or not ready | 400 (`is not active`) or 409 | Start or reconnect the session |
+| Media too large                  | 413 error                    | Compress or reduce size        |
+| Number not on WhatsApp           | Message fails silently       | Verify number first            |
 
 **Phone Number Validation:**
 
@@ -1423,17 +1423,17 @@ available_events:
 
 ### HTTP Error Codes
 
-| Code | Meaning             | Common Cause             | Solution                  |
-| ---- | ------------------- | ------------------------ | ------------------------- |
-| 400  | Bad Request         | Invalid parameters       | Check request body/params |
-| 401  | Unauthorized        | Missing/invalid API key  | Add X-API-Key header      |
-| 403  | Forbidden           | Insufficient permissions | Check API key permissions |
-| 404  | Not Found           | Invalid session/endpoint | Verify session exists     |
-| 409  | Conflict            | Session already exists   | Use different session ID  |
-| 413  | Payload Too Large   | File too large           | Reduce file size          |
-| 429  | Too Many Requests   | Rate limited             | Reduce request rate       |
-| 500  | Internal Error      | Server error             | Check logs                |
-| 503  | Service Unavailable | Session disconnected     | Reconnect session         |
+| Code | Meaning             | Common Cause                                                                               | Solution                                        |
+| ---- | ------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| 400  | Bad Request         | Invalid parameters, or the session is not started                                          | Check request body/params; start the session    |
+| 401  | Unauthorized        | Missing/invalid API key                                                                    | Add X-API-Key header                            |
+| 403  | Forbidden           | Insufficient permissions                                                                   | Check API key permissions                       |
+| 404  | Not Found           | Invalid session/endpoint                                                                   | Verify session exists                           |
+| 409  | Conflict            | Session already exists, or the session is not ready (retryable)                            | Use a different session ID, or wait for `ready` |
+| 413  | Payload Too Large   | File too large                                                                             | Reduce file size                                |
+| 429  | Too Many Requests   | Rate limited                                                                               | Reduce request rate                             |
+| 500  | Internal Error      | Server error                                                                               | Check logs                                      |
+| 503  | Service Unavailable | The engine transport died during a read, or a media fetch through the session proxy failed | Retry; restart the session if it persists       |
 
 ### Error Body Shape
 
