@@ -156,7 +156,7 @@ test('an export that stops at the row cap says so, counted in the UI language', 
     renderLogs();
     await screen.findByText('infra.restart');
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
-    await screen.findByText(/covers only the newest 18,000 entries/, {}, { timeout: 10_000 });
+    await screen.findByText(/covers only the newest 10,000 entries/, {}, { timeout: 10_000 });
     assert.equal(downloads.length, 1, 'the rows fetched up to the cap are still downloaded');
   } finally {
     exportTotal = null;

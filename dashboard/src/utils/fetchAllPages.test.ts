@@ -86,7 +86,7 @@ test('a throttled page is retried at the same offset instead of ending the walk'
   );
 });
 
-test('a page that stays throttled, or fails any other way, still fails the walk', async () => {
+test('a first page that stays throttled, or a page failing any other way, fails the walk', async () => {
   const { fetchPage } = fakeSource(600, 200);
   let attempts = 0;
   await assert.rejects(
@@ -99,7 +99,9 @@ test('a page that stays throttled, or fails any other way, still fails the walk'
     ),
     { status: 429 },
   );
-  assert.equal(attempts, 4, 'three retries after the first attempt');
+  // Waits of one and then two seconds outlast the one-second tier; a 429 after that is a tier no
+  // wait here outlasts, so a further retry only spends the budget that tier is refusing.
+  assert.equal(attempts, 3, 'two retries after the first attempt');
 
   attempts = 0;
   await assert.rejects(
@@ -116,18 +118,29 @@ test('a page that stays throttled, or fails any other way, still fails the walk'
   assert.equal(attempts, 2, 'a server error is not retried');
 });
 
-test('a default walk stops inside the per-minute throttle and says the result stopped short', async () => {
-  // The gateway allows 100 requests a minute per route and then refuses that route for the whole
-  // minute, which no retry outlasts. The Logs page's own reads share that budget.
+test('a default walk leaves half the per-minute route budget and says the result stopped short', async () => {
+  // The gateway allows 100 requests a minute per route and IP and then refuses that route for the
+  // whole minute, which no retry outlasts. The Logs page's own reads share that budget.
   const { fetchPage, calls } = fakeSource(60_000, 200);
+  const { items: rows, truncated } = await fetchAllPages(fetchPage, { retryDelayMs: 0 });
+  assert.equal(truncated, true);
+  assert.ok(calls.length <= 50, `the walk spent ${calls.length} of the 100 requests the minute allows`);
+  assert.equal(rows.length, calls.length * 200);
+});
+
+test('a page still throttled past the one-second tier ends the walk with the rows in hand', async () => {
+  // The per-minute or per-hour tier refused the route: keep what came in rather than wait and throw.
+  const { fetchPage, calls } = fakeSource(6_000, 200);
+  let attempts = 0;
   const { items: rows, truncated } = await fetchAllPages(
     async (limit, offset) => {
-      if (calls.length >= 100) throw httpError(429);
+      attempts++;
+      if (offset >= 1_000) throw httpError(429);
       return fetchPage(limit, offset);
     },
     { retryDelayMs: 0 },
   );
   assert.equal(truncated, true);
-  assert.ok(calls.length <= 90, `the walk spent ${calls.length} of the 100 requests the minute allows`);
-  assert.equal(rows.length, calls.length * 200);
+  assert.equal(rows.length, 1_000);
+  assert.equal(attempts, calls.length + 3, 'the refused page was tried more than three times');
 });
