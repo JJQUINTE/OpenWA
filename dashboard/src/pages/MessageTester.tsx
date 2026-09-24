@@ -212,15 +212,19 @@ export function MessageTester() {
   const startBatchPolling = (batchSessionId: string, batchId: string) => {
     stopBatchPolling();
     if (unmountedRef.current) return;
-    batchPollRef.current = setInterval(async () => {
+    const timer = setInterval(async () => {
       try {
         const status = await messageApi.getBatchStatus(batchSessionId, batchId);
+        // Polling was stopped (a cancel, a terminal status, a new batch, unmount) while this read
+        // was in flight: its snapshot is older than what is on screen.
+        if (batchPollRef.current !== timer) return;
         setBatchStatus(status);
         if (TERMINAL_BATCH_STATUSES.includes(status.status)) stopBatchPolling();
       } catch {
         // A transient poll failure (network blip, backend restart) must not kill progress tracking.
       }
     }, 2000);
+    batchPollRef.current = timer;
   };
 
   const handleBulkFileChange = (e: ChangeEvent<HTMLInputElement>) => {
