@@ -29,7 +29,9 @@ export class MessageTypeBackfillService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    // [legacy wwebjs token(s)] -> neutral MessageType. Kept in sync with mapWwebjsMessageType.
+    // [legacy wwebjs token(s)] -> neutral MessageType, for the tokens mapWwebjsMessageType renames.
+    // call_log and poll_creation are left out on purpose: a pre-#265 row carries no call or poll
+    // metadata, so relabelling it would render an empty call or poll bubble.
     const conversions: Array<{ from: string[]; to: string }> = [
       { from: ['chat'], to: 'text' },
       { from: ['buttons_response', 'list_response', 'template_button_reply'], to: 'text' },
