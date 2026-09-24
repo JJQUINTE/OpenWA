@@ -13,7 +13,7 @@ import {
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
 import { MessageWithReactions, SerializedWid } from '../types/whatsapp-web-js.types';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotImplementedException } from '@nestjs/common';
 import { MessageNotFoundError } from '../../common/errors/message-not-found.error';
 import { EngineRefusedError } from '../../common/errors/engine-refused.error';
 import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
@@ -195,6 +195,23 @@ export function toMessageResult(msg: Message | undefined): MessageResult {
 }
 
 /**
+ * whatsapp-web.js drops some sends to a channel or a status/broadcast list before it touches the page
+ * (`Client.js` sendMessage returns null): a reply, a location or a contact card to any of them, and a
+ * poll or a sticker to a status or broadcast list. `toMessageResult` can only read that null as a send
+ * that may have gone out, a 500 the send breaker counts, so refuse it up front with a 501. The
+ * recipient tests are the library's own, so the two cannot drift. A plain 501, not
+ * EngineNotSupportedError: the send methods are supported, and that class marks a whole method
+ * unavailable in the capability matrix.
+ */
+function ensureSendable(chatId: string, shape: 'reply' | 'location' | 'contact card' | 'poll' | 'sticker'): void {
+  const channel = /@\w*newsletter\b/.test(chatId);
+  if (/@\w*broadcast\b/.test(chatId) || (channel && shape !== 'poll' && shape !== 'sticker')) {
+    const to = channel ? 'a channel' : 'a status or broadcast list';
+    throw new NotImplementedException(`whatsapp-web.js cannot send a ${shape} to ${to}; nothing was sent.`);
+  }
+}
+
+/**
  * Messaging operations extracted from WhatsAppWebJsAdapter: the send paths (with the @c.us -> @lid
  * resolution cache), reactions, history, delete and edit. The adapter keeps the public methods as
  * thin forwarders and injects the shared host surface (./wwebjs-host) via closures, so the delegate
@@ -302,6 +319,7 @@ export class WwebjsMessaging {
     send: (to: string) => Promise<T>,
     quotedMessageId?: string,
   ): Promise<T> {
+    if (quotedMessageId) ensureSendable(chatId, 'reply');
     const to = await this.resolveSendId(chatId);
     try {
       return await send(to);
@@ -453,6 +471,7 @@ export class WwebjsMessaging {
 
   async sendLocationMessage(chatId: string, location: LocationInput): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'location');
     // Import Location class dynamically from whatsapp-web.js
     const module = await import('whatsapp-web.js');
     const Location = module.Location || module.default?.Location;
@@ -471,6 +490,7 @@ export class WwebjsMessaging {
 
   async sendContactMessage(chatId: string, contact: ContactCard): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'contact card');
     // Shared builder sanitizes name/number (strips CR/LF, digits-only waid) so a crafted contact
     // can't inject extra vCard fields — the previous inline build interpolated raw values.
     const vcard = buildVCard(contact);
@@ -493,6 +513,7 @@ export class WwebjsMessaging {
     // hits the same channel crash: for a channel wwjs drops the sticker form and runs processMediaData
     // with sendToChannel, which still ends at msg.avParams() (Utils.js:518). Guard it too (#673).
     this.host.ensureNotChannelRecipient(chatId);
+    ensureSendable(chatId, 'sticker');
     // Keep the fetched content-type for a remote URL: here the mimetype selects the conversion, and
     // whatsapp-web.js returns the media unconverted once it reads as webp (Util.formatImageToWebpSticker).
     const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url, { trustDeclaredType: false });
@@ -514,6 +535,7 @@ export class WwebjsMessaging {
 
   async sendPollMessage(chatId: string, poll: PollInput): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'poll');
     // Import Poll dynamically like Location; the .default fallback covers builds where the
     // classes land on module.default (a plain `module.Poll` would be undefined there and
     // `new Poll` fails with "not a constructor").
@@ -540,6 +562,7 @@ export class WwebjsMessaging {
 
   async replyToMessage(chatId: string, quotedMsgId: string, text: string, mentions?: string[]): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'reply');
     try {
       // Find the message to quote
       const chat = await this.client().getChatById(chatId);
