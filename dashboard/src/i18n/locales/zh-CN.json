@@ -186,7 +186,8 @@
       "react": "回应消息失败",
       "delete": "删除消息失败",
       "clickButton": "点击按钮失败",
-      "fileTooLarge": "文件过大（最大 18 MB）"
+      "fileTooLarge": "文件过大（最大 18 MB）",
+      "searchHitSessionNotReady": "此消息所属的会话未连接"
     },
     "loadMessagesError": "无法加载消息。请检查服务器日志。",
     "messageStatus": {

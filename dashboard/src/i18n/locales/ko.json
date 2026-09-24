@@ -186,7 +186,8 @@
       "react": "메시지에 반응하지 못했습니다",
       "delete": "메시지를 삭제하지 못했습니다",
       "clickButton": "버튼 클릭에 실패했습니다",
-      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)"
+      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)",
+      "searchHitSessionNotReady": "이 메시지의 세션이 연결되어 있지 않습니다"
     },
     "loadMessagesError": "메시지를 불러올 수 없습니다. 서버 로그를 확인하세요.",
     "messageStatus": {

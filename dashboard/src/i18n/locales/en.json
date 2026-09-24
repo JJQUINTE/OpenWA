@@ -186,7 +186,8 @@
       "react": "Failed to react to message",
       "delete": "Failed to delete message",
       "clickButton": "Failed to click button",
-      "fileTooLarge": "File is too large (max 18 MB)"
+      "fileTooLarge": "File is too large (max 18 MB)",
+      "searchHitSessionNotReady": "The session of this message is not connected"
     },
     "loadMessagesError": "Couldn't load messages. Check the server logs.",
     "messageStatus": {

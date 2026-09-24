@@ -193,7 +193,8 @@
       "react": "התגובה להודעה נכשלה",
       "delete": "מחיקת ההודעה נכשלה",
       "clickButton": "לחיצה על הכפתור נכשלה",
-      "fileTooLarge": "הקובץ גדול מדי (מקסימום 18 MB)"
+      "fileTooLarge": "הקובץ גדול מדי (מקסימום 18 MB)",
+      "searchHitSessionNotReady": "הסשן של הודעה זו אינו מחובר"
     },
     "loadMessagesError": "לא ניתן לטעון את ההודעות. בדקו את יומני השרת.",
     "messageStatus": {

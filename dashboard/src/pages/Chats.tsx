@@ -733,7 +733,25 @@ export function Chats() {
   const pendingHitRef = useRef<{ chatId: string; waMessageId: string } | null>(null);
 
   const handleSearchHit = useCallback(
-    (hit: SearchHit) => {
+    async (hit: SearchHit) => {
+      // Search covers stored messages of every session, but the page can only open a ready one, and
+      // its list is read on mount. A session missing from it is looked up again, since it may have
+      // connected since; one that still is not ready is refused rather than selected with no chats.
+      if (hit.sessionId !== selectedSessionId && !sessions.some(s => s.id === hit.sessionId)) {
+        let ready: Session[];
+        try {
+          ready = (await sessionApi.list()).filter(s => s.status === 'ready');
+        } catch (err) {
+          showLoadError('chats.errors.loadSessions', err);
+          return;
+        }
+        if (!ready.some(s => s.id === hit.sessionId)) {
+          pendingHitRef.current = null;
+          showWarningToast(t('chats.errors.searchHitSessionNotReady'));
+          return;
+        }
+        setSessions(ready);
+      }
       pendingHitRef.current = { chatId: hit.chatId, waMessageId: hit.waMessageId };
       if (hit.sessionId !== selectedSessionId) {
         // Switching session triggers loadChats; the effect below selects the chat once the list lands.
@@ -762,7 +780,7 @@ export function Chats() {
         }
       }
     },
-    [selectedSessionId, chats, switchTab],
+    [selectedSessionId, sessions, chats, switchTab, showLoadError, showWarningToast, t],
   );
 
   // After a session switch the chats list reloads — pick up the pending chat once it appears.

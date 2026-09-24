@@ -186,7 +186,8 @@
       "react": "Mesaja tepki verilemedi",
       "delete": "Mesaj silinemedi",
       "clickButton": "Düğmeye tıklanamadı",
-      "fileTooLarge": "Dosya çok büyük (maks 18 MB)"
+      "fileTooLarge": "Dosya çok büyük (maks 18 MB)",
+      "searchHitSessionNotReady": "Bu mesajın oturumu bağlı değil"
     },
     "loadMessagesError": "Mesajlar yüklenemedi. Sunucu kayıtlarını kontrol edin.",
     "messageStatus": {

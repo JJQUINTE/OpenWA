@@ -189,7 +189,8 @@
       "react": "Error al reaccionar al mensaje",
       "delete": "Error al eliminar el mensaje",
       "clickButton": "Error al pulsar el botón",
-      "fileTooLarge": "El archivo es demasiado grande (máx. 18 MB)"
+      "fileTooLarge": "El archivo es demasiado grande (máx. 18 MB)",
+      "searchHitSessionNotReady": "La sesión de este mensaje no está conectada"
     },
     "loadMessagesError": "No se pudieron cargar los mensajes. Revisa los registros del servidor.",
     "messageStatus": {

@@ -189,7 +189,8 @@
       "react": "Échec de la réaction au message",
       "delete": "Échec de la suppression du message",
       "clickButton": "Échec du clic sur le bouton",
-      "fileTooLarge": "Le fichier est trop volumineux (max 18 Mo)"
+      "fileTooLarge": "Le fichier est trop volumineux (max 18 Mo)",
+      "searchHitSessionNotReady": "La session de ce message n'est pas connectée"
     },
     "loadMessagesError": "Impossible de charger les messages. Vérifiez les journaux du serveur.",
     "messageStatus": {

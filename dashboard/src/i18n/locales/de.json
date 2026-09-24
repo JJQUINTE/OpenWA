@@ -186,7 +186,8 @@
       "react": "Reaktion auf die Nachricht fehlgeschlagen",
       "delete": "Nachricht konnte nicht gelöscht werden",
       "clickButton": "Schaltfläche konnte nicht angeklickt werden",
-      "fileTooLarge": "Die Datei ist zu groß (max. 18 MB)"
+      "fileTooLarge": "Die Datei ist zu groß (max. 18 MB)",
+      "searchHitSessionNotReady": "Die Sitzung dieser Nachricht ist nicht verbunden"
     },
     "loadMessagesError": "Nachrichten konnten nicht geladen werden. Prüfe die Serverprotokolle.",
     "messageStatus": {

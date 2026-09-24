@@ -15,7 +15,7 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Session, Chat, ChatMessage } from '../services/api';
+import type { Session, Chat, ChatMessage, SearchHit } from '../services/api';
 import type { installJsdomGlobals as installJsdomGlobalsFn } from '../test-helpers/jsdom.ts';
 // socket.io-client resolves to a double under this runner (see vite-shim-hooks.mjs), which is what
 // lets a test deliver a server frame to the page's realtime handlers.
@@ -36,6 +36,14 @@ const SESSION: Session = {
 // session's fixtures (see installFetchStub), so a test can switch sessions without a second data set.
 const SESSION_2: Session = { ...SESSION, id: 'session-2', name: 'Second', phone: '15559876543' };
 let twoSessions = false;
+
+// A third session the gateway lists but that the page may not offer, with the status the list reports.
+// Its routes answer with the first session's fixtures, like session-2's.
+const SESSION_3: Session = { ...SESSION, id: 'session-3', name: 'Third', phone: '15550004444' };
+let thirdSessionStatus: Session['status'] | null = null;
+
+// Hits the global search answers with.
+let searchHits: SearchHit[] = [];
 
 // Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
 // the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
@@ -251,7 +259,7 @@ function installFetchStub(): void {
     const method = init?.method ?? 'GET';
     const path = url
       .replace(/^https?:\/\/[^/]+/, '')
-      .replace(`/api/sessions/${SESSION_2.id}/`, `/api/sessions/${SESSION.id}/`);
+      .replace(new RegExp(`/api/sessions/(${SESSION_2.id}|${SESSION_3.id})/`), `/api/sessions/${SESSION.id}/`);
 
     let body: unknown;
     if (typeof init?.body === 'string') {
@@ -264,7 +272,9 @@ function installFetchStub(): void {
     fetchCalls.push({ method, path, body });
 
     if (method === 'GET' && path === '/api/sessions') {
-      return Promise.resolve(jsonResponse(twoSessions ? [SESSION, SESSION_2] : [SESSION]));
+      const listed = twoSessions ? [SESSION, SESSION_2] : [SESSION];
+      if (thirdSessionStatus) listed.push({ ...SESSION_3, status: thirdSessionStatus });
+      return Promise.resolve(jsonResponse(listed));
     }
     if (method === 'GET' && path === '/api/infra/engines/current') {
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
@@ -330,7 +340,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ messageId: 'wamid.out.document', timestamp: 1_700_000_100 }));
     }
     if (method === 'GET' && path.startsWith('/api/search?')) {
-      return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
+      return Promise.resolve(jsonResponse({ hits: searchHits, total: searchHits.length }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/status/send-text`) {
       return Promise.resolve(jsonResponse({ success: true }));
@@ -389,6 +399,8 @@ afterEach(() => {
   sendTextId = 'wamid.out.1';
   olderPageFails = false;
   chatsResponder = null;
+  thirdSessionStatus = null;
+  searchHits = [];
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -1230,6 +1242,64 @@ test('every message for a chat the sidebar does not list refetches the list, and
     Promise.resolve(jsonResponse([{ ...CHAT_2, id: DAVE, name: 'Dave', lastMessage: 'hi' }, CHAT_2, CHAT]));
   receive('wamid.dave.4');
   await screen.findByText('Dave');
+});
+
+// A global-search hit in the third session, on Alice's chat.
+const THIRD_SESSION_HIT: SearchHit = {
+  messageId: 'db-9',
+  waMessageId: 'wamid.third.1',
+  sessionId: SESSION_3.id,
+  chatId: CHAT.id,
+  body: 'hello from the third session',
+  snippet: 'hello from the <mark>third</mark> session',
+  timestamp: 1_700_000_000,
+  type: 'text',
+  direction: 'incoming',
+  from: CHAT.id,
+};
+
+async function clickSearchHit(container: HTMLElement): Promise<void> {
+  const { screen, fireEvent, waitFor } = rtl;
+  fireEvent.change(screen.getByLabelText('Search messages…'), { target: { value: 'third' } });
+  const hit = await waitFor(() => {
+    const found = container.querySelector('.global-search-hit');
+    assert.ok(found, 'the search hit did not render');
+    return found;
+  });
+  fireEvent.click(hit);
+}
+
+test('a search hit in a session that is not connected stays on the selected session', async () => {
+  const { screen, waitFor } = rtl;
+  thirdSessionStatus = 'disconnected';
+  searchHits = [THIRD_SESSION_HIT];
+  resetFetchCalls();
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  await clickSearchHit(container);
+  await screen.findByText('The session of this message is not connected');
+  await waitFor(() => assert.equal(countFetchCalls('GET', '/api/sessions'), 2, 'the session list was not reread'));
+  await flush();
+  const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+  assert.equal(select.value, SESSION.id);
+  assert.ok(screen.queryByText('Alice'), 'the chat list of the selected session is gone');
+  assert.ok(!screen.queryByText('Failed to load chats'), 'the page tried to load the unconnected session');
+});
+
+test('a search hit in a session that connected after the page loaded opens it', async () => {
+  const { screen, within, waitFor } = rtl;
+  thirdSessionStatus = 'disconnected';
+  searchHits = [THIRD_SESSION_HIT];
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  thirdSessionStatus = 'ready';
+  await clickSearchHit(container);
+  const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+  await waitFor(() => assert.equal(select.value, SESSION_3.id));
+  await waitFor(() => assert.ok(container.querySelector('.room-header'), "the hit's chat did not open"));
+  await within(container.querySelector('.room-header') as HTMLElement).findByText('Alice');
 });
 
 test('changing the UI language keeps the selected session and the open chat', async () => {
