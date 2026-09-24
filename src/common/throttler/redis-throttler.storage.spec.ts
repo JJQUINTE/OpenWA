@@ -41,12 +41,27 @@ describe('RedisThrottlerStorage', () => {
     expect(rec).toEqual({ totalHits: 1, timeToExpire: 1, isBlocked: false, timeToBlockExpire: 0 });
   });
 
-  it('over the limit (incr>limit) is blocked with blockDuration in seconds', async () => {
-    const redis = makeRedis({ hits: 11, ttlMs: 500 });
+  // The block is the counter itself, so it lifts when the window key expires, not after blockDuration:
+  // advertising blockDuration made a client that honours Retry-After wait up to an hour for nothing.
+  it('over the limit (incr>limit) is blocked until the window expires, in seconds', async () => {
+    const redis = makeRedis({ hits: 1001, ttlMs: 4200 });
+    const rec = await new RedisThrottlerStorage(redis as unknown as Redis).increment(
+      'k',
+      3600000,
+      1000,
+      3600000,
+      'long',
+    );
+    expect(rec.isBlocked).toBe(true);
+    expect(rec.totalHits).toBe(1001);
+    expect(rec.timeToBlockExpire).toBe(5); // ceil(4200ms / 1000), not the 3600 s blockDuration
+  });
+
+  it('never advertises a zero Retry-After on a blocked request', async () => {
+    const redis = makeRedis({ hits: 11, ttlMs: 0 });
     const rec = await new RedisThrottlerStorage(redis as unknown as Redis).increment('k', 1000, 10, 60000, 'short');
     expect(rec.isBlocked).toBe(true);
-    expect(rec.totalHits).toBe(11);
-    expect(rec.timeToBlockExpire).toBe(60); // 60000ms / 1000
+    expect(rec.timeToBlockExpire).toBe(1);
   });
 
   it('fails OPEN on a Redis error (returns a non-blocking record so the limiter never self-DoSes)', async () => {
