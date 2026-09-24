@@ -55,4 +55,4 @@ This workflow expects the standard OpenWA webhook payload for the `message.recei
 }
 ```
 
-The workflow posts `data.author || data.from` as the sender and `data.body` as the message. In a group, `from` is the group and `author` is the member who sent the message; a direct message has no `author`, so `from` is used.
+The workflow posts `data.author || data.from` as the sender and `data.body` as the message. In a group, `from` is the group and `author` is the member who sent the message; a direct message has no `author`, so `from` is used. Discord rejects a message over 2000 characters, and n8n has already answered OpenWA by then, so nothing would retry it; the workflow therefore cuts a longer message at 2000 characters.
