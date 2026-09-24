@@ -457,6 +457,16 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     try {
       const res = await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
       if (!res.success) throw new Error(res.message);
+      // The seed effect does not re-run on the refetch, so reseed from Global here (the seed with an empty
+      // override). Left as it was, the form keeps the cleared values and the next save pins them back.
+      const props = plugin.configSchema?.properties;
+      if (props) {
+        setOverrideCfg(
+          Object.fromEntries(
+            Object.entries(props).map(([key, field]) => [key, plugin.config[key] ?? emptyForField(field)]),
+          ),
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
