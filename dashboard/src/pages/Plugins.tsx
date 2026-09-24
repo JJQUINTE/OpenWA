@@ -251,7 +251,7 @@ function ConfigField({
  * so the theme cannot change while an editor is open, and reopening re-runs the handshake.
  */
 function PluginConfigUi({ plugin, sessionId }: { plugin: Plugin; sessionId?: string }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { resolvedTheme } = useTheme();
@@ -318,7 +318,8 @@ function PluginConfigUi({ plugin, sessionId }: { plugin: Plugin; sessionId?: str
         post({
           type: 'config:value',
           config: configUiSafeConfig(plugin, sessionId),
-          schema: plugin.configSchema,
+          schema: localizePlugin(plugin, i18n.language).configSchema,
+          locale: i18n.language,
           theme: resolvedTheme,
         });
       } else if (msg?.type === 'config:save') {
@@ -348,7 +349,7 @@ function PluginConfigUi({ plugin, sessionId }: { plugin: Plugin; sessionId?: str
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [plugin, sessionId, queryClient, t, toast, resolvedTheme]);
+  }, [plugin, sessionId, queryClient, t, i18n.language, toast, resolvedTheme]);
 
   if (error) return <div className="config-ui-status config-ui-error">{error}</div>;
   if (html === null)
