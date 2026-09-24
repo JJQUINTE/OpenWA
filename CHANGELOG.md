@@ -26,7 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Baileys: a WhatsApp-side unlink clears the session's stored messages and its persisted chat mute, archive and pin state, and an API logout now clears that state too, so a re-linked account no longer inherits the previous account's flags.
 - Baileys: a failed chat-state read no longer resets a chat's persisted mute and archive flags, and a chat list no longer queries the database once for every chat that has no stored state.
 - Baileys: a chat muted "Always" reads as muted indefinitely instead of unmuted.
-- Baileys: delete for everyone on a message the account cannot revoke (another sender's message in a 1:1 chat, or in a group it does not administer) deletes it for the account only, as on whatsapp-web.js, instead of reporting success and deleting nothing.
+- Baileys: delete for everyone on a message the account cannot revoke (another sender's message in a 1:1 chat, or in a group it does not administer) deletes it for the account only, as on whatsapp-web.js, instead of reporting success and deleting nothing. When the group's member list shows no row the gateway can identify as the account, the revoke is still sent.
+- Baileys: the group list and group info recognise the account by its own lid in a lid-addressed group, so `isAdmin` and `isReadOnly` are right there, and an admin's delete for everyone in such a group is sent as a revoke.
+- Baileys: the chat preview follows an edit or a delete of the chat's last message, including one made through the API and an inbound revoke.
+- An image, video or audio sent by URL whose host answers with no Content-Type, or a generic `application/octet-stream` one, goes out as `image/jpeg`, `video/mp4` or `audio/mpeg` instead of under that generic type, which whatsapp-web.js delivered as a document.
 - Baileys: a message sent through the API becomes the chat's last message, so chat lists sort and preview by it.
 - Baileys: `DELETE /api/sessions/:sessionId/status/:id` revokes the status for the recipients it was posted to; the revoke reached nobody before.
 - Baileys: `BAILEYS_LOG_LEVEL` diagnostics keep an error's message and stack instead of logging `err: {}`.
@@ -51,11 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forwarding to a node whose `NODE_URL` has a path prefix keeps the prefix.
 - Product sends count toward the send failure breaker like every other send.
 - `GET /api/plugins/:id/health` reports a sandboxed plugin whose worker crashed, failed to enable or is disabled as unhealthy.
-- Removing a row from a plugin config array of masked secrets restores the remaining secrets to the right rows, and a removal the gateway cannot resolve is refused with a request to re-enter them, instead of keeping the removed secret and dropping a kept one.
+- Removing a row from a plugin config array of masked secrets restores the remaining secrets to the right rows, and a change the gateway cannot match to the stored secrets (for example a removal together with an addition that changes the list's length) is refused with a request to re-enter them, instead of keeping the removed secret and dropping a kept one. Deleting one row and adding one in the same save keeps the list's length and is still read as an in-place edit.
 - With `QUEUE_ENABLED=true`, ingress deliveries that share a provider delivery id across instances or plugins are no longer dropped as duplicates.
 - The ingress reconciler no longer stalls on pending rows of a disabled or deleted instance, and an ingress job failed by BullMQ stall exhaustion writes a dead-letter row and fires `ingress:error` instead of being lost.
 - An integration instance created without a `verifyToken` gets a generated one, as documented, so a GET verification handshake can succeed; the dashboard shows it once when the instance is created.
-- `ctx.storage.list()` no longer returns the plugin package's own files as storage keys, and an in-place plugin update keeps legacy (pre-encoding) storage files.
+- `ctx.storage.list()` no longer returns the plugin package's `manifest` and `package` files as storage keys, and an in-place plugin update keeps legacy (pre-encoding) storage files.
 - `GET /api/plugins/catalog` answers `400` instead of `500` for a catalog with a non-object entry.
 - A plugin instance PATCH whose config is rejected, or whose save fails, changes nothing, instead of leaving `enabled` changed.
 - `PUT /api/sessions/:sessionId/webhooks/:id` answers `400` instead of `500` when `url`, `events`, `headers`, `active` or `retryCount` is null.
@@ -76,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard Chats offers no reply, react or delete on a message that is not sent yet, which could only fail.
 - Dashboard: message types and chat kinds read as words in the selected language in the reply banner and quote, the chat list, the messages-by-type chart, and the webhook filter tags and summary; a chat whose newest message is media no longer reads "No messages yet".
 - Dashboard: the media viewer saves an image under its file name instead of its caption, and the chat header shows the right country code for three-digit codes and for +7 numbers.
-- Dashboard: the audit CSV export retries throttled pages, exports the newest 18,000 rows with a warning when there are more, and shows an error instead of quietly downloading only the current page.
+- Dashboard: the audit CSV export retries a briefly throttled page, exports the newest 10,000 rows with a warning when there are more or when the gateway keeps throttling the walk, and shows an error instead of quietly downloading only the current page.
 - Dashboard: Infrastructure holds its form until the saved config has loaded, so Save can no longer overwrite the stored database, S3 and engine settings with defaults, and saving a built-in Postgres or Redis no longer stores a password the bundled container never receives.
 - Dashboard: clearing a plugin instance's session scope returns it to all sessions instead of silently keeping the old scope, and a per-session plugin override the gateway rejects shows the error instead of "Saved".
 - Dashboard: a newly linked session's card shows its phone and last-active time without a reload, and a slow QR answer no longer reopens a closed QR modal or replaces another session's QR.
@@ -104,21 +107,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes (behavior changes)
 
-- Baileys: `DELETE /api/sessions/:sessionId/status/:id` answers `403` for a status this session did not post in the last 24 hours (one posted before a restart, from the phone or from another node), because its recipients are unknown; it answered `200` without revoking anything.
+- Baileys: `DELETE /api/sessions/:sessionId/status/:id` answers `403` for a status this session did not post in the last 24 hours (one posted before the session last started or reconnected, before a restart, from the phone or from another node), because its recipients are unknown; it answered `200` without revoking anything.
 - whatsapp-web.js: a reply, location or contact card to a channel or a status/broadcast list, and a poll or sticker to a status/broadcast list, answer `501` where they answered `500`; nothing is sent, and the send breaker no longer counts them.
 - whatsapp-web.js: adding a label id the account does not have answers `404` where it answered `200`.
 - `POST /api/sessions` refuses a `config` that is not a JSON object with `400`.
-- Boot fails on a `DATABASE_TYPE`, `ENGINE_TYPE` or `STORAGE_TYPE` with surrounding whitespace, and on a malformed, zero or negative value, or a timer above 2147483647 ms, for the chat-media, status and S3 re-probe settings; `migration:run` applies the same `DATABASE_TYPE` rule.
-- Compose installs whose `.env` came from a template older than 0.18 may still carry uncommented `DATABASE_SSL=false` and `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Compose now forwards both, so they override TLS settings saved in the dashboard; comment them out or delete them.
+- Boot fails on a `DATABASE_TYPE`, `ENGINE_TYPE` or `STORAGE_TYPE` with surrounding whitespace; on a malformed, zero or negative value for the chat-media, status and S3 re-probe settings (a negative `CHAT_MEDIA_ARCHIVE_TTL_DAYS`; 0 still means keep forever); and on a timer above 2147483647 ms for the chat-media and status orphan sweeps, `S3_REPROBE_INTERVAL_MS` and `MEDIA_CONVERSION_TIMEOUT_MS`. `migration:run` applies the same `DATABASE_TYPE` rule.
+- whatsapp-web.js: button, list and template-button replies are type `text` instead of `unknown` in webhooks, storage and message-type filters, and stored rows with the old tokens are rewritten at boot.
+- `NODE_URL` keeps its path when a request is forwarded, so the path must be only a reverse-proxy prefix: a `NODE_URL` ending in `/api` now forwards to `/api/api/...`.
+- With `QUEUE_ENABLED=true`, ingress job ids change format. Let pending ingress rows drain (no row pending for `INGRESS_RECONCILE_GRACE_MS`) before upgrading, or a delivery replayed across the upgrade can be dispatched twice.
+- Integration instances created without a `verifyToken` before this release still have none; recreate one to get a generated token.
+- Compose installs whose `.env` came from a template older than 0.18 may still carry uncommented `DATABASE_SSL=false` and `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Compose now forwards both, so they override TLS settings saved in the dashboard; comment them out or delete them. The gateway logs a warning at boot when a forwarded value differs from the one saved in the dashboard.
 - A WebSocket `subscribe` whose `sessionId` is not `*` or a session id of at most 128 safe characters answers `INVALID_SESSION`, and a connection can hold at most 4096 subscriptions (`TOO_MANY_SUBSCRIPTIONS`).
 - `GET /api/metrics` answers `429` after 10 failed token attempts from one client within a minute.
 
 ### Security
 
-- Baileys: an inbound edit, revoke or reaction that targets a stored message from another chat, or an edit or 1:1 revoke from someone other than the author, is dropped. Any contact who knew a message id could rewrite or erase the stored copy of any message in the session and trigger `message.edited` or `message.revoked` for it.
-- Baileys: a message retry request is answered only for the chat the stored message belongs to.
+- Baileys: an inbound edit, revoke or reaction that targets a stored message from another chat, or an edit or 1:1 revoke from someone other than the author, is dropped. Any contact who knew a message id could rewrite or erase the stored copy of a message and trigger `message.edited` or `message.revoked` for it. The check needs the original in the Baileys message store, so it does not cover messages imported by the history sync at link time or older than the newest `BAILEYS_MESSAGE_STORE_LIMIT` messages, and a group revoke is checked for the chat only, since an admin may revoke anyone's message.
+- Baileys: a message retry request is no longer answered with a stored message from a different chat; a requester whose lid neither the session nor Baileys can map to a phone number is still answered.
 - A WebSocket `subscribe` with an oversized `sessionId` retained about 20 MB of room names per frame, so any valid API key could exhaust the gateway's memory; the id is now validated and subscriptions per connection are capped.
-- Link previews scan the fetched page in linear time; a crafted page could stall the whole process for over a minute.
+- Baileys: link previews scan the fetched page in linear time; a crafted page could stall the whole process for over a minute.
 - `GET /api/metrics` bounds failed `METRICS_TOKEN` attempts per client, so the token can no longer be guessed at full speed.
 - Plugin log metadata can no longer overwrite a log line's level, context, message, timestamp or trace.
 - Backup archives under `./backups` and restore snapshots (`*.pre-restore-*`) are ignored by git and kept out of the Docker build context; they hold the admin API key, WhatsApp credentials and database copies.
