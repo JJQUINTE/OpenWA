@@ -601,10 +601,12 @@ User-managed files outside that list (for example the project-level `.env`) must
 # Run from the repo root (database defaults are ./data/...; state dirs follow OPENWA_DATA_DIR):
 ./scripts/backup.sh
 
-# Customize via environment:
+# Customize via environment. Keep the password out of DATABASE_URL: the URL is passed to pg_dump as
+# an argument, which every local user can read in the process list while the dump runs. pg_dump
+# takes it from PGPASSWORD (or ~/.pgpass) instead:
 OPENWA_DATA_DIR=/srv/openwa/data \
   BACKUP_DIR=/backups/openwa \
-  DATABASE_TYPE=postgres DATABASE_URL=postgres://user:pass@host:5432/openwa \
+  DATABASE_TYPE=postgres DATABASE_URL=postgres://user@host:5432/openwa PGPASSWORD='<password>' \
   ./scripts/backup.sh
 ```
 

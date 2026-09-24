@@ -33,6 +33,11 @@
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
 #   For postgres: DATABASE_URL, or DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME
+#                     DATABASE_URL is read by this script only (the app uses the DATABASE_* keys)
+#                     and wins over them when set. It is passed to pg_dump as an argument, which
+#                     other local users can read in the process list, so leave the password out of
+#                     it and supply PGPASSWORD or ~/.pgpass instead; the DATABASE_* path already
+#                     passes DATABASE_PASSWORD through PGPASSWORD.
 #
 # Failure policy: a missing source database is FATAL (no silent empty backup), and the finished
 # archive must contain every configured database or it is deleted and the run fails. When the
