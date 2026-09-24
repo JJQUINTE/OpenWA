@@ -3982,6 +3982,44 @@ describe('BaileysAdapter store-backed ops', () => {
         GROUP,
       );
     });
+
+    // A lid-addressed group lists every member, the account included, as `<lid>@lid`, and WhatsApp
+    // withholds the phone twin, so the account's own row carries nothing but its lid.
+    const lidMemberMessage = { ...memberMessage, key: { ...memberMessage.key, participant: '44455566@lid' } };
+    const withLidAddressedSelfRole = (admin: 'admin' | null) =>
+      fakeSock.groupMetadata.mockResolvedValue({
+        id: GROUP,
+        subject: 'G',
+        addressingMode: 'lid',
+        participants: [
+          { id: '11122233@lid', admin },
+          { id: '44455566@lid', admin: null },
+        ],
+      });
+
+    it('revokes it in a lid-addressed group when the account is an admin there', async () => {
+      // WhatsApp hands the account its own lid in the creds on connect.
+      fakeSock.user = { id: '628999:1@s.whatsapp.net', lid: '11122233:1@lid', name: 'Me' };
+      fakeStore.getMessage.mockResolvedValue(lidMemberMessage);
+      withLidAddressedSelfRole('admin');
+      const adapter = await ready();
+      await adapter.deleteMessage(GROUP, 'TARGET', true);
+      expect(fakeSock.sendMessage).toHaveBeenCalledWith(GROUP, { delete: lidMemberMessage.key });
+      expect(fakeSock.chatModify).not.toHaveBeenCalled();
+    });
+
+    it('deletes it for the account only in a lid-addressed group where the account is not an admin', async () => {
+      fakeSock.user = { id: '628999:1@s.whatsapp.net', lid: '11122233:1@lid', name: 'Me' };
+      fakeStore.getMessage.mockResolvedValue(lidMemberMessage);
+      withLidAddressedSelfRole(null);
+      const adapter = await ready();
+      await adapter.deleteMessage(GROUP, 'TARGET', true);
+      expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+      expect(fakeSock.chatModify).toHaveBeenCalledWith(
+        { deleteForMe: { deleteMedia: true, key: lidMemberMessage.key, timestamp: 1700000007 } },
+        GROUP,
+      );
+    });
   });
 
   it('media sends honor the chat disappearing timer via the funnel (#473)', async () => {
@@ -4426,6 +4464,26 @@ describe('BaileysAdapter group management', () => {
     expect(groups).toEqual([
       { id: '123-456@g.us', name: 'G', participantsCount: 1, isAdmin: true, linkedParentJID: null },
     ]);
+  });
+
+  it('recognises the account by its own lid in a lid-addressed group', async () => {
+    // The own row is `<lid>@lid` with no phone twin; the lid comes from the creds on connect.
+    fakeSock.user = { id: '628999:1@s.whatsapp.net', lid: '11122233:1@lid', name: 'Me' };
+    const lidMeta = {
+      id: '123-456@g.us',
+      subject: 'G',
+      announce: true,
+      participants: [
+        { id: '11122233@lid', admin: 'admin' },
+        { id: '44455566@lid', admin: null },
+      ],
+    };
+    fakeSock.groupFetchAllParticipating.mockResolvedValue({ '123-456@g.us': lidMeta });
+    fakeSock.groupMetadata.mockResolvedValueOnce(lidMeta);
+    const adapter = await ready();
+    expect(await adapter.getGroups()).toEqual([expect.objectContaining({ id: '123-456@g.us', isAdmin: true })]);
+    // An admin of an announce-only group can still post there.
+    expect(await adapter.getGroupInfo('123-456@g.us')).toMatchObject({ isAnnounce: true, isReadOnly: false });
   });
 
   it('getGroupInfo maps groupMetadata, and returns null only for a server refusal (401/403/404)', async () => {

@@ -26,6 +26,7 @@ import {
 import { differentWaIds, type BaileysEvents } from './baileys-events';
 import type { BaileysHistory } from './baileys-history';
 import type { BaileysSessionStore } from './baileys-session-store';
+import { userPart } from '../identity/wa-id';
 
 /** Linked-device identity shown in WhatsApp (Settings → Linked Devices). The display name is
  * operator-brandable via BAILEYS_BROWSER_NAME; it only applies to pairings made after the change. */
@@ -568,6 +569,14 @@ export class BaileysLifecycle {
       this.qrCode = null;
       this.phoneNumber = this.host.extractPhone(this.sock?.user?.id);
       this.pushName = this.sock?.user?.name ?? null;
+      // The account's own lid<->phone pair. Baileys stores it in its own mapping without emitting
+      // lid-mapping.update, and an account whose only traffic is API sends never sees it on a message
+      // key either, so a lid-addressed group's `<lid>@lid` row for the account stayed unresolved and
+      // every self-admin check read it as somebody else.
+      const me = this.sock?.user;
+      if (me?.id && me.lid) {
+        this.host.addLidMappings([{ lid: `${userPart(me.lid)}@lid`, pn: `${userPart(me.id)}@s.whatsapp.net` }]);
+      }
       // I4: reset the reconnect counter on a successful connection.
       this.reconnectAttempts = 0;
       this.setStatus(EngineStatus.READY);
