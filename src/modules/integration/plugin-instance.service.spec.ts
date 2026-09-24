@@ -73,6 +73,13 @@ describe('PluginInstanceService', () => {
     expect(gen.secret).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  // A GET challenge route answers 403 while verifyToken is null, and no update path can set it later.
+  it('keeps a supplied verifyToken, else auto-generates one on create and mint', async () => {
+    expect((await service.create('meta', 'a1', { verifyToken: 'hub-token' })).verifyToken).toBe('hub-token');
+    expect((await service.create('meta', 'a2', {})).verifyToken).toMatch(/^[0-9a-f]{32}$/);
+    expect((await service.mint('meta', 'a3', {})).verifyToken).toMatch(/^[0-9a-f]{32}$/);
+  });
+
   it('masks a NESTED secret:true config field on masked reads (recursive redaction)', () => {
     const schema = {
       type: 'object',
@@ -144,12 +151,15 @@ describe('PluginInstanceService provisioning', () => {
     expect(rotated.secret).not.toBe(created.secret);
   });
 
-  it('setEnabled toggles enabled; update patches scope/config; remove deletes', async () => {
+  it('update patches enabled/scope/config in one save; remove deletes', async () => {
     await service.create('chatwoot', 'acct1', { sessionScope: 'a' });
-    expect((await service.setEnabled('chatwoot', 'acct1', false))?.enabled).toBe(false);
-    const patched = await service.update('chatwoot', 'acct1', { sessionScope: 'b', config: { k: 1 } });
+    const save = jest.spyOn(ds.getRepository(PluginInstance), 'save');
+    const patched = await service.update('chatwoot', 'acct1', { enabled: false, sessionScope: 'b', config: { k: 1 } });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(patched?.enabled).toBe(false);
     expect(patched?.sessionScope).toBe('b');
     expect(patched?.config).toEqual({ k: 1 });
+    expect((await service.resolve('chatwoot', 'acct1'))?.enabled).toBe(false);
     expect(await service.remove('chatwoot', 'acct1')).toBe(true);
     expect(await service.resolve('chatwoot', 'acct1')).toBeNull();
     expect(await service.remove('chatwoot', 'acct1')).toBe(false);
@@ -163,5 +173,19 @@ describe('PluginInstanceService provisioning', () => {
     expect(created.sessionScope).toBeNull();
     const patched = await service.update('chatwoot', 'acct1', { sessionScope: '' });
     expect(patched?.sessionScope).toBeNull();
+  });
+
+  // PATCH sessionScope:null is how an operator returns a bound instance to all sessions. It must land
+  // as the same null an unscoped create stores, since ingress and the sandbox bridge pass a stored
+  // '*' on as a literal session id.
+  it('update clears a bound sessionScope to null, the value an unscoped create stores', async () => {
+    const unscoped = await service.create('chatwoot', 'acct0', {});
+    await service.create('chatwoot', 'acct1', { sessionScope: 'sess-1' });
+
+    const cleared = await service.update('chatwoot', 'acct1', { sessionScope: null });
+
+    expect(cleared?.sessionScope).toBeNull();
+    expect(unscoped.sessionScope).toBeNull();
+    expect((await service.resolve('chatwoot', 'acct1'))?.sessionScope).toBeNull();
   });
 });

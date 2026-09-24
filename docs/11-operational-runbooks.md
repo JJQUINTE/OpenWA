@@ -349,8 +349,11 @@ docker stats --no-stream
 # 2. Notify users (via webhook or external system)
 # Send maintenance notification
 
-# 3. Create backup
-./scripts/backup.sh
+# 3. Create a backup in the running container, where the data is mounted, and copy it off the
+#    volume (see Runbook: Database Backup). A host run of ./scripts/backup.sh archives ./data in the
+#    checkout, which only a bare-metal install or docker-compose.dev.yml reads
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. ./backups/
 
 # Verify backup (backup.sh writes $BACKUP_DIR/openwa-backup-<timestamp>.tar.gz,
 # BACKUP_DIR defaults to ./backups — it creates no dated subdirectories)
@@ -422,10 +425,15 @@ curl -H "X-API-Key: $API_KEY" \
 # 1. Review release notes
 # Check for breaking changes, migration requirements
 
-# 2. Create backup (BACKUP_DIR must be set BEFORE the script runs — it defaults to ./backups
-#    and the archive is written as $BACKUP_DIR/openwa-backup-<timestamp>.tar.gz)
+# 2. Create a backup in the running container, where the data is mounted, then copy it to
+#    $BACKUP_DIR as openwa-backup-<timestamp>.tar.gz, where the Rollback block reads it. Both compose
+#    files name the container openwa-api. Running ./scripts/backup.sh on the host instead archives
+#    ./data in the checkout, which the production compose never reads (see Runbook: Database Backup).
+#    An image older than 0.19.0 has no scripts/backup.sh: see 14 - Known Upgrade Hazards
 export BACKUP_DIR="/backups/openwa"
-./scripts/backup.sh
+mkdir -p "$BACKUP_DIR"
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. "$BACKUP_DIR"/
 
 # 3. Export the Data DB as JSON alongside the archive (admin key)
 curl -H "X-API-Key: $API_KEY" \
@@ -433,7 +441,7 @@ curl -H "X-API-Key: $API_KEY" \
 
 # Started with docker-compose.dev.yml (the README Quick Start)? Add `-f docker-compose.dev.yml`
 # to every docker compose command in this runbook, the Rollback block included, and write `openwa`
-# wherever a command names the `openwa-api` service (steps 6 and 7, rollback step 2).
+# wherever a command names the `openwa-api` service (steps 6 and 7, rollback steps 2 and 3).
 
 # 4. Stop services
 docker compose down
@@ -477,11 +485,11 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/messages/send-text \
 > `image: ghcr.io/rmyndharis/openwa:<tag>` — replace steps 5-6 with editing that tag and running
 > `docker compose pull`.
 
-> On Kubernetes with the chart in `charts/openwa`, back up the persistent volume and take the step 3
-> export first, then replace steps 4-8 with checking out the new release and running
-> `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults to the chart's
-> `appVersion`, so the checkout moves it, unless `image.tag` was set at install: `--reuse-values` keeps
-> that value, so pass `--set image.tag=<new-version>` in that case.
+> On Kubernetes with the chart in `charts/openwa`, take the step 2 backup with the Helm lines in
+> Runbook: Database Backup and the step 3 export first, then replace steps 4-8 with checking out the
+> new release and running `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults
+> to the chart's `appVersion`, so the checkout moves it, unless `image.tag` was set at install:
+> `--reuse-values` keeps that value, so pass `--set image.tag=<new-version>` in that case.
 > Run steps 9-12 through `kubectl port-forward` to the release's Service. `helm rollback` keeps the
 > volume, so read the notes on restoring `sessions/` below before relying on it.
 
@@ -503,14 +511,26 @@ curl -H "X-API-Key: $API_KEY" \
 # 1. Stop services
 docker compose down
 
-# 2. Check out the previous release and rebuild the image
+# 2. Restore from the pre-upgrade backup (main.sqlite, a SQLite data store and the auth state). The
+#    archive upgrade step 2 produced is
+#    "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz". The databases in place still hold the failed
+#    upgrade's data, so the restore refuses to touch them without --force. That state is not lost: it
+#    is kept in "$BACKUP_DIR/data.pre-restore-<ts>", the path the script prints. It runs in the image
+#    because the data lives in the openwa-data volume (see Runbook: Restore from Backup), and before
+#    the checkout below because an image older than 0.23.7 cannot move its safety snapshot off the
+#    read-only container root
+docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
+  -v "$BACKUP_DIR:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups -e HOME=/tmp \
+  openwa-api /backups/openwa-backup-<timestamp>.tar.gz --force
+
+# On a PostgreSQL data store, step 2 leaves the upgraded database in place. Load the pre-upgrade dump
+# into an empty database: replayed over the upgraded tables, its CREATE statements fail and its rows
+# mix with theirs
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | psql "$DATABASE_URL"
+
+# 3. Check out the previous release and rebuild the image
 git checkout v<old-version>
 docker compose build openwa-api
-
-# 3. Restore from the pre-upgrade backup (both DBs + sessions) — the archive step 2 produced is
-#    "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz". The databases in place still hold the failed
-#    upgrade's data, so the restore refuses to touch them without --force
-./scripts/restore.sh "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" --force
 
 # 4. Start with old version
 docker compose up -d
@@ -660,13 +680,76 @@ docker compose down
 #    refuses to overwrite them)
 ./scripts/restore.sh ./backups/openwa-backup-<timestamp>.tar.gz
 
-# 3. (Postgres only) the archive contains database.sql — import it manually:
+# 3. (Postgres only) the archive contains database.sql — import it manually into an empty
+#    database (its CREATE statements fail against tables that already exist):
 #    psql "$DATABASE_URL" < ./data/database.sql
 
 # 4. Start the app and CONFIRM an existing API key still authenticates
 docker compose up -d
 curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth/validate
 ```
+
+> Step 2 as written restores into `./data` in the checkout. The app reads that directory only on a
+> bare-metal install or under `docker-compose.dev.yml`, which bind-mounts it. The production compose
+> file keeps the data in the **named volume** `openwa-data` and the Helm chart in a PVC, so a host run
+> there fills a directory the container never reads and still reports success. Run the script from the
+> image against the volume instead, in place of step 2. Both mount the container root read-only, so
+> `OPENWA_RESTORE_SNAPSHOT_DIR` (0.23.7 or later) puts the pre-restore snapshots, of the data dir and of
+> any state directory mounted outside it, on a writable, persistent path, and `TMPDIR` keeps the
+> extracted archive there too; allow free space for about twice the data plus the archive. `--force` is
+> included because the volume of an existing install still holds its databases:
+>
+> ```bash
+> # Compose: the entrypoint override runs the script as root, which can read the archive and write
+> # the volume; the next start hands the restored files back to the app user. The image sets
+> # HOME=/app/data, and the script refuses a data dir that is the home directory, so HOME is moved
+> # off it here for a compose file that does not already set it.
+> docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
+>   -v "$PWD/backups:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups -e HOME=/tmp \
+>   openwa-api /backups/openwa-backup-<timestamp>.tar.gz --force
+>
+> # Helm, for a release named openwa (`kubectl get statefulset,configmap,pvc` shows the names of
+> # another): stop the pod, then run the script in a helper pod on the same PVC, with the release's image.
+> kubectl scale statefulset/openwa --replicas=0
+> kubectl wait --for=delete pod/openwa-0 --timeout=120s
+> kubectl apply -f - <<'EOF'
+> apiVersion: v1
+> kind: Pod
+> metadata:
+>   name: openwa-restore
+> spec:
+>   restartPolicy: Never
+>   containers:
+>     - name: restore
+>       image: ghcr.io/rmyndharis/openwa:<version>
+>       command: ['sleep', 'infinity']
+>       envFrom:
+>         - configMapRef:
+>             name: openwa
+>       volumeMounts:
+>         - { name: data, mountPath: /app/data }
+>         - { name: work, mountPath: /restore }
+>   volumes:
+>     - name: data
+>       persistentVolumeClaim:
+>         claimName: data-openwa-0
+>     - name: work
+>       emptyDir: {}
+> EOF
+> kubectl wait --for=condition=Ready pod/openwa-restore --timeout=300s
+> kubectl cp ./backups/openwa-backup-<timestamp>.tar.gz openwa-restore:/restore/backup.tar.gz
+> # HOME is moved off the data dir here too, as in the compose command.
+> kubectl exec openwa-restore -- env HOME=/tmp OPENWA_RESTORE_SNAPSHOT_DIR=/restore TMPDIR=/restore \
+>   ./scripts/restore.sh /restore/backup.tar.gz --force
+> # The emptyDir goes away with the pod: copy off every snapshot the script named first.
+> kubectl cp openwa-restore:/restore/data.pre-restore-<ts> ./backups/data.pre-restore-<ts>
+> kubectl delete pod openwa-restore
+> kubectl scale statefulset/openwa --replicas=1
+> ```
+>
+> The PostgreSQL import in step 3 then reads the dump from the archive, because `./data` on the host
+> is not the volume: `tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | psql "$DATABASE_URL"`.
+> On Helm, run the step 4 check through `kubectl port-forward` to the release's Service.
 
 > **PostgreSQL restores are read as UTC.** From 0.23.6 the data connection binds, parses and defaults
 > every timestamp in UTC, and refuses to boot when its session is not on UTC

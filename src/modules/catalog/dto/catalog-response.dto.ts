@@ -38,19 +38,26 @@ export class ProductDto {
   @ApiPropertyOptional({ description: 'Product description, when set.' })
   description?: string;
 
-  @ApiProperty({ description: 'Price in the currency’s minor-unit-free numeric form.', example: 85000 })
-  price!: number;
+  @ApiPropertyOptional({
+    description: 'Price in the currency’s minor-unit-free numeric form. Absent when the product has no price.',
+    example: 85000,
+  })
+  price?: number;
 
-  @ApiProperty({ description: 'ISO currency code.', example: 'IDR' })
-  currency!: string;
+  @ApiPropertyOptional({
+    description: 'ISO currency code. Absent when the product carries no currency.',
+    example: 'IDR',
+  })
+  currency?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
       'Price rendered for display. Synthesized by the gateway from price + currency, so an ' +
-      'unrecognised currency code falls back to a plain "CODE amount" pair.',
+      'unrecognised currency code falls back to a plain "CODE amount" pair, and a product with no ' +
+      'currency shows the bare amount. Present only when price is.',
     example: 'IDR 85,000.00',
   })
-  priceFormatted!: string;
+  priceFormatted?: string;
 
   @ApiPropertyOptional({
     description: 'First product image URL. Absent when the product carries no image.',

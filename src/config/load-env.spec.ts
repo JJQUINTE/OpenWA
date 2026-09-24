@@ -70,6 +70,38 @@ describe('loadEnvironment', () => {
     expect(process.env.REDIS_HOST).toBe('host-from-process-env');
     expect(workerConnectionOptions().host).toBe('host-from-process-env');
   });
+
+  // Older .env templates shipped DATABASE_SSL=false, and compose forwards it, so it silently outranks
+  // TLS turned on in the dashboard. The override stands, but the boot log names both values.
+  it('warns when a pinned database TLS setting differs from the one saved in the dashboard', () => {
+    delete process.env.DATABASE_SSL;
+    process.env.DATABASE_SSL_REJECT_UNAUTHORIZED = 'true';
+    makeTempCwd({
+      '.env': 'DATABASE_SSL=false\n',
+      'data/.env.generated': 'DATABASE_SSL=true\nDATABASE_SSL_REJECT_UNAUTHORIZED=false\n',
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    runLoader();
+
+    expect(process.env.DATABASE_SSL).toBe('false');
+    expect(warn.mock.calls.map(([line]) => line as string)).toEqual([
+      expect.stringMatching(/DATABASE_SSL=false .*DATABASE_SSL=true /),
+      expect.stringMatching(/DATABASE_SSL_REJECT_UNAUTHORIZED=true .*DATABASE_SSL_REJECT_UNAUTHORIZED=false /),
+    ]);
+  });
+
+  it('stays quiet when the pinned TLS setting matches the saved one or nothing pins it', () => {
+    process.env.DATABASE_SSL = 'true';
+    delete process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
+    makeTempCwd({ 'data/.env.generated': 'DATABASE_SSL=true\nDATABASE_SSL_REJECT_UNAUTHORIZED=false\n' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    runLoader();
+
+    expect(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED).toBe('false');
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('main.ts bootstrap order', () => {

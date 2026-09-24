@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { localizePlugin } from '../utils/localizePlugin';
 import { configUiSafeConfig, missingRequiredConfig, sparseSessionOverride } from '../utils/pluginConfigRules';
-import { coerceFieldInput, emptyForField } from '../utils/pluginConfigForm';
+import { coerceFieldInput, emptyForField, fillClearedFields } from '../utils/pluginConfigForm';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Puzzle,
@@ -435,7 +435,13 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     if (overrideFormRef.current && !overrideFormRef.current.reportValidity()) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, sparseSessionOverride(overrideCfg, plugin));
+      // A rejected save answers 200 + {success:false}; the absence of a throw is not success.
+      const res = await pluginsApi.updateSessionConfig(
+        plugin.id,
+        selSession,
+        sparseSessionOverride(overrideCfg, plugin),
+      );
+      if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
@@ -449,7 +455,8 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     if (!selSession) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      const res = await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
@@ -665,7 +672,10 @@ export default function Plugins() {
     try {
       // 200 + {success:false} is how a rejected save arrives; without this the modal closed on a
       // "Saved!" toast and the operator's edit was silently gone on the next open.
-      const res = await pluginsApi.updateConfig(configPlugin.id, schemaConfig);
+      const res = await pluginsApi.updateConfig(
+        configPlugin.id,
+        fillClearedFields(schemaConfig, configPlugin.config, configPlugin.configSchema?.properties ?? {}),
+      );
       if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));

@@ -308,14 +308,125 @@ describe('restoreSecretConfig (scalar-secret array)', () => {
     ).toEqual({ keys: ['k1', 'k2', 'k3'] });
   });
 
-  it('preserves the remaining stored secrets when the last key is removed (length shrinks)', () => {
-    expect(
+  // Removing ANY one key sends the same ['***','***'], so the host cannot tell which stored key went.
+  // Binding by position would keep a removed (possibly revoked) key and drop a kept one: reject instead.
+  it('rejects a removal that leaves masked keys it cannot tell apart', () => {
+    expect(() =>
       restoreSecretConfig(
         { keys: [SECRET_SENTINEL, SECRET_SENTINEL] },
         { keys: ['k1', 'k2', 'k3'] },
         scalarSecretArraySchema,
       ),
-    ).toEqual({ keys: ['k1', 'k2'] });
+    ).toThrow(/re-enter/);
+  });
+
+  // Adding keys in the same save grows the array, so the removal must not slip past the check.
+  it('rejects a removal paired with additions that leaves masked keys it cannot tell apart', () => {
+    expect(() =>
+      restoreSecretConfig(
+        { keys: [SECRET_SENTINEL, 'new-1', 'new-2'] },
+        { keys: ['old', 'keep'] },
+        scalarSecretArraySchema,
+      ),
+    ).toThrow(/re-enter/);
+  });
+
+  it('accepts a removal once the remaining keys are re-entered', () => {
+    expect(restoreSecretConfig({ keys: ['k2', 'k3'] }, { keys: ['k1', 'k2', 'k3'] }, scalarSecretArraySchema)).toEqual({
+      keys: ['k2', 'k3'],
+    });
+  });
+});
+
+describe('restoreSecretConfig (row removal among rows that differ only by secret)', () => {
+  const stored = {
+    endpoints: [
+      { url: 'a', token: 't-a' },
+      { url: 'a', token: 't-b' },
+      { url: 'c', token: 't-c' },
+    ],
+  };
+
+  it('rejects removing one of two rows whose non-secret content is identical', () => {
+    expect(() =>
+      restoreSecretConfig(
+        {
+          endpoints: [
+            { url: 'a', token: SECRET_SENTINEL },
+            { url: 'c', token: SECRET_SENTINEL },
+          ],
+        },
+        stored,
+        nestedSchema,
+      ),
+    ).toThrow(/re-enter/);
+  });
+
+  it('still restores every secret when the removed row was the only one with its content', () => {
+    expect(
+      restoreSecretConfig(
+        {
+          endpoints: [
+            { url: 'a', token: SECRET_SENTINEL },
+            { url: 'a', token: SECRET_SENTINEL },
+          ],
+        },
+        stored,
+        nestedSchema,
+      ),
+    ).toEqual({
+      endpoints: [
+        { url: 'a', token: 't-a' },
+        { url: 'a', token: 't-b' },
+      ],
+    });
+  });
+
+  // The typed row carries no mask, so it must not take a stored row's slot or shift the survivors.
+  it('restores every secret when a typed row is prepended before identical masked rows', () => {
+    expect(
+      restoreSecretConfig(
+        {
+          endpoints: [
+            { url: 'a', token: 't-z' },
+            { url: 'a', token: SECRET_SENTINEL },
+            { url: 'a', token: SECRET_SENTINEL },
+          ],
+        },
+        { endpoints: stored.endpoints.slice(0, 2) },
+        nestedSchema,
+      ),
+    ).toEqual({
+      endpoints: [
+        { url: 'a', token: 't-z' },
+        { url: 'a', token: 't-a' },
+        { url: 'a', token: 't-b' },
+      ],
+    });
+  });
+
+  // The unique row sits before or between the identical ones, so every survivor shifts position.
+  it.each([
+    ['leading', [{ url: 'c', token: 't-c' }, ...stored.endpoints.slice(0, 2)]],
+    ['middle', [stored.endpoints[0], { url: 'c', token: 't-c' }, stored.endpoints[1]]],
+  ])('still restores every secret when the removed unique row was %s', (_, endpoints) => {
+    expect(
+      restoreSecretConfig(
+        {
+          endpoints: [
+            { url: 'a', token: SECRET_SENTINEL },
+            { url: 'a', token: SECRET_SENTINEL },
+          ],
+        },
+        { endpoints },
+        nestedSchema,
+      ),
+    ).toEqual({
+      endpoints: [
+        { url: 'a', token: 't-a' },
+        { url: 'a', token: 't-b' },
+      ],
+    });
   });
 });
 

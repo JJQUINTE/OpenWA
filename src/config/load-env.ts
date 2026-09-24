@@ -69,7 +69,17 @@ export function loadEnvironment(): void {
   // 3. Dashboard-saved config (does not override .env or process env)
   if (fs.existsSync(generatedEnvPath)) {
     console.log('[Bootstrap] Loading saved configuration from:', generatedEnvPath);
-    dotenv.config({ path: generatedEnvPath, override: false });
+    const { parsed = {} } = dotenv.config({ path: generatedEnvPath, override: false });
+    // Compose forwards DATABASE_SSL*, and templates older than 0.18 set DATABASE_SSL=false in .env, so
+    // a stale line can outrank TLS turned on in the dashboard. The override stands; the log names it.
+    for (const key of ['DATABASE_SSL', 'DATABASE_SSL_REJECT_UNAUTHORIZED']) {
+      if (parsed[key] !== undefined && process.env[key] !== parsed[key]) {
+        console.warn(
+          `[Bootstrap] ${key}=${process.env[key]} from the environment or .env overrides ${key}=${parsed[key]} ` +
+            'saved in data/.env.generated (Dashboard > Infrastructure)',
+        );
+      }
+    }
   } else {
     console.log('[Bootstrap] First run detected, creating default configuration...');
     // Create minimal .env.generated with sensible defaults

@@ -98,12 +98,17 @@ OpenWA v0.2+ includes built-in migration API endpoints that leverage the **Dual-
 curl -s 'http://localhost:2785/api/infra/export-data' \
   -H 'X-API-Key: YOUR_KEY' > data-backup.json
 
-# Step 2: Change database configuration in .env or Dashboard
-# From: DATABASE_TYPE=sqlite
-# To:   DATABASE_TYPE=postgres
-#       POSTGRES_BUILTIN=true
+# Step 2: Change the database configuration
+# Dashboard: Infrastructure > PostgreSQL + "Use Built-in PostgreSQL Container"; save, then
+#   restart from the dashboard, which starts the container itself (skip Step 3).
+# Or in the .env next to docker-compose.yml (compose does not forward POSTGRES_BUILTIN, so
+#   name the host and set a real password):
+#   DATABASE_TYPE=postgres
+#   DATABASE_HOST=postgres
+#   DATABASE_USERNAME=openwa
+#   DATABASE_PASSWORD=<strong password>
 
-# Step 3: Restart with new configuration
+# Step 3: Restart with the new configuration (.env route)
 docker compose --profile postgres up -d
 
 # Step 4: Import data to new database
@@ -213,13 +218,20 @@ curl -s 'http://localhost:2785/api/infra/storage/export' \
 # The archive is auto-removed after STORAGE_EXPORT_TTL_MS (default 1h), so re-import it before then.
 # It is written under data/ so it survives the restart in Step 4 and stays import-able.
 
-# Step 3: Change storage configuration
-# From: STORAGE_TYPE=local
-# To:   STORAGE_TYPE=s3
-#       MINIO_BUILTIN=true  # or false for external S3
+# Step 3: Change the storage configuration
+# Dashboard: Infrastructure > Amazon S3 + "Use Built-in MinIO Container"; save, then
+#   restart from the dashboard, which starts the container itself (skip Step 4).
+# Or in the .env next to docker-compose.yml (compose does not forward MINIO_BUILTIN, so
+#   name the endpoint and set real keys):
+#   STORAGE_TYPE=s3
+#   S3_ENDPOINT=http://minio:9000
+#   S3_ACCESS_KEY_ID=<user>
+#   S3_SECRET_ACCESS_KEY=<strong password>
+# For external S3, set STORAGE_TYPE=s3, S3_BUCKET, S3_REGION and that store's keys instead
+#   (S3_ENDPOINT only for an S3-compatible store), and drop --profile minio in Step 4.
 
-# Step 4: Restart with new configuration
-docker compose up -d
+# Step 4: Restart with the new configuration (.env route)
+docker compose --profile minio up -d
 
 # Step 5: Import files to new storage
 curl -X POST 'http://localhost:2785/api/infra/storage/import' \
@@ -506,6 +518,13 @@ migrateSqliteToPostgres(config)
 
 ### Step-by-Step Migration
 
+This flow runs the legacy script on the host, so the host must be able to read the SQLite file and
+reach the PostgreSQL server. The shipped production compose file allows neither: its SQLite file lives
+in the `openwa-data` volume, and the built-in `postgres` service publishes no host port. Use the
+API-based migration above there. What follows moves `docker-compose.dev.yml` (which bind-mounts
+`./data`) to a PostgreSQL server of your own: add `-f docker-compose.dev.yml` to each `docker compose`
+command. On a bare-metal install, stop and start the process where it says `docker compose`.
+
 ```bash
 # Step 1: Stop OpenWA
 docker compose down
@@ -513,27 +532,34 @@ docker compose down
 # Step 2: Backup current data (both databases + session auth + media)
 ./scripts/backup.sh
 
-# Step 3: Setup PostgreSQL (if not exists) — the built-in service lives behind a compose profile
-docker compose --profile postgres up -d postgres
+# Step 3: Point OpenWA at PostgreSQL in the project's .env. docker-compose.dev.yml forwards these
+#         keys to the app, and a bare-metal start reads the file itself. DATABASE_HOST is the
+#         address the APP connects to, so never localhost for a container.
+#   DATABASE_TYPE=postgres
+#   DATABASE_HOST=db.example.com
+#   DATABASE_PORT=5432
+#   DATABASE_NAME=openwa
+#   DATABASE_USERNAME=openwa
+#   DATABASE_PASSWORD=<strong password>
+#   DATABASE_SYNCHRONIZE=false   # docker-compose.dev.yml defaults it to true
 
-# Step 4: Run the migration — save the "Migration Script (Legacy)" example above as
-#         migrate-sqlite-to-postgres.ts first; it is not shipped in the repo
-npx ts-node migrate-sqlite-to-postgres.ts
+# Step 4: Start OpenWA once so its migrations create the schema the script writes into, then stop it
+docker compose up -d
+curl http://localhost:2785/api/health   # repeat until it answers
+docker compose down
 
-# Step 5: Update environment
-export DATABASE_TYPE=postgres
-export DATABASE_HOST=localhost
-export DATABASE_PORT=5432
-export DATABASE_NAME=openwa
-export DATABASE_USERNAME=user
-export DATABASE_PASSWORD=pass
+# Step 5: Copy the rows. Save the "Migration Script (Legacy)" example above as
+#         migrate-sqlite-to-postgres.ts first; it is not shipped in the repo. SQLITE_PATH and
+#         DATABASE_URL are inputs to the script only.
+export DATABASE_URL='postgresql://openwa:<strong password>@db.example.com:5432/openwa'
+SQLITE_PATH=./data/openwa.sqlite npx ts-node migrate-sqlite-to-postgres.ts
 
 # Step 6: Verify migration
-psql -h "$DATABASE_HOST" -U "$DATABASE_USERNAME" -d "$DATABASE_NAME" -c "SELECT COUNT(*) FROM sessions;"
-psql -h "$DATABASE_HOST" -U "$DATABASE_USERNAME" -d "$DATABASE_NAME" -c "SELECT COUNT(*) FROM messages;"
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM sessions;"
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM messages;"
 
 # Step 7: Start with PostgreSQL
-docker compose --profile postgres up -d
+docker compose up -d
 
 # Step 8: Verify functionality
 curl http://localhost:2785/api/health
@@ -708,8 +734,14 @@ set -e
 # carry the flag up to the `--profile postgres` commands in 14.3: postgres exists only in the
 # production compose file.
 
-# 1. Backup: both databases + session auth + media + plugin state
-./scripts/backup.sh
+# 1. Backup: both databases + session auth + media + plugin state. Take it in the running container,
+#    where the data is mounted, and copy the archive to ./backups, as 11 - Runbook: Database Backup
+#    does. A host run of ./scripts/backup.sh archives ./data in the checkout, which the production
+#    compose never reads. docker exec and docker cp name the container, openwa-api under both compose
+#    files, so these lines keep that name and take no -f flag.
+mkdir -p ./backups
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. ./backups/
 
 # 2. Stop the current version
 docker compose down
@@ -764,6 +796,7 @@ docker compose run --rm openwa-api npm run migration:run:prod
 | `0.21.0` | The ingress route gained a per-client-IP rate bound (`INGRESS_IP_LIMIT`, default 1200 per window) alongside its per-instance one; previously the route had no bound a caller could not walk around by varying the path                                                                                                       | Raise `INGRESS_IP_LIMIT` if one provider IP legitimately drives more than 1200 ingress requests per window                                                                                                                                        |
 | `0.20.0` | With `WEBHOOK_SSRF_PROTECT=false`, deliveries no longer follow redirects, and `SSRF_ALLOWED_HOSTS` entries pin to their resolved addresses (must resolve at registration)                                                                                                                                                    | Set `WEBHOOK_SSRF_REDIRECTS=true` for a receiver legitimately behind a 3xx; ensure allowlisted hostnames resolve when the webhook is saved                                                                                                        |
 | `0.20.0` | Plugin installs from a URL require a `#sha256=<64 hex>` pin under `NODE_ENV=production` (the compose default)                                                                                                                                                                                                                | Pin catalog URLs, or set `PLUGIN_INSTALL_REQUIRE_PIN=false` to lift the requirement                                                                                                                                                               |
+| `0.19.0` | Older images ship no `scripts/backup.sh`, so step 1 of the upgrade script fails on a 0.18.x or earlier container, before anything is stopped                                                                                                                                                                                 | Stop the app and archive the volume: `docker run --rm -v openwa_openwa-data:/data:ro -v "$PWD/backups:/o" alpine tar czf /o/data.tgz -C /data .`, with a `pg_dump` of a PostgreSQL data store. To roll back, extract it into the emptied volume   |
 | `0.19.0` | Production boot refuses a set `API_MASTER_KEY` shorter than 32 characters                                                                                                                                                                                                                                                    | Strengthen a short key before upgrading; unset stays allowed (first boot generates one)                                                                                                                                                           |
 | `0.19.0` | `POST /sessions/:id/messages/send-catalog` and `PUT /api/settings` are removed (both always answered `501`)                                                                                                                                                                                                                  | Drop calls to either; catalog reads and `GET /api/settings` are unchanged                                                                                                                                                                         |
 | `0.18.0` | `NODE_ENV` outside `production`/`development`/`test` fails boot with a named error                                                                                                                                                                                                                                           | Set a legal value or unset it (unset remains valid)                                                                                                                                                                                               |
@@ -844,8 +877,13 @@ curl -f http://localhost:2785/api/health && echo "✅ Rollback successful"
 ```
 
 > [!TIP]
-> `./scripts/restore.sh <backup-archive.tar.gz>` performs the same restore from an archive produced by
-> `scripts/backup.sh` — including the Main DB (`./data/main.sqlite`), which the script above does not touch.
+> For an archive produced by `scripts/backup.sh`, follow
+> [11 - Runbook: Restore from Backup](./11-operational-runbooks.md#runbook-restore-from-backup)
+> instead. It also restores the Main DB (`main.sqlite`), which the script above does not touch, and
+> it runs `scripts/restore.sh` from the image against the production compose named volume
+> (`openwa-data`) or the Helm PVC. A host run of `./scripts/restore.sh`, like the copies into `./data`
+> above, reaches only a bare-metal install or `docker-compose.dev.yml`, which bind-mounts `./data`;
+> under the production compose file it fills a directory the container never reads.
 
 ### Rollback Decision Tree
 
@@ -1133,13 +1171,13 @@ async function fullImport(options: ImportOptions): Promise<void> {
 
 ### Common Issues
 
-| Issue                    | Cause                  | Solution                     |
-| ------------------------ | ---------------------- | ---------------------------- |
-| Session not reconnecting | Auth data corrupted    | Re-scan QR code              |
-| Foreign key errors       | Wrong import order     | Use provided import order    |
-| Duplicate key errors     | Existing data conflict | Use merge strategy           |
-| Permission denied        | File ownership         | `chown -R 1000:1000 ./data`  |
-| Out of memory            | Large export           | Increase Docker memory limit |
+| Issue                    | Cause                    | Solution                                                                                                                                                                                                |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session not reconnecting | Auth data corrupted      | Re-scan QR code                                                                                                                                                                                         |
+| Foreign key errors       | Wrong import order       | Use provided import order                                                                                                                                                                               |
+| Duplicate key errors     | Existing data conflict   | Use merge strategy                                                                                                                                                                                      |
+| Permission denied        | Data directory ownership | Keep the entrypoint's root start and its `cap_add` entries, and use the named volume; a host `chown` is not a fix (see [12 - Volume Permissions](./12-troubleshooting-faq.md#issue-volume-permissions)) |
+| Out of memory            | Large export             | Increase Docker memory limit                                                                                                                                                                            |
 
 ### PostgreSQL: boot crash-loop after upgrading a `DATABASE_SYNCHRONIZE=true` deployment
 

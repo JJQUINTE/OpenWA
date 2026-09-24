@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   OpenWAClient,
   OpenWAApiError,
@@ -112,6 +112,21 @@ describe('OpenWAClient', () => {
     await expect(client(t).messages.sendText('s1', { chatId: 'c@c.us', text: 'x' })).rejects.toBeInstanceOf(
       OpenWAServiceUnavailableError,
     );
+  });
+
+  it('renders a non-envelope error body as JSON in the message', async () => {
+    // The readiness probe answers 503 with `{ status, details }`, which has no `statusCode`/`message`.
+    const t = new MockTransport().on('GET', '/api/health/ready', {
+      status: 503,
+      body: { status: 'error', details: { mainDatabase: { status: 'down' } } },
+    });
+    const err = await client(t)
+      .health.ready()
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(OpenWAServiceUnavailableError);
+    expect((err as OpenWAApiError).message).toContain('"mainDatabase":{"status":"down"}');
+    expect((err as OpenWAApiError).message).not.toContain('[object Object]');
   });
 
   it('exposes all expected resource properties', () => {
@@ -241,6 +256,50 @@ describe('OpenWAClient', () => {
     await expect(c.sessions.list()).rejects.toBeInstanceOf(OpenWATimeoutError);
   });
 
+  it('turns the timeout off for 0 or Infinity, and caps a delay setTimeout cannot hold', async () => {
+    // setTimeout fires after 1 ms for a delay that is not finite or exceeds 2^31-1, which would
+    // abort every request instead of waiting longer.
+    const slowFetch: FetchLike = async (_url, init) => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      if (init?.signal?.aborted) {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return new Response('[]', { status: 200 });
+    };
+    for (const timeoutMs of [0, Infinity, 2 ** 31]) {
+      const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs, fetch: slowFetch });
+      await expect(c.sessions.list()).resolves.toEqual([]);
+    }
+  });
+
+  it('arms the timeout for a numeric string from untyped config', async () => {
+    // A plain-JS caller passing process.env.OPENWA_TIMEOUT_MS hands over a string.
+    const slowFetch: FetchLike = async (_url, init) => {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (init?.signal?.aborted) {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return new Response('[]', { status: 200 });
+    };
+    const timeoutMs = '5' as unknown as number;
+    const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs, fetch: slowFetch });
+    await expect(c.sessions.list()).rejects.toThrow(new OpenWATimeoutError(5));
+  });
+
+  it('refuses a timeout that is not a number of milliseconds instead of turning it off', () => {
+    // An environment variable that is set but empty, or carries a unit, would otherwise let a
+    // stalled request hang forever.
+    for (const timeoutMs of ['', ' ', '30s', 'abc', -1]) {
+      expect(
+        () => new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs: timeoutMs as unknown as number }),
+      ).toThrow(TypeError);
+    }
+  });
+
   it('keeps X-API-Key winning over defaultHeaders', async () => {
     const t = new MockTransport().on('GET', '/api/sessions', { body: [] });
     const c = new OpenWAClient({
@@ -266,5 +325,51 @@ describe('OpenWAClient', () => {
     // JSON wins (matches the Python/PHP SDKs), but an unrelated default header is still preserved.
     expect(t.lastCall!.headers['content-type']).toBe('application/json');
     expect(t.lastCall!.headers['x-trace']).toBe('keep');
+  });
+
+  it('keeps the auth and JSON headers winning over a caller header that differs only in case', async () => {
+    // fetch folds header names case-insensitively and joins duplicates, so read what goes on the wire.
+    let wire: Headers | undefined;
+    const recordingFetch: FetchLike = async (_url, init) => {
+      wire = new Headers(init?.headers);
+      return new Response('[]', { status: 200 });
+    };
+    const c = new OpenWAClient({
+      baseUrl: 'http://localhost',
+      apiKey: 'REAL',
+      defaultHeaders: { 'x-api-key': 'EVIL', 'x-trace': 'keep' },
+      fetch: recordingFetch,
+    });
+    await c.request({ method: 'GET', path: '/api/sessions', headers: { 'content-type': 'text/plain' } });
+    expect(wire!.get('x-api-key')).toBe('REAL');
+    expect(wire!.get('content-type')).toBe('application/json');
+    expect(wire!.get('x-trace')).toBe('keep');
+  });
+
+  it('calls the global fetch unbound from the client config when none is injected', async () => {
+    // Browsers and Workers reject a fetch invoked as a method of another object ("Illegal invocation").
+    vi.stubGlobal('fetch', function (this: unknown) {
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    });
+    try {
+      const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k' });
+      await expect(c.sessions.list()).resolves.toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('calls an injected platform fetch without the client config as receiver', async () => {
+    // `fetch: window.fetch` or `fetch: globalThis.fetch` hands over the unbound platform function.
+    const receivers: unknown[] = [];
+    const strictFetch = function (this: unknown) {
+      receivers.push(this);
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    } as unknown as FetchLike;
+    const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', fetch: strictFetch });
+    await expect(c.sessions.list()).resolves.toEqual([]);
+    expect(receivers).toEqual([undefined]);
   });
 });

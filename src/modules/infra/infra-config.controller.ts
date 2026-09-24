@@ -27,7 +27,8 @@ import { assertNoDefaultSecretsInProduction } from '../../config/bootstrap-secur
 import { BLANK_SHADOWED_ENV_KEYS, isEnvPinned, isOsProvidedEnv } from '../../config/env-precedence';
 import * as fs from 'fs';
 import * as path from 'path';
-import { generatedEnvPath, readGeneratedEnv } from './generated-env';
+import * as dotenv from 'dotenv';
+import { encodeGeneratedEnvValue, generatedEnvPath, readGeneratedEnv } from './generated-env';
 import {
   applyDatabaseSection,
   applyEngineSection,
@@ -331,9 +332,18 @@ export class InfraConfigController {
   }
 
   private persistGeneratedEnv(envPath: string, merged: Record<string, string>): void {
-    const body = Object.keys(merged)
-      .sort()
-      .map(key => `${key}=${merged[key]}`);
+    const unreadable = (key: string) =>
+      new BadRequestException(
+        `Invalid configuration value for ${key}: it cannot be stored so that it reads back unchanged`,
+      );
+    const keys = Object.keys(merged).sort();
+    const body = keys.map(key => {
+      // Quoted where a raw line would read back differently (a `#` in a password would otherwise
+      // truncate it on the next boot); refused, before anything is written, where no form can carry it.
+      const encoded = encodeGeneratedEnvValue(key, merged[key]);
+      if (encoded === undefined) throw unreadable(key);
+      return `${key}=${encoded}`;
+    });
     const contents = [
       '# OpenWA Configuration',
       `# Generated at ${new Date().toISOString()}`,
@@ -342,6 +352,11 @@ export class InfraConfigController {
       ...body,
       '',
     ].join('\n');
+    // The next boot parses the file as a whole, where a quoted value can run on into a later line
+    // (a trailing `\'` escapes its own closing quote), so each line reading back alone is not enough.
+    const back = dotenv.parse(contents);
+    const drifted = keys.find(key => back[key] !== merged[key]);
+    if (drifted !== undefined) throw unreadable(drifted);
 
     // Write to data/ so it persists across container restarts. Owner-only (0600): this file holds
     // the DB/S3/Redis credentials, so it must not be world-readable between save and next restart.

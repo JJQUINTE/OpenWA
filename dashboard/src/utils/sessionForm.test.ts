@@ -44,6 +44,13 @@ test('the length cap is 50', () => {
   assert.deepEqual(sessionNameIssues('a'.repeat(51), []), ['too-long']);
 });
 
+test('the gateway rejects a name under 3 characters, so the form does too', () => {
+  assert.deepEqual(sessionNameIssues('ab', []), ['too-short']);
+  assert.deepEqual(sessionNameIssues('a', ['a']), ['too-short'], 'duplicate stays suppressed');
+  assert.deepEqual(sessionNameIssues('abc', []), []);
+  assert.equal(canCreateSession('ab', []), false);
+});
+
 test('pairing accepts a bare international number and nothing else', () => {
   assert.equal(isValidPairingPhone('628123456789'), true);
   assert.equal(isValidPairingPhone('  628123456789  '), true, 'trimmed');

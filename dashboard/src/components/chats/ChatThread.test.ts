@@ -25,7 +25,7 @@ before(async () => {
 
 afterEach(() => {
   rtl.cleanup();
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 const CHAT: Chat = {
@@ -55,8 +55,11 @@ const PROMPT: ChatMessageView = {
   metadata: { buttons: [{ id: 'y', text: 'Yes' }] },
 };
 
-function renderThread(role: string): { clicks: string[]; container: HTMLElement } {
-  window.localStorage.setItem('openwa_user_role', role);
+function renderThread(
+  role: string,
+  messages: ChatMessageView[] = [PROMPT],
+): { clicks: string[]; container: HTMLElement } {
+  window.sessionStorage.setItem('openwa_user_role', role);
   const clicks: string[] = [];
   const noop = () => {};
   const { container } = rtl.render(
@@ -66,7 +69,7 @@ function renderThread(role: string): { clicks: string[]; container: HTMLElement 
       createElement(ChatThread, {
         sessionId: 's1',
         activeChat: CHAT,
-        messages: [PROMPT],
+        messages,
         loadingMessages: false,
         messagesError: false,
         messagesContainerRef: createRef<HTMLDivElement>(),
@@ -104,4 +107,16 @@ test('an operator key can tap a prompt choice and gets the message actions', asy
   rtl.fireEvent.click(yes);
   await rtl.waitFor(() => assert.deepEqual(clicks, ['y']));
   assert.ok(container.querySelector('.message-actions-menu'));
+});
+
+test('an optimistic bubble with no WhatsApp id yet offers no reply, react or delete', () => {
+  // Every action addresses the message by its WhatsApp id; a pending or failed placeholder only has
+  // its local temp_ id, which the gateway can never resolve.
+  for (const status of ['pending', 'failed'] as const) {
+    const { container } = renderThread('operator', [
+      { ...PROMPT, id: 'temp_1', waMessageId: undefined, direction: 'outgoing', status, metadata: undefined },
+    ]);
+    assert.ok(!container.querySelector('.message-actions-menu'), `a ${status} placeholder offered actions`);
+    rtl.cleanup();
+  }
 });

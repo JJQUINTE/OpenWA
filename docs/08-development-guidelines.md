@@ -655,6 +655,10 @@ docker compose --profile postgres up -d
 docker compose --profile full up -d
 ```
 
+A profile only starts the extra containers. Point OpenWA at them first, from Dashboard >
+Infrastructure or with the `.env` variables listed under Production Deployment in the README;
+otherwise it stays on SQLite and local storage.
+
 ### VS Code Extensions
 
 ```json

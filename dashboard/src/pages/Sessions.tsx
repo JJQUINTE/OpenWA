@@ -245,6 +245,8 @@ export function Sessions() {
         // does not re-invalidate on duplicate envelopes).
         void invalidateSessionQueries(queryClient, queryKeys.sessions);
         if (event.status === 'ready') {
+          // Refresh so the card picks up the phone and lastActive the gateway writes on READY.
+          void fetchSessions();
           toast.success(t('sessions.toasts.readyTitle'), t('sessions.toasts.readyDesc'));
         } else if (event.status === 'disconnected') {
           // Refresh so the card picks up `engineLoaded` from the API. `disconnected` is the one status
@@ -568,6 +570,9 @@ export function Sessions() {
   // One term: isValidProxyUrl rejects '' too, so the emptiness check was redundant, and its
   // `string && boolean` shape widened this to `boolean | ""`, which the disabled prop rejects.
   const createProxyInvalid = useProxy && !isValidProxyUrl(createProxyUrl.trim());
+  // Shared by the Create button and the name field's Enter key, which would otherwise post a name
+  // the button refuses, or post the same name twice while the first create is in flight.
+  const createDisabled = creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid;
 
   if (loading) {
     return (
@@ -659,11 +664,7 @@ export function Sessions() {
               <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                 {t('common.cancel')}
               </button>
-              <button
-                className="btn-primary"
-                onClick={handleCreate}
-                disabled={creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid}
-              >
+              <button className="btn-primary" onClick={handleCreate} disabled={createDisabled}>
                 {creating ? <Loader2 className="animate-spin" size={16} /> : t('common.create')}
               </button>
             </>
@@ -679,12 +680,13 @@ export function Sessions() {
               const value = e.target.value.toLowerCase().replace(/\s+/g, '-');
               setNewSessionName(value);
             }}
-            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            onKeyDown={e => e.key === 'Enter' && !createDisabled && handleCreate()}
           />
           <p className="input-hint">
             <Trans i18nKey="sessions.create.hint" components={{ code: <code /> }} />
           </p>
           {nameIssues.includes('format') && <p className="input-error">{t('sessions.create.invalidChars')}</p>}
+          {nameIssues.includes('too-short') && <p className="input-error">{t('sessions.create.tooShort')}</p>}
           {nameIssues.includes('too-long') && (
             <p className="input-error">{t('sessions.create.tooLong', { length: newSessionName.length })}</p>
           )}

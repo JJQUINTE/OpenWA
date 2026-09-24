@@ -15,6 +15,13 @@
 #   (i) the data-store half of that guard refuses on its own
 #   (j) a probe that fails or prints no usable count leaves the target counted as live
 #   (k) an operator's sqlite3 rc file changes neither answer of the guard (skipped without sqlite3)
+#   (l) an unwritable BACKUP_DIR fails before anything is staged (skipped as root)
+#   (m) OPENWA_RESTORE_SNAPSHOT_DIR takes the data-dir snapshot off a read-only parent (skipped as root)
+#   (n) a state dir outside the data dir is snapshotted before any database is written, and under
+#       OPENWA_RESTORE_SNAPSHOT_DIR when that is set (skipped as root)
+#   (o) such a state dir under a read-only parent, a mount point in the container, is restored in
+#       place (skipped as root)
+#   (p) a symlinked database target or data dir is snapshotted as a copy of what the link points at
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -24,7 +31,7 @@ set -euo pipefail
 # would aim a case at a real install, and restore replaces the state directories wholesale, so every
 # case starts from none of them and sets exactly the paths it uses.
 unset OPENWA_DATA_DIR BACKUP_DIR DATABASE_TYPE MAIN_DATABASE_NAME DATABASE_NAME SESSION_DATA_PATH \
-  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR
+  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR OPENWA_RESTORE_SNAPSHOT_DIR
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP="$REPO_ROOT/scripts/backup.sh"
@@ -499,6 +506,164 @@ if [ "$(id -u)" -ne 0 ]; then
 else
   echo "SKIP: (l) running as root, which ignores the permission bits this case relies on"
 fi
+
+echo ""
+echo "==> (m) OPENWA_RESTORE_SNAPSHOT_DIR takes the data-dir snapshot off a read-only parent"
+# The shipped compose file and Helm chart mount the data dir as a volume under a read-only root, so
+# the snapshot's default place next to it cannot be written and the restore stopped there.
+if [ "$(id -u)" -ne 0 ]; then
+  M="$WORK/m"
+  mkdir -p "$M/root/data" "$M/snapshots"
+  printf 'mike-before\n' >"$M/root/data/.api-key"
+  chmod a-w "$M/root"
+  set +e
+  OUT_M="$(cd "$M" && MAIN_DATABASE_NAME="$M/root/data/main.sqlite" DATABASE_NAME="$M/root/data/openwa.sqlite" \
+    OPENWA_DATA_DIR="$M/root/data" OPENWA_RESTORE_SNAPSHOT_DIR="$M/snapshots" "$RESTORE" "$ARCHIVE_H" 2>&1)"
+  RC_M=$?
+  set -e
+  chmod u+w "$M/root"
+  if [ "$RC_M" -ne 0 ]; then
+    fail "(m) restore failed with a writable OPENWA_RESTORE_SNAPSHOT_DIR: $OUT_M"
+  fi
+  if [ "$(cat "$M"/snapshots/data.pre-restore-*/.api-key 2>/dev/null || true)" != "mike-before" ]; then
+    fail "(m) the data-dir snapshot is not under OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  if [ "$(db_fingerprint "$M/root/data/main.sqlite")" != "hotel-archive-main" ]; then
+    fail "(m) the restore did not put the archived main DB in place"
+  fi
+  pass "(m) data-dir snapshot written under OPENWA_RESTORE_SNAPSHOT_DIR, restore completes"
+else
+  echo "SKIP: (m) running as root, which ignores the permission bits this case relies on"
+fi
+
+echo ""
+echo "==> (n) a state dir outside the data dir is snapshotted before any database is written"
+# SESSION_DATA_PATH on its own mount has a parent of its own. When that parent is read-only, the
+# snapshot of the directory cannot go next to it, and a restore that finds out only after writing
+# the databases leaves them from the archive and the sessions from the live install.
+if [ "$(id -u)" -ne 0 ]; then
+  N="$WORK/n"
+  mkdir -p "$N/src/data/sessions/session-s1" "$N/live" "$N/ro/sessions/session-s1" "$N/ext/sessions/session-s1"
+  make_fixture "$N/src/data/main.sqlite" "november-archive-main"
+  make_fixture "$N/src/data/openwa.sqlite" "november-archive-data"
+  printf 'november-archive\n' >"$N/src/data/sessions/session-s1/marker"
+  (
+    cd "$N/src"
+    BACKUP_DIR="$N/out" "$BACKUP" >/dev/null
+  )
+  ARCHIVE_N="$(ls "$N"/out/openwa-backup-*.tar.gz)"
+  make_fixture "$N/live/main.sqlite" "november-live-main"
+  make_fixture "$N/live/openwa.sqlite" "november-live-data"
+  printf 'november-live\n' >"$N/ro/sessions/session-s1/marker"
+  printf 'november-live\n' >"$N/ext/sessions/session-s1/marker"
+
+  # restore_n <sessions dir> [snapshot dir]: a forced restore of ARCHIVE_N over $N/live. Output lands
+  # in OUT, the exit code in RC.
+  restore_n() {
+    set +e
+    OUT="$(cd "$N" && MAIN_DATABASE_NAME="$N/live/main.sqlite" DATABASE_NAME="$N/live/openwa.sqlite" \
+      OPENWA_DATA_DIR="$N/live" SESSION_DATA_PATH="$1" OPENWA_RESTORE_SNAPSHOT_DIR="${2:-}" \
+      "$RESTORE" "$ARCHIVE_N" --force 2>&1)"
+    RC=$?
+    set -e
+  }
+
+  chmod a-w "$N/ro"
+  restore_n "$N/ro/sessions"
+  chmod u+w "$N/ro"
+  if [ "$RC" -eq 0 ]; then
+    fail "(n) restore exited 0 although the sessions snapshot could not be written"
+  fi
+  if [ "$(db_fingerprint "$N/live/main.sqlite")" != "november-live-main" ]; then
+    fail "(n) the main DB was overwritten before the sessions snapshot failed"
+  fi
+  if [ "$(cat "$N/ro/sessions/session-s1/marker")" != "november-live" ]; then
+    fail "(n) the failed restore changed the live sessions"
+  fi
+
+  restore_n "$N/ext/sessions" "$N/snapshots"
+  if [ "$RC" -ne 0 ]; then
+    fail "(n) restore with an external SESSION_DATA_PATH failed: $OUT"
+  fi
+  if [ "$(cat "$N"/snapshots/sessions.pre-restore-*/session-s1/marker 2>/dev/null || true)" != "november-live" ]; then
+    fail "(n) the sessions snapshot is not under OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  if [ -n "$(ls -d "$N"/ext/sessions.pre-restore-* 2>/dev/null || true)" ]; then
+    fail "(n) the sessions snapshot was written next to the target despite OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  if [ "$(cat "$N/ext/sessions/session-s1/marker")" != "november-archive" ]; then
+    fail "(n) the archived sessions were not restored"
+  fi
+  pass "(n) external state snapshotted before the databases are written, under OPENWA_RESTORE_SNAPSHOT_DIR"
+
+  echo ""
+  echo "==> (o) a state dir whose parent is read-only is restored in place"
+  # A volume mounted at /sessions can be emptied but not removed or re-created: its parent is the
+  # read-only root. The unwritable parent stands in for that here.
+  printf 'oscar-stale\n' >"$N/ro/sessions/stale"
+  chmod a-w "$N/ro"
+  restore_n "$N/ro/sessions" "$N/snapshots-o"
+  chmod u+w "$N/ro"
+  if [ "$RC" -ne 0 ]; then
+    fail "(o) restore into a state dir under a read-only parent failed: $OUT"
+  fi
+  if [ "$(cat "$N/ro/sessions/session-s1/marker")" != "november-archive" ]; then
+    fail "(o) the archived sessions were not restored into the directory"
+  fi
+  if [ -e "$N/ro/sessions/stale" ]; then
+    fail "(o) a file the archive does not carry survived the restore"
+  fi
+  if [ "$(cat "$N"/snapshots-o/sessions.pre-restore-*/session-s1/marker 2>/dev/null || true)" != "november-live" ]; then
+    fail "(o) the sessions snapshot is not under OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  pass "(o) a state dir under a read-only parent is emptied and refilled in place"
+else
+  echo "SKIP: (n) and (o) running as root, which ignores the permission bits these cases rely on"
+fi
+
+echo ""
+echo "==> (p) a symlinked database target or data dir is snapshotted as a copy"
+# cp -R copies a symlink as the link itself, and the restore then writes through that link, which
+# would leave a snapshot showing the archive instead of the state it replaced.
+P="$WORK/p"
+mkdir -p "$P/src/data" "$P/real/data"
+make_fixture "$P/src/data/main.sqlite" "papa-archive-main"
+make_fixture "$P/src/data/openwa.sqlite" "papa-archive-data"
+(
+  cd "$P/src"
+  BACKUP_DIR="$P/out" "$BACKUP" >/dev/null
+)
+ARCHIVE_P="$(ls "$P"/out/openwa-backup-*.tar.gz)"
+make_fixture "$P/real/main.sqlite" "papa-live-main"
+make_fixture "$P/real/data/openwa.sqlite" "papa-live-data"
+ln -s "$P/real/main.sqlite" "$P/ext-main.sqlite"
+ln -s "$P/real/data" "$P/live"
+(
+  cd "$P"
+  MAIN_DATABASE_NAME="$P/ext-main.sqlite" DATABASE_NAME="$P/live/openwa.sqlite" OPENWA_DATA_DIR="$P/live" \
+    "$RESTORE" "$ARCHIVE_P" --force >/dev/null
+)
+SNAPSHOT_P="$(ls -d "$P"/ext-main.sqlite.pre-restore-*)"
+if [ -L "$SNAPSHOT_P" ]; then
+  fail "(p) the snapshot of a symlinked database is a link to the file the restore overwrote"
+fi
+if [ "$(db_fingerprint "$SNAPSHOT_P")" != "papa-live-main" ]; then
+  fail "(p) the snapshot does not hold the database the restore replaced"
+fi
+SNAPSHOT_P="$(ls -d "$P"/live.pre-restore-*)"
+if [ -L "$SNAPSHOT_P" ]; then
+  fail "(p) the snapshot of a symlinked data dir is a link to the directory the restore overwrote"
+fi
+if [ "$(db_fingerprint "$SNAPSHOT_P/openwa.sqlite")" != "papa-live-data" ]; then
+  fail "(p) the data-dir snapshot does not hold the data store the restore replaced"
+fi
+if [ "$(db_fingerprint "$P/ext-main.sqlite")" != "papa-archive-main" ]; then
+  fail "(p) the archived main DB was not restored"
+fi
+if [ "$(db_fingerprint "$P/live/openwa.sqlite")" != "papa-archive-data" ]; then
+  fail "(p) the archived data store was not restored"
+fi
+pass "(p) a symlinked database target and data dir are snapshotted as copies"
 
 echo ""
 echo "All smoke tests passed!"

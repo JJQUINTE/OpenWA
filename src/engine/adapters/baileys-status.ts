@@ -2,6 +2,10 @@ import type { AnyMessageContent, WAMessage, WASocket } from '@whiskeysockets/bai
 import { MediaInput, StatusPostOptions, StatusResult } from '../interfaces/whatsapp-engine.interface';
 import { BadRequestException } from '@nestjs/common';
 import { resolveMediaBuffer } from './baileys-messaging';
+import { EngineRefusedError } from '../../common/errors/engine-refused.error';
+
+/** How long WhatsApp keeps a status up. */
+const STATUS_TTL_MS = 24 * 3_600_000;
 
 /**
  * Status-domain operations extracted from BaileysAdapter. The adapter keeps the public
@@ -23,6 +27,9 @@ export interface BaileysStatusHost {
 }
 
 export class BaileysStatus {
+  /** The recipients of each status posted here, until it expires, oldest first. */
+  private readonly audiences = new Map<string, { jids: string[]; expiresAt: number }>();
+
   constructor(private readonly host: BaileysStatusHost) {}
 
   /** Post-ensureReady socket handle. */
@@ -71,17 +78,32 @@ export class BaileysStatus {
    * key must be constructed from statusId alone (no messageStore lookup). The participant is the
    * engine-dialect self JID (`<me>@s.whatsapp.net`). The revoke shape is empirically UNVERIFIED — the
    * live spike only tested posting; if WhatsApp rejects it, fall back to EngineNotSupportedError.
+   *
+   * Baileys sends a status stanza, the revoke included, to exactly its `statusJidList`: without one
+   * the revoke reaches nobody, yet the send resolves and the status stays up for every viewer. Only
+   * the recipients of a status this adapter posted are known, so any other id is refused.
    */
   async deleteStatus(statusId: string): Promise<void> {
     this.host.ensureReady();
-    const sent = await this.sock().sendMessage('status@broadcast', {
-      delete: {
-        remoteJid: 'status@broadcast',
-        fromMe: true,
-        id: statusId,
-        participant: this.host.toEngineJid(this.host.normalizedSelfJid()),
+    const audience = this.audiences.get(statusId);
+    if (!audience || audience.expiresAt <= Date.now()) {
+      throw new EngineRefusedError(
+        `status ${statusId} was not posted by this session in the last 24 hours, so its recipients are ` +
+          'unknown and the revoke cannot be addressed to them',
+      );
+    }
+    const sent = await this.sock().sendMessage(
+      'status@broadcast',
+      {
+        delete: {
+          remoteJid: 'status@broadcast',
+          fromMe: true,
+          id: statusId,
+          participant: this.host.toEngineJid(this.host.normalizedSelfJid()),
+        },
       },
-    });
+      { statusJidList: audience.jids },
+    );
     this.host.rememberOwnSend(sent?.key?.id);
   }
 
@@ -106,6 +128,12 @@ export class BaileysStatus {
       font: options.font,
     });
     this.host.rememberOwnSend(sent?.key?.id);
+    const now = Date.now();
+    for (const [id, audience] of this.audiences) {
+      if (audience.expiresAt > now) break;
+      this.audiences.delete(id);
+    }
+    if (sent?.key?.id) this.audiences.set(sent.key.id, { jids: statusJidList, expiresAt: now + STATUS_TTL_MS });
     return this.toStatusResult(sent);
   }
 
@@ -115,7 +143,7 @@ export class BaileysStatus {
     return {
       statusId: sent?.key?.id ?? '',
       timestamp: ts,
-      expiresAt: new Date(ts.getTime() + 24 * 3_600_000),
+      expiresAt: new Date(ts.getTime() + STATUS_TTL_MS),
     };
   }
 }

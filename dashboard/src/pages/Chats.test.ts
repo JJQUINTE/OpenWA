@@ -37,6 +37,10 @@ const SESSION: Session = {
 const SESSION_2: Session = { ...SESSION, id: 'session-2', name: 'Second', phone: '15559876543' };
 let twoSessions = false;
 
+// Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
+// the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
+let chatsResponder: ((sessionId: string) => Promise<Response>) | null = null;
+
 const CHAT: Chat = {
   id: '15550001111@c.us',
   name: 'Alice',
@@ -151,6 +155,9 @@ function holdOlderPage(): () => void {
 // Hold a text send open, so a test can land it at a chosen moment relative to an older-page fetch.
 let sendGate: Promise<void> | null = null;
 
+// Hold Alice's first page open, so a test can write to the thread before it has any data.
+let firstPageGate: Promise<void> | null = null;
+
 function holdSend(): () => void {
   let release!: () => void;
   sendGate = new Promise<void>(resolve => {
@@ -260,6 +267,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/chats`) {
+      if (chatsResponder) return chatsResponder(url.includes(`/sessions/${SESSION_2.id}/`) ? SESSION_2.id : SESSION.id);
       return Promise.resolve(jsonResponse([CHAT, CHAT_2]));
     }
     if (method === 'GET' && path.startsWith(`/api/sessions/${SESSION.id}/contacts/profile-pictures`)) {
@@ -289,9 +297,9 @@ function installFetchStub(): void {
         const gate = isFirstPage ? null : olderPageGate;
         return gate ? gate.then(answer) : Promise.resolve(answer());
       }
-      return Promise.resolve(
-        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 }),
-      );
+      const firstPage = () =>
+        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 });
+      return firstPageGate ? firstPageGate.then(firstPage) : Promise.resolve(firstPage());
     }
     // The media route answers bytes, not JSON — Content-Disposition: attachment.
     if (method === 'GET' && (path === MEDIA_PATH || path === MEDIA_PATH_2)) {
@@ -311,6 +319,12 @@ function installFetchStub(): void {
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-text`) {
       const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
+    }
+    if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-audio`) {
+      return Promise.resolve(jsonResponse({ messageId: 'wamid.out.audio', timestamp: 1_700_000_100 }));
+    }
+    if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-document`) {
+      return Promise.resolve(jsonResponse({ messageId: 'wamid.out.document', timestamp: 1_700_000_100 }));
     }
     if (method === 'GET' && path.startsWith('/api/search?')) {
       return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
@@ -340,9 +354,9 @@ before(async () => {
   ({ installJsdomGlobals } = await import('../test-helpers/jsdom.ts'));
   await installJsdomGlobals();
   installFetchStub();
-  // RoleProvider initializes from localStorage; 'admin' makes canWrite true so the composer
+  // RoleProvider initializes from sessionStorage; 'admin' makes canWrite true so the composer
   // controls render enabled.
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   // useWebSocket.connect() bails without this, so no socket would exist to receive a frame. It
   // dials nothing: the client is the double above.
   window.sessionStorage.setItem('openwa_api_key', 'test-key');
@@ -368,7 +382,9 @@ afterEach(() => {
   mediaGates.clear();
   olderPageGate = null;
   sendGate = null;
+  firstPageGate = null;
   olderPageFails = false;
+  chatsResponder = null;
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -622,7 +638,7 @@ test('Escape dismisses the message search results instead of the conversation be
 
 test('a read-only key is offered no status compose trigger', async () => {
   const { screen, fireEvent } = rtl;
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   try {
     renderChats();
     await screen.findByText('Main (15551234567)');
@@ -631,7 +647,7 @@ test('a read-only key is offered no status compose trigger', async () => {
     await screen.findByText('No contacts have an active status.');
     assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
   } finally {
-    window.localStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
   }
 });
 
@@ -645,10 +661,41 @@ test('a writer key opening a chat clears its unread badge', async () => {
   await waitFor(() => assert.ok(!screen.queryByLabelText('2 unread messages'), 'opening the chat kept its badge'));
 });
 
+test('a chat whose newest message has no text does not claim to have no messages', async () => {
+  const { screen, waitFor } = rtl;
+  renderChats();
+  await screen.findByText('Main (15551234567)');
+  const row = (await screen.findByText('Alice')).closest('.chat-item-card') as HTMLElement;
+
+  // A voice note or an uncaptioned photo arrives with an empty body on both engines.
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  socket.receive('message', {
+    type: 'event',
+    timestamp: new Date(1_700_002_000_000).toISOString(),
+    payload: {
+      event: 'message.received',
+      sessionId: SESSION.id,
+      data: {
+        id: 'wamid.live.voice',
+        chatId: CHAT.id,
+        from: CHAT.id,
+        to: 'me',
+        body: '',
+        type: 'audio',
+        fromMe: false,
+        timestamp: 1_700_001_700,
+      },
+    },
+  });
+  await waitFor(() => assert.ok(screen.queryByLabelText('3 unread messages'), 'the arrival did not reach the row'));
+  assert.equal(row.querySelector('.no-message')?.textContent ?? null, null, 'the row reads "No messages yet"');
+});
+
 test('a read-only key opening a chat sends no mark-as-read', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   try {
     const { container } = renderChats();
     await screen.findByText('Main (15551234567)');
@@ -687,7 +734,7 @@ test('a read-only key opening a chat sends no mark-as-read', async () => {
       assert.ok(screen.queryByLabelText('3 unread messages'), 'the open chat did not count the arrival'),
     );
   } finally {
-    window.localStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
   }
 });
 
@@ -698,10 +745,10 @@ test('a read-only key opening a chat sends no mark-as-read', async () => {
 // copies window properties that Node does not already define, so `Blob`/`File` stay Node's while
 // `FileReader` is JSDOM's — and JSDOM's readAsDataURL brand-checks its argument against JSDOM's
 // own Blob ("parameter 1 is not of type 'Blob'").
-async function stageAttachment(container: HTMLElement, filename: string): Promise<void> {
+async function stageAttachment(container: HTMLElement, filename: string, type = 'application/pdf'): Promise<void> {
   const { fireEvent, waitFor } = rtl;
   const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-  const file = new window.File(['%PDF-1.4 stub'], filename, { type: 'application/pdf' });
+  const file = new window.File(['%PDF-1.4 stub'], filename, { type });
   fireEvent.change(fileInput, { target: { files: [file] } });
   // The bytes arrive through FileReader.onload, so the banner is asynchronous.
   await waitFor(() => {
@@ -727,6 +774,68 @@ test('a staged attachment survives closing and reopening the same room', async (
   await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
   assert.ok(container.querySelector('.attachment-preview-banner'), 'attachment was lost on reopen');
   assert.equal(container.querySelector('.preview-filename')?.textContent, 'contract.pdf');
+});
+
+test('text typed with an audio attachment stays in the input instead of showing as sent', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await stageAttachment(container, 'note.ogg', 'audio/ogg');
+
+  // Audio carries no caption on either engine, so the input does not offer one and keeps the text.
+  const input = screen.getByPlaceholderText('Type a message...') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'not a caption' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-audio`);
+    assert.ok(call, 'expected a POST to the send-audio endpoint');
+    assert.equal((call.body as { caption?: string }).caption, undefined);
+  });
+  await flush();
+
+  assert.equal(input.value, 'not a caption', 'the text that was not sent was cleared');
+  assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
+});
+
+test('the reply banner and the sent snippet name a media type in words, not as a raw token', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  const row = (await screen.findByText('Alice')).closest('.chat-item-card') as HTMLElement;
+  fireEvent.click(row);
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+
+  // Reply to the image row: the banner reads its localized type, not "[image]".
+  const image = thread.querySelector(`[data-wa-message-id="${OMITTED_MEDIA_MESSAGE.waMessageId}"]`) as HTMLElement;
+  fireEvent.click(image.querySelector('button[title="Reply"]') as HTMLElement);
+  await waitFor(() =>
+    assert.equal(container.querySelector('.replying-to-body')?.textContent ?? null, '[Image]', 'reply banner'),
+  );
+
+  // Sending the reply: the optimistic bubble's quote box names the type the same way.
+  fireEvent.change(screen.getByPlaceholderText('Type a message...'), { target: { value: 'nice shot' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await within(thread).findByText('nice shot');
+  assert.equal(
+    thread.querySelector('.message-quote-box .quote-body')?.textContent ?? null,
+    '[Image]',
+    'optimistic quote box',
+  );
+
+  // A PDF goes out as a document, and the sidebar says so rather than "[application]".
+  await stageAttachment(container, 'contract.pdf');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() =>
+    assert.equal(row.querySelector('.chat-item-snippet')?.textContent ?? null, '[Document]', 'sidebar snippet'),
+  );
 });
 
 test('a staged attachment is dropped when a different chat is opened', async () => {
@@ -811,6 +920,175 @@ test('a staged reply is dropped when another session is opened', async () => {
       "Alice's reply followed the user into the other session",
     );
   } finally {
+    twoSessions = false;
+  }
+});
+
+test('a chat list that answers after the user switched sessions does not replace the new one', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>(resolve => {
+    releaseFirst = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id ? firstGate.then(() => jsonResponse([CHAT])) : Promise.resolve(jsonResponse([CHAT_2]));
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the first list never started'));
+
+    // Session 2's list lands first; session 1's slower answer arrives after it.
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await screen.findByText('Carol');
+    releaseFirst();
+    await flush();
+    await flush();
+
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats replaced the selected session's list");
+    assert.ok(screen.queryByText('Carol'), "the selected session's chats are gone");
+  } finally {
+    twoSessions = false;
+  }
+});
+
+test('a chat list refetch lands while a newer one is out, and an older answer never overwrites a newer', async () => {
+  const { screen, waitFor } = rtl;
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  // Edits to a chat that was never opened refetch the list each, and they arrive faster than it answers.
+  const answers: Array<() => void> = [];
+  chatsResponder = () =>
+    new Promise<Response>(resolve => {
+      const version = answers.length + 1;
+      answers.push(() => resolve(jsonResponse([{ ...CHAT_2, lastMessage: `carol v${version}` }, CHAT])));
+    });
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  const edit = (messageId: string): void =>
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.edited',
+        sessionId: SESSION.id,
+        data: { messageId, chatId: CHAT_2.id, body: 'edited', timestamp: 1_700_003_000 },
+      },
+    });
+  edit('wamid.carol.1');
+  edit('wamid.carol.2');
+  edit('wamid.carol.3');
+  await waitFor(() => assert.equal(answers.length, 3));
+  assert.ok(screen.queryByText('Alice'), 'a background refetch hid the chat list behind the loading spinner');
+
+  // The first answer is the newest one applied so far, so it lands although newer calls are still out.
+  answers[0]();
+  await screen.findByText('carol v1');
+  assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
+
+  answers[2]();
+  await screen.findByText('carol v3');
+  answers[1]();
+  await flush();
+  await flush();
+  assert.ok(screen.queryByText('carol v3'), 'an older answer replaced the newer list');
+  assert.ok(!screen.queryByText('carol v2'), 'an older answer replaced the newer list');
+});
+
+test('a failed background refetch keeps the chat list and raises no error', async () => {
+  const { screen } = rtl;
+  renderChats();
+  await screen.findByText('Alice');
+
+  chatsResponder = () => Promise.resolve(jsonResponse({ message: 'gateway timeout' }, 504));
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  socket.receive('message', {
+    type: 'event',
+    timestamp: new Date(1_700_003_000_000).toISOString(),
+    payload: {
+      event: 'message.edited',
+      sessionId: SESSION.id,
+      data: { messageId: 'wamid.carol.1', chatId: CHAT_2.id, body: 'edited', timestamp: 1_700_003_000 },
+    },
+  });
+  await flush();
+  await flush();
+
+  assert.ok(screen.queryByText('Alice'), 'a failed background refetch emptied the chat list');
+  assert.ok(!screen.queryByText('Failed to load chats'), 'a failed background refetch raised an error toast');
+});
+
+test('every message for a chat the sidebar does not list refetches the list, and the chat appears', async () => {
+  const { screen, waitFor } = rtl;
+  renderChats();
+  await screen.findByText('Alice');
+  resetFetchCalls();
+
+  const DAVE = '15550009999@c.us';
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  const receive = (id: string): void =>
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION.id,
+        data: {
+          id,
+          chatId: DAVE,
+          from: DAVE,
+          to: 'me',
+          body: 'hi',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_003_000,
+        },
+      },
+    });
+  // Each arrival renders before the next, the shape of live traffic.
+  const chatsPath = `/api/sessions/${SESSION.id}/chats`;
+  for (const [index, id] of ['wamid.dave.1', 'wamid.dave.2', 'wamid.dave.3'].entries()) {
+    receive(id);
+    await waitFor(() => assert.equal(countFetchCalls('GET', chatsPath), index + 1, 'an arrival did not refetch'));
+    await flush();
+  }
+
+  chatsResponder = () =>
+    Promise.resolve(jsonResponse([{ ...CHAT_2, id: DAVE, name: 'Dave', lastMessage: 'hi' }, CHAT_2, CHAT]));
+  receive('wamid.dave.4');
+  await screen.findByText('Dave');
+});
+
+test('changing the UI language keeps the selected session and the open chat', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  const { default: i18n } = await import('../i18n/index.ts');
+  twoSessions = true;
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    const selector = container.querySelector('select.session-selector') as HTMLSelectElement;
+    fireEvent.change(selector, { target: { value: SESSION_2.id } });
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+
+    const sessionLoads = countFetchCalls('GET', '/api/sessions');
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    await flush();
+
+    assert.equal(countFetchCalls('GET', '/api/sessions'), sessionLoads, 'the language change reloaded the sessions');
+    assert.equal(selector.value, SESSION_2.id, 'the language change reselected the first session');
+    await waitFor(() => assert.ok(container.querySelector('.room-header'), 'the language change closed the chat'));
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
     twoSessions = false;
   }
 });
@@ -1242,4 +1520,29 @@ test('a send that reconciles after the older page has already settled does not r
   assert.equal(bubbles.length, 1, 'expected exactly one bubble — a resurrected placeholder would show a second');
   const icon = bubbles[0].closest('.message-bubble')?.querySelector('.message-status-icon');
   assert.ok(icon?.classList.contains('sent'), 'expected the reconciled (sent) row, not a reverted pending ghost');
+});
+
+test('a message sent while the first page is still loading survives the page landing', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  let releaseFirstPage!: () => void;
+  firstPageGate = new Promise<void>(resolve => {
+    releaseFirstPage = resolve;
+  });
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  // The composer is live before the thread has loaded, so a send can land in a cache with no data.
+  fireEvent.change(await screen.findByPlaceholderText('Type a message...'), {
+    target: { value: 'sent while loading' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => assert.ok(findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-text`)));
+  await flush();
+
+  releaseFirstPage();
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await waitFor(() => assert.equal(within(thread).queryAllByText('sent while loading').length, 1));
 });

@@ -24,9 +24,13 @@
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   OPENWA_RESTORE_SNAPSHOT_DIR
+#                     where the safety snapshots go (default: next to the data dir, and next to
+#                     each target outside it); needed when a parent is read-only, as in the
+#                     shipped container
 #
-# Stop the OpenWA app before restoring. A snapshot of the current data dir is taken
-# first so a bad restore can be undone.
+# Stop the OpenWA app before restoring. A snapshot of the current data dir, and of every target
+# outside it, is taken before anything is written so a bad restore can be undone.
 #
 set -euo pipefail
 # Restored databases, credentials, and snapshots must not inherit a permissive operator umask.
@@ -159,40 +163,62 @@ replace_tree() {
       exit 1
       ;;
   esac
-  # The initial data-dir snapshot already covers normal nested targets. Preserve any custom target
-  # outside data/ separately before replacing it, so a custom PLUGINS_DIR/auth path remains recoverable.
-  case "$resolved_target" in
-    "$RESOLVED_DATA_DIR"/*) ;;
-    *)
-      if [ -e "$target_dir" ]; then
-        external_snapshot="${target_dir%/}.pre-restore-$RESTORE_TIMESTAMP"
-        log "Snapshotting current $label -> $external_snapshot"
-        cp -pR "$target_dir" "$external_snapshot"
-      fi
-      ;;
-  esac
+  if [ "$PHASE" = snapshot ]; then
+    snapshot_external "$target_dir"
+    return
+  fi
   log "Restoring $label"
-  rm -rf -- "$target_dir"
-  mkdir -p "$(dirname "$target_dir")"
-  cp -pR "$source_dir" "$target_dir"
+  if [ -d "$target_dir" ] && [ ! -L "$target_dir" ]; then
+    # Empty the directory and refill it rather than remove it: it may be a mount point (a volume under
+    # the container's read-only root), which can be neither removed nor re-created.
+    find "$target_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -pR "$source_dir/." "$target_dir"
+  else
+    rm -rf -- "$target_dir"
+    mkdir -p "$(dirname "$target_dir")"
+    cp -pR "$source_dir" "$target_dir"
+  fi
 }
 
-# The data-dir safety snapshot below cannot cover a database target that lives OUTSIDE it (custom
-# MAIN_DATABASE_NAME / DATABASE_NAME). Preserve such a file separately before overwriting it, so a
-# restore pointed at the wrong archive remains recoverable.
-snapshot_external_db() {
+# The data-dir safety snapshot below cannot cover a target that lives OUTSIDE it (a custom
+# MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH or
+# PLUGINS_DIR). Preserve such a target separately, so a restore pointed at the wrong archive remains
+# recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is set: a target on its
+# own mount under a read-only root has no writable place next to it.
+snapshot_external() {
   target="$1"
-  resolved_target="$(resolve_path "$target")"
-  case "$resolved_target" in
-    "$RESOLVED_DATA_DIR"/*) ;;
-    *)
-      if [ -e "$target" ]; then
-        external_snapshot="${target}.pre-restore-$RESTORE_TIMESTAMP"
-        log "Snapshotting current $target -> $external_snapshot"
-        cp -p "$target" "$external_snapshot"
-      fi
-      ;;
+  case "$(resolve_path "$target")" in
+    "$RESOLVED_DATA_DIR"/*) return 0 ;;
   esac
+  [ -e "$target" ] || return 0
+  snapshot_dir="${OPENWA_RESTORE_SNAPSHOT_DIR:-$(dirname "$target")}"
+  external_snapshot="${snapshot_dir%/}/$(basename "$target").pre-restore-$RESTORE_TIMESTAMP"
+  # Targets from different parents can share a name in one snapshot dir (a PLUGINS_DIR and a
+  # PLUGIN_STATE_DIR both end in plugins); never copy one into the other's snapshot.
+  n=1
+  while [ -e "$external_snapshot" ]; do
+    n=$((n + 1))
+    external_snapshot="${snapshot_dir%/}/$(basename "$target").pre-restore-$RESTORE_TIMESTAMP-$n"
+  done
+  log "Snapshotting current $target -> $external_snapshot"
+  mkdir -p "$snapshot_dir"
+  # -H copies what a symlinked target points at. The restore writes through such a link, so a copy of
+  # the link itself would end up showing the archive instead of the state it replaced.
+  cp -pRH "$target" "$external_snapshot"
+}
+
+# restore_db <staged file> <target> <label>
+restore_db() {
+  if [ "$PHASE" = snapshot ]; then
+    snapshot_external "$2"
+    return
+  fi
+  log "Restoring $3 -> $2"
+  mkdir -p "$(dirname "$2")"
+  cp "$1" "$2"
+  # Owner-only, matching what the app re-tightens on every boot (sqlite-file-permissions.ts);
+  # cp preserves the staged mode, and a foreign-umask extraction may leave it broader.
+  chmod 0600 "$2" 2>/dev/null || true
 }
 
 # A restore target that already holds a working install's tables is LIVE: overwriting it destroys
@@ -273,67 +299,70 @@ if [ "$FORCE" -ne 1 ]; then
   fi
 fi
 
-# Safety snapshot of whatever is there now.
+# Safety snapshot of whatever is there now, next to the data dir unless OPENWA_RESTORE_SNAPSHOT_DIR
+# names another directory. The shipped compose file and Helm chart mount the data dir as a volume
+# under a read-only root, where that sibling cannot be written.
 if [ -d "$DATA_DIR" ] && [ -n "$(ls -A "$DATA_DIR" 2>/dev/null || true)" ]; then
-  SAFETY="${DATA_DIR%/}.pre-restore-$RESTORE_TIMESTAMP"
+  SAFETY_DIR="${OPENWA_RESTORE_SNAPSHOT_DIR:-$(dirname "$DATA_DIR")}"
+  SAFETY="${SAFETY_DIR%/}/$(basename "$DATA_DIR").pre-restore-$RESTORE_TIMESTAMP"
   log "Snapshotting current data dir -> $SAFETY"
-  cp -pR "$DATA_DIR" "$SAFETY"
+  mkdir -p "$SAFETY_DIR"
+  # -H for a symlinked data dir, as in snapshot_external.
+  cp -pRH "$DATA_DIR" "$SAFETY"
 fi
 
 mkdir -p "$DATA_DIR"
 
-if [ -f "$STAGE/main.sqlite" ]; then
-  log "Restoring auth/audit DB -> $MAIN_DB"
-  snapshot_external_db "$MAIN_DB"
-  mkdir -p "$(dirname "$MAIN_DB")"
-  cp "$STAGE/main.sqlite" "$MAIN_DB"
-  # Owner-only, matching what the app re-tightens on every boot (sqlite-file-permissions.ts);
-  # cp preserves the staged mode, and a foreign-umask extraction may leave it broader.
-  chmod 0600 "$MAIN_DB" 2>/dev/null || true
-else
+if [ ! -f "$STAGE/main.sqlite" ]; then
   log "WARN: main.sqlite not in archive — API keys / audit log will NOT be restored"
 fi
 
-if [ -f "$STAGE/openwa.sqlite" ]; then
-  log "Restoring data store -> $DATA_DB"
-  snapshot_external_db "$DATA_DB"
-  mkdir -p "$(dirname "$DATA_DB")"
-  cp "$STAGE/openwa.sqlite" "$DATA_DB"
-  chmod 0600 "$DATA_DB" 2>/dev/null || true
+MERGED_PLUGINS_DIR=""
+if [ -d "$STAGE/plugin-packages" ] && [ -d "$STAGE/plugin-state" ] &&
+  [ "$(resolve_path "$PLUGIN_PACKAGES_DIR")" = "$(resolve_path "$PLUGIN_STATE_DIR")" ]; then
+  # Docker deployments deliberately colocate package and state files. Build the complete target in
+  # staging and replace it once, so neither half can erase the other during restore.
+  MERGED_PLUGINS_DIR="$STAGE/plugin-merged"
+  mkdir -p "$MERGED_PLUGINS_DIR"
+  cp -pR "$STAGE/plugin-packages/." "$MERGED_PLUGINS_DIR"
+  cp -pR "$STAGE/plugin-state/." "$MERGED_PLUGINS_DIR"
 fi
 
-if [ -d "$STAGE/sessions" ]; then
-  replace_tree "$STAGE/sessions" "$SESSIONS_DIR" "whatsapp-web.js sessions"
-fi
-
-if [ -d "$STAGE/baileys" ]; then
-  replace_tree "$STAGE/baileys" "$BAILEYS_DIR" "Baileys authentication state"
-fi
-
-if [ -d "$STAGE/media" ]; then
-  replace_tree "$STAGE/media" "$MEDIA_DIR" "local media"
-fi
-
-if [ -d "$STAGE/plugin-packages" ] && [ -d "$STAGE/plugin-state" ]; then
-  RESOLVED_PLUGIN_PACKAGES_DIR="$(resolve_path "$PLUGIN_PACKAGES_DIR")"
-  RESOLVED_PLUGIN_STATE_DIR="$(resolve_path "$PLUGIN_STATE_DIR")"
-  if [ "$RESOLVED_PLUGIN_PACKAGES_DIR" = "$RESOLVED_PLUGIN_STATE_DIR" ]; then
-    # Docker deployments deliberately colocate package and state files. Build the complete target in
-    # staging and replace it once, so neither half can erase the other during restore.
-    MERGED_PLUGINS_DIR="$STAGE/plugin-merged"
-    mkdir -p "$MERGED_PLUGINS_DIR"
-    cp -pR "$STAGE/plugin-packages/." "$MERGED_PLUGINS_DIR"
-    cp -pR "$STAGE/plugin-state/." "$MERGED_PLUGINS_DIR"
+# Runs twice: PHASE=snapshot checks every target and snapshots the ones outside the data dir, then
+# PHASE=apply writes them. A target that cannot be snapshotted or is refused stops the restore
+# before the first database is written, instead of halfway through with a mixed install left behind.
+restore_targets() {
+  if [ -f "$STAGE/main.sqlite" ]; then
+    restore_db "$STAGE/main.sqlite" "$MAIN_DB" "auth/audit DB"
+  fi
+  if [ -f "$STAGE/openwa.sqlite" ]; then
+    restore_db "$STAGE/openwa.sqlite" "$DATA_DB" "data store"
+  fi
+  if [ -d "$STAGE/sessions" ]; then
+    replace_tree "$STAGE/sessions" "$SESSIONS_DIR" "whatsapp-web.js sessions"
+  fi
+  if [ -d "$STAGE/baileys" ]; then
+    replace_tree "$STAGE/baileys" "$BAILEYS_DIR" "Baileys authentication state"
+  fi
+  if [ -d "$STAGE/media" ]; then
+    replace_tree "$STAGE/media" "$MEDIA_DIR" "local media"
+  fi
+  if [ -n "$MERGED_PLUGINS_DIR" ]; then
     replace_tree "$MERGED_PLUGINS_DIR" "$PLUGIN_PACKAGES_DIR" "installed plugins and plugin state"
   else
-    replace_tree "$STAGE/plugin-packages" "$PLUGIN_PACKAGES_DIR" "installed plugin packages"
-    replace_tree "$STAGE/plugin-state" "$PLUGIN_STATE_DIR" "plugin registry and persisted state"
+    if [ -d "$STAGE/plugin-packages" ]; then
+      replace_tree "$STAGE/plugin-packages" "$PLUGIN_PACKAGES_DIR" "installed plugin packages"
+    fi
+    if [ -d "$STAGE/plugin-state" ]; then
+      replace_tree "$STAGE/plugin-state" "$PLUGIN_STATE_DIR" "plugin registry and persisted state"
+    fi
   fi
-elif [ -d "$STAGE/plugin-packages" ]; then
-  replace_tree "$STAGE/plugin-packages" "$PLUGIN_PACKAGES_DIR" "installed plugin packages"
-elif [ -d "$STAGE/plugin-state" ]; then
-  replace_tree "$STAGE/plugin-state" "$PLUGIN_STATE_DIR" "plugin registry and persisted state"
-fi
+}
+
+PHASE=snapshot
+restore_targets
+PHASE=apply
+restore_targets
 
 if [ -f "$STAGE/.env.generated" ]; then
   log "Restoring dashboard-generated configuration"

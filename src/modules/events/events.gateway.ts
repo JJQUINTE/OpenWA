@@ -17,6 +17,7 @@ import { AuditAction } from '../audit/entities/audit-log.entity';
 import { resolveCorsPolicy } from '../../config/bootstrap-security';
 import { limiterKeyForIp, resolveClientIp as resolveRequestClientIp, type RequestLike } from '../../common/utils/ip';
 import { DEFAULT_WEBHOOK_MEDIA_INLINE_MAX_BYTES, shedInlineMedia } from '../../common/utils/inline-media';
+import { isSafeSessionName } from '../../common/utils/path-safety';
 import { ApiKeyRole, type ApiKey } from '../auth/entities/api-key.entity';
 import { apiKeyAuthorizationFingerprint, apiKeyExpiryTime } from '../auth/api-key-authorization';
 import {
@@ -87,6 +88,14 @@ export const QR_DENIED_ROOM = 'role:qr-denied';
 
 /** Roles allowed to receive `session.qr`. Anything else, including an unknown role, is denied. */
 const QR_ALLOWED_ROLES: ReadonlySet<string> = new Set([ApiKeyRole.OPERATOR, ApiKeyRole.ADMIN]);
+
+/**
+ * Subscription rooms live until the socket disconnects, so their names and count are bounded: a session
+ * id is a uuid (any id the engines accept is isSafeSessionName), and one socket holds at most this many
+ * subscription rooms, far above every event of every session a client would follow.
+ */
+const MAX_SUBSCRIBE_SESSION_ID_LENGTH = 128;
+const MAX_ROOMS_PER_SOCKET = 4096;
 
 /** Why an API key's live WebSocket sockets are being torn down — drives the client-facing message. */
 export type ApiKeyEvictionReason = 'revoked' | 'deleted' | 'authorization_changed' | 'expired';
@@ -487,6 +496,9 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     if (!sessionId || typeof sessionId !== 'string') {
       return this.createError('INVALID_SESSION', 'sessionId is required', requestId);
     }
+    if (sessionId !== '*' && !(sessionId.length <= MAX_SUBSCRIBE_SESSION_ID_LENGTH && isSafeSessionName(sessionId))) {
+      return this.createError('INVALID_SESSION', 'sessionId must be "*" or a session id', requestId);
+    }
 
     // Re-validate the API key on every subscribe: a long-lived socket whose key was
     // revoked/expired after connect must not be able to keep opening new subscriptions.
@@ -555,6 +567,17 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       return this.createError(
         'INVALID_EVENTS',
         `No valid events. Valid: ${SUBSCRIBABLE_EVENTS.join(', ')}, *`,
+        requestId,
+      );
+    }
+
+    // Only subscription rooms count: the socket also sits in its own id room and may hold a role room.
+    const held = [...client.rooms].filter(room => room.startsWith('session:')).length;
+    const newRooms = validEvents.filter(event => !client.rooms.has(buildRoomName(sessionId, event))).length;
+    if (held + newRooms > MAX_ROOMS_PER_SOCKET) {
+      return this.createError(
+        'TOO_MANY_SUBSCRIPTIONS',
+        `A connection may hold at most ${MAX_ROOMS_PER_SOCKET} subscriptions; unsubscribe first`,
         requestId,
       );
     }

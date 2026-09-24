@@ -8,6 +8,8 @@ type EnvConfig = Record<string, unknown>;
 // the main DB and DATABASE_NAME follows it, and false-positive when the main DB moved away but
 // DATABASE_NAME still points at the (now unused) default file.
 const MAIN_DB_DEFAULT_PATH = './data/main.sqlite';
+// Default SQLite file of the 'data' connection (configuration.ts / data-source.ts), for the same reason.
+const DATA_DB_DEFAULT_PATH = './data/openwa.sqlite';
 
 // Duplicated rather than imported from configuration.ts (see MAIN_DB_DEFAULT_PATH above); the spec
 // asserts the two agree.
@@ -32,11 +34,10 @@ export function sqliteDataMainPathCollision(config: EnvConfig): string | null {
   // Postgres uses a bare database NAME, never a file path — no collision is possible there.
   const dbType = read('DATABASE_TYPE');
   if (dbType !== undefined && dbType !== 'sqlite') return null;
-  const dataDbName = read('DATABASE_NAME');
-  if (!dataDbName) return null;
+  const dataDbName = read('DATABASE_NAME') || DATA_DB_DEFAULT_PATH;
   const mainDbPath = read('MAIN_DATABASE_NAME') || MAIN_DB_DEFAULT_PATH;
   if (resolve(dataDbName) === resolve(mainDbPath)) {
-    return `DATABASE_NAME must not point at the main database file (${mainDbPath}); use a separate file`;
+    return `DATABASE_NAME (${dataDbName}) must not point at the main database file (${mainDbPath}); use a separate file`;
   }
   return null;
 }
@@ -72,18 +73,26 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
   };
 
-  const dbType = str('DATABASE_TYPE');
+  // The engine/storage/database selectors are checked RAW, like NODE_ENV below: every reader compares
+  // process.env verbatim, so a padded 'postgres ' that only matched after trimming validated clean and
+  // then booted SQLite. Whitespace-only still means unset, as a blank compose forward does everywhere.
+  const rawEnum = (key: string): string | undefined => {
+    const value = config[key];
+    return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+  };
+
+  const dbType = rawEnum('DATABASE_TYPE');
   if (dbType && dbType !== 'sqlite' && dbType !== 'postgres') {
-    errors.push(`DATABASE_TYPE must be "sqlite" or "postgres" (got "${dbType}")`);
+    errors.push(`DATABASE_TYPE must be "sqlite" or "postgres" (got ${JSON.stringify(dbType)})`);
   }
 
   // Whitelist the registered engine/storage ids so a typo fails fast at boot instead of silently
   // falling back to the default (engine.factory swallows an unknown ENGINE_TYPE → legacy wwebjs;
   // STORAGE_TYPE → local). Values must match the ids registered in engine.factory / configuration.
   const checkEnum = (key: string, allowed: string[]): void => {
-    const value = str(key);
+    const value = rawEnum(key);
     if (value !== undefined && !allowed.includes(value)) {
-      errors.push(`${key} must be one of ${allowed.map(v => `"${v}"`).join(', ')} (got "${value}")`);
+      errors.push(`${key} must be one of ${allowed.map(v => `"${v}"`).join(', ')} (got ${JSON.stringify(value)})`);
     }
   };
   checkEnum('ENGINE_TYPE', ['whatsapp-web.js', 'baileys']);
@@ -210,6 +219,7 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'WEBHOOK_MEDIA_INLINE_MAX_BYTES', // 0 = never inline media
     'EXPORT_INLINE_MEDIA_BUDGET_BYTES', // 0 = a data export carries no inline media at all
     'MESSAGE_LIST_INLINE_MEDIA_BUDGET_BYTES', // 0 = a message list carries no inline media at all
+    'CHAT_MEDIA_ARCHIVE_TTL_DAYS', // 0 = keep archived chat media forever
   ]) {
     checkNonNegativeInt(key);
   }
@@ -315,6 +325,14 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'MEDIA_DOWNLOAD_TIMEOUT_MS',
     'INBOUND_MEDIA_CONCURRENCY',
     'CHAT_HISTORY_MEDIA_BUDGET_BYTES',
+    // Same parseInt read: `1h` became a 1 ms orphan sweep, re-walking all stored media every tick.
+    'CHAT_MEDIA_ARCHIVE_MAX_BYTES',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'CHAT_MEDIA_ORPHAN_GRACE_MS',
+    'STATUS_MEDIA_MAX_BYTES',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_GRACE_MS',
+    'S3_REPROBE_INTERVAL_MS',
   ]) {
     checkPositiveInt(key);
   }
@@ -322,13 +340,20 @@ export function validateEnv(config: EnvConfig): EnvConfig {
   // The ceiling matters for the same reason from the other side: the docs forbid 0, so an operator
   // who wants an effectively unlimited budget reaches for a row of nines. Rejected at boot rather
   // than clamped, so they learn the value they wrote is not the value they would have got.
-  {
-    const raw = str('PUPPETEER_PROTOCOL_TIMEOUT_MS');
+  // Every knob below becomes a timer delay, where Node's overflow turns a long wait into a 1 ms spin.
+  for (const [key, consequence] of [
+    ['PUPPETEER_PROTOCOL_TIMEOUT_MS', 'the browser never finishes launching'],
+    ['MEDIA_CONVERSION_TIMEOUT_MS', 'every conversion is killed as timed out'],
+    ['CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
+    ['STATUS_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
+    ['S3_REPROBE_INTERVAL_MS', 'S3 is re-probed every millisecond while it is down'],
+  ]) {
+    const raw = str(key);
     const n = raw !== undefined && DECIMAL_INTEGER.test(raw) ? Number(raw) : NaN;
     if (Number.isInteger(n) && n > MAX_TIMER_MS) {
       errors.push(
-        `PUPPETEER_PROTOCOL_TIMEOUT_MS must not exceed ${MAX_TIMER_MS} ms (got "${raw}"): Node's ` +
-          `timers overflow above that and fire after 1 ms, so the browser never finishes launching`,
+        `${key} must not exceed ${MAX_TIMER_MS} ms (got "${raw}"): Node's ` +
+          `timers overflow above that and fire after 1 ms, so ${consequence}`,
       );
     }
   }

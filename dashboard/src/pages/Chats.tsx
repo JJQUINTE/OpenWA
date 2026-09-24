@@ -29,6 +29,7 @@ import {
   byMessageId,
   getMediaSrc,
   liveMessageMetadata,
+  stripMentionDelimiters,
   type ChatMessageView,
   type MessageMedia,
 } from '../utils/chatMessages';
@@ -273,6 +274,19 @@ export function Chats() {
   const activePhoneText =
     activePhoneDisplay ?? (resolvedPhoneQ.data ? formatPhoneForDisplay(resolvedPhoneQ.data) : null);
 
+  // The list loaders below reach the translator and the error toast through a ref, not as
+  // dependencies: both change identity on a language switch, which re-ran the session load (it
+  // reselected the first session) and, through loadChats, the session-reset effect (it closed the
+  // open chat and dropped a staged file or reply).
+  const loadErrorRef = useRef({ t, showErrorToast });
+  useEffect(() => {
+    loadErrorRef.current = { t, showErrorToast };
+  });
+  const showLoadError = useCallback((key: string, err: unknown) => {
+    const current = loadErrorRef.current;
+    current.showErrorToast(current.t(key), err instanceof Error ? err.message : undefined);
+  }, []);
+
   // 1. Fetch available connected sessions on mount
   useEffect(() => {
     const loadSessions = async () => {
@@ -285,31 +299,46 @@ export function Chats() {
           setSelectedSessionId(readySessions[0].id);
         }
       } catch (err) {
-        showErrorToast(t('chats.errors.loadSessions'), err instanceof Error ? err.message : undefined);
+        showLoadError('chats.errors.loadSessions', err);
       } finally {
         setLoadingSessions(false);
       }
     };
     void loadSessions();
-  }, [t, showErrorToast]);
+  }, [showLoadError]);
 
-  // 2. Fetch chats when active session changes
+  // 2. Fetch chats when active session changes. A session switch does not cancel the list still
+  // loading for the session left behind, so an answer for any session but the latest call's is
+  // dropped, or it would put that account's chats under the selected session. Within one session an
+  // answer is dropped only once a newer one has landed: dropping every answer a newer call overtook
+  // left a burst of realtime refetches with no list at all, each miss firing the next refetch.
+  // A realtime refetch runs in the background, keeping the current list on screen.
+  const chatsRequestRef = useRef(0);
+  const chatsAppliedRef = useRef(0);
+  const chatsSessionRef = useRef('');
   const loadChats = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, { background = false } = {}) => {
       if (!sessionId) return;
+      const request = ++chatsRequestRef.current;
+      chatsSessionRef.current = sessionId;
+      const stale = () => sessionId !== chatsSessionRef.current || request < chatsAppliedRef.current;
       try {
-        setLoadingChats(true);
+        if (!background) setLoadingChats(true);
         const data = await sessionApi.getChats(sessionId);
+        if (stale()) return;
+        chatsAppliedRef.current = request;
         const sorted = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setChats(sorted);
       } catch (err) {
-        showErrorToast(t('chats.errors.loadChats'), err instanceof Error ? err.message : undefined);
+        // A background refetch only refreshes summaries: keep the list it would have replaced.
+        if (stale() || background) return;
+        showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {
-        setLoadingChats(false);
+        if (sessionId === chatsSessionRef.current) setLoadingChats(false);
       }
     },
-    [t, showErrorToast],
+    [showLoadError],
   );
 
   useEffect(() => {
@@ -358,6 +387,10 @@ export function Chats() {
   );
 
   // 3. WebSocket integration for real-time messages
+  const chatsRef = useRef(chats);
+  useEffect(() => {
+    chatsRef.current = chats;
+  });
   const handleIncomingMessage = useCallback(
     (event: { sessionId: string; message: Record<string, unknown> }) => {
       if (event.sessionId !== selectedSessionId) return;
@@ -394,22 +427,20 @@ export function Chats() {
         if (!newMsg.fromMe) onMessageAppended('incoming');
       }
 
-      // Update sidebar chat list. The refetch is REPORTED by the reducer and fired below, never from
-      // inside the updater: React double-invokes updaters under StrictMode, so a side effect in there
-      // ran twice for every message arriving in a chat the sidebar does not have.
-      let needsSidebarRefetch = false;
-      setChats(prevChats => {
-        const result = applyIncomingToChatList(prevChats, newMsg, {
-          // Only a chat this key marks read is exempt from the unread count (see markChatRead).
-          activeChatId: canWrite ? activeChat?.id : undefined,
-          // A location message's body is the (multi-KB) base64 map thumbnail; show a label instead.
-          locationLabel: `📍 ${t('chats.media.location')}`,
-        });
-        needsSidebarRefetch = result.needsSidebarRefetch;
-        return result.chats;
-      });
+      // Update sidebar chat list. Whether the chat is missing is decided against the list on screen,
+      // never inside the updater: React double-invokes updaters under StrictMode, and it may defer
+      // one to the next render, so a flag set in there was still false when read here and a chat the
+      // sidebar does not list never appeared.
+      const listOptions = {
+        // Only a chat this key marks read is exempt from the unread count (see markChatRead).
+        activeChatId: canWrite ? activeChat?.id : undefined,
+        // A location message's body is the (multi-KB) base64 map thumbnail; show a label instead.
+        locationLabel: `📍 ${t('chats.media.location')}`,
+      };
+      const { needsSidebarRefetch } = applyIncomingToChatList(chatsRef.current, newMsg, listOptions);
+      setChats(prevChats => applyIncomingToChatList(prevChats, newMsg, listOptions).chats);
       if (needsSidebarRefetch) {
-        void loadChats(selectedSessionId);
+        void loadChats(selectedSessionId, { background: true });
       }
     },
     [selectedSessionId, activeChat, canWrite, loadChats, markChatRead, appendMessage, onMessageAppended, t],
@@ -507,7 +538,7 @@ export function Chats() {
         // The chat may never have been opened, so there is no message cache from which to prove
         // whether this was its latest row. Refresh summaries instead of guessing and overwriting the
         // sidebar with the body of an older edited message.
-        void loadChats(selectedSessionId);
+        void loadChats(selectedSessionId, { background: true });
       }
     },
     [selectedSessionId, queryClient, loadChats],
@@ -843,6 +874,7 @@ export function Chats() {
           id: m.id,
           url: getMediaSrc(m.metadata?.media),
           alt: m.body || m.metadata?.media?.filename || '',
+          filename: m.metadata?.media?.filename,
           senderName: undefined,
           timestamp: formatChatTime(m.timestamp || Math.floor(new Date(m.createdAt).getTime() / 1000)),
         })),
@@ -1032,7 +1064,7 @@ export function Chats() {
                     (channelMessages.data ?? []).map(m => (
                       <div key={m.id} className="message-bubble incoming">
                         {m.hasMedia && m.mediaUrl && <img className="channel-media" src={m.mediaUrl} alt="" />}
-                        {m.body && <MessageBody text={m.body} className="message-text" />}
+                        {m.body && <MessageBody text={stripMentionDelimiters(m.body)} className="message-text" />}
                         <span className="message-time">{formatChatTime(m.timestamp)}</span>
                       </div>
                     ))
@@ -1078,7 +1110,9 @@ export function Chats() {
                           type={item.type === 'video' ? 'video' : item.type === 'voice' ? 'audio' : 'image'}
                         />
                       )}
-                      {item.caption && <MessageBody text={item.caption} className="message-text" />}
+                      {item.caption && (
+                        <MessageBody text={stripMentionDelimiters(item.caption)} className="message-text" />
+                      )}
                       <span className="message-time">
                         {formatChatTime(Math.floor(new Date(item.timestamp).getTime() / 1000))}
                       </span>

@@ -131,7 +131,9 @@ export class LidMappingStoreService implements LidMappingStore, OnModuleInit {
       this.phoneToLids.clear();
       // A reload re-reads the table, so every recorded absence is a fresh question again.
       this.absentFromTable.clear();
-      for (const row of rows) {
+      // Oldest first, so the newest row ends at the most-recent end of the LRU rather than the first
+      // one evicted.
+      for (const row of rows.reverse()) {
         this.index(row.lid, row.phone);
       }
       this.logger.log(

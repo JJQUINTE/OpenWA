@@ -93,6 +93,26 @@ const PROTOCOL_NOISE_KEYS: ReadonlySet<string> = new Set([
   'messageHistoryBundle',
 ]);
 
+/**
+ * Whether two ids provably name different chats or people. Each side is a jid plus the other-dialect
+ * twin WhatsApp may send beside it (`remoteJidAlt`, `participantAlt`), compared neutralised, so a lid
+ * the session can resolve matches its phone number. A lid it cannot resolve may still be the phone
+ * number on the other side, so that pair is never called different, and neither is a side with no id:
+ * a caller that drops on a mismatch fails open.
+ */
+export function differentWaIds(
+  a: ReadonlyArray<string | null | undefined>,
+  b: ReadonlyArray<string | null | undefined>,
+  toNeutralJid: (jid: string) => string,
+): boolean {
+  const x = a.filter((j): j is string => !!j).map(toNeutralJid);
+  const y = b.filter((j): j is string => !!j).map(toNeutralJid);
+  if (!x.length || !y.length || x.some(j => y.includes(j))) return false;
+  const lidGap = (p: string[], q: string[]): boolean =>
+    p.some(j => j.endsWith('@lid')) && !q.some(j => j.endsWith('@lid')) && q.some(j => j.endsWith('@c.us'));
+  return !lidGap(x, y) && !lidGap(y, x);
+}
+
 export interface BaileysEventsHost {
   /** Live socket handle for media re-upload requests (inbound media download). */
   getSocket(): WASocket;
@@ -300,15 +320,18 @@ export class BaileysEvents {
       // A live disappearing message (also viewOnce / documentWithCaption / edited) arrives wrapped, so the
       // raw `getContentType` returns the OUTER wrapper key (e.g. 'ephemeralMessage') and downstream type/
       // body/media/location detection would miss the real inner content. Normalize ONCE so the true inner
-      // type drives routing here AND mapMessage. normalizeMessageContent leaves protocolMessage and
-      // reactionMessage untouched, so the early-return branches below still match.
+      // type drives routing here AND mapMessage. The protocol and reaction branches below read the
+      // normalized content too: a client wraps an edit in `editedMessage`, and `ephemeralMessage` can hold
+      // a revoke or a reaction just as well, so the raw root does not always carry them.
       const normalizedRoot = b.normalizeMessageContent(msg.message ?? undefined) ?? msg.message ?? undefined;
       const contentType = b.getContentType(normalizedRoot);
 
       // --- protocolMessage REVOKE: don't emit onMessage ---
       if (contentType === 'protocolMessage') {
-        const pm = msg.message?.protocolMessage;
+        const pm = normalizedRoot?.protocolMessage;
         if (pm?.type === b.proto.Message.ProtocolMessage.Type.REVOKE) {
+          // A group admin may revoke anyone's message, so only the chat is checked there.
+          if (await this.targetsForeignMessage(pm.key?.id, msg.key, !remoteJid.endsWith('@g.us'))) return;
           const from = msg.key.fromMe === true ? this.host.normalizedSelfJid() : remoteJid;
           const to = msg.key.fromMe === true ? remoteJid : this.host.normalizedSelfJid();
           const revoked: RevokedMessage = {
@@ -324,6 +347,7 @@ export class BaileysEvents {
             body: '',
             timestamp: toUnixSeconds(msg.messageTimestamp),
           };
+          this.host.recordMessageEdit(remoteJid, revoked.id, '');
           // While the target is still being processed, the store change waits for it and lands after
           // this delete is announced, and a repeat delivery may already hold the content in the store:
           // record the delete now, checked against the target's own key.
@@ -340,6 +364,7 @@ export class BaileysEvents {
           return;
         }
         if (pm?.type === b.proto.Message.ProtocolMessage.Type.MESSAGE_EDIT) {
+          if (await this.targetsForeignMessage(pm.key?.id, msg.key, true)) return;
           // MESSAGE_EDIT wraps the message's latest content. Normalize that INNER content separately
           // so captions, type, PTT, media presence and mentions describe the edited value rather than
           // the outer protocol envelope.
@@ -393,7 +418,8 @@ export class BaileysEvents {
 
       // --- reactionMessage: don't emit onMessage ---
       if (contentType === 'reactionMessage') {
-        const rm = msg.message?.reactionMessage;
+        const rm = normalizedRoot?.reactionMessage;
+        if (await this.targetsForeignMessage(rm?.key?.id, msg.key, false, 'reaction')) return;
         const event: ReactionEvent = {
           messageId: rm?.key?.id ?? '',
           chatId: this.host.toNeutralJid(remoteJid),
@@ -442,7 +468,7 @@ export class BaileysEvents {
       // restart, which the registry consulted in handleMessagesUpsert does not. The read fails open
       // (see readStoredMessage).
       const storedId = msg.key.id ?? null;
-      if (storedId !== null && (await this.readStoredMessage(storedId))) {
+      if (storedId !== null && (await this.readStoredMessage(storedId, 'checking for a repeat delivery'))) {
         this.host.logger.debug('Skipping a re-delivered message this session already recorded', {
           msgId: storedId,
         });
@@ -465,12 +491,17 @@ export class BaileysEvents {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
-      if (msg.key.fromMe === true) {
-        this.host.getOnMessageCreate()?.(incoming);
-      } else {
-        this.host.getOnMessage()?.(incoming);
+      // Its delete was announced first and found nothing to clear, so announcing the message now, or
+      // leaving its text as the chat preview, would publish what the sender took back.
+      if (!deleted) {
+        if (msg.key.fromMe === true) {
+          this.host.getOnMessageCreate()?.(incoming);
+        } else {
+          this.host.getOnMessage()?.(incoming);
+        }
       }
       this.host.recordMessage(msg);
+      if (deleted) this.host.recordMessageEdit(remoteJid, storedId, '');
     } catch (err) {
       this.host.logger.error(
         `Unhandled error processing inbound message (id=${msg.key?.id ?? 'unknown'}); dropping`,
@@ -490,16 +521,59 @@ export class BaileysEvents {
    * which is the price paid here deliberately, because a message nobody ever hears about cannot be
    * recovered at all. The persist side of the same store is already written this way.
    */
-  private async readStoredMessage(messageId: string): Promise<WAMessage | null> {
+  private async readStoredMessage(messageId: string, purpose: string): Promise<WAMessage | null> {
     try {
       return (await this.host.getStoredMessage(messageId)) ?? null;
     } catch (err) {
-      this.host.logger.warn('Could not read the message store while checking for a repeat delivery', {
+      this.host.logger.warn(`Could not read the message store while ${purpose}`, {
         msgId: messageId,
         error: err instanceof Error ? err.message : String(err),
       });
       return null;
     }
+  }
+
+  /**
+   * Whether an edit, revoke or reaction names a stored message it cannot touch: one in another chat,
+   * or, with `checkAuthor`, one somebody else sent. WhatsApp clients ignore such a message, but Baileys
+   * emits it as-is and the projector updates the stored row by id alone, so a contact who knows an id
+   * could rewrite or erase that message. Fails open: with no stored original, or ids that cannot be
+   * compared (see {@link differentWaIds}), the event goes through as it always has.
+   *
+   * A reaction to a message the account sent to a broadcast list is exempt: Baileys files the
+   * own-device copy under the list jid (`<id>@broadcast`), while each recipient reacts from their 1:1
+   * chat, so no chat can ever match it. Edits and revokes stay strict.
+   */
+  private async targetsForeignMessage(
+    targetId: string | null | undefined,
+    key: WAMessageKey,
+    checkAuthor: boolean,
+    kind?: 'reaction',
+  ): Promise<boolean> {
+    const original = targetId
+      ? (await this.readStoredMessage(targetId, 'checking what an edit, revoke or reaction targets'))?.key
+      : undefined;
+    if (!original) return false;
+    if (kind === 'reaction' && original.fromMe === true && original.remoteJid?.endsWith('@broadcast')) return false;
+    const neutral = (jid: string): string => this.host.toNeutralJid(jid);
+    const foreign =
+      differentWaIds([original.remoteJid, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
+      (checkAuthor &&
+        ((original.fromMe === true) !== (key.fromMe === true) ||
+          (key.fromMe !== true &&
+            differentWaIds(
+              [original.participant, original.participantAlt],
+              [key.participant, key.participantAlt],
+              neutral,
+            ))));
+    if (foreign) {
+      this.host.logger.warn('Dropping an edit, revoke or reaction aimed at a message from another chat or author', {
+        msgId: key.id ?? 'unknown',
+        targetId,
+        remoteJid: key.remoteJid,
+      });
+    }
+    return foreign;
   }
 
   /**
@@ -533,14 +607,19 @@ export class BaileysEvents {
    * checks neither the chat nor the sender of either (Utils/process-message.js), so the stored copy
    * changes only for one from the same chat and from the message's author. A group admin may delete
    * anyone's message, which nothing here can verify, so a group delete skips the author check.
-   * Compared in the neutral dialect, so a chat or sender seen by lid once and by phone once matches.
+   * Compared in the neutral dialect, and through each key's alt twin as targetsForeignMessage does, so
+   * a chat or sender seen by lid once and by phone once matches even when the pair is not yet known.
    */
   private mayChange(target: WAMessageKey, envelope: WAMessageKey, isDelete: boolean): boolean {
-    const chat = (key: WAMessageKey): string => this.host.toNeutralJid(key.remoteJid ?? '');
-    const author = (key: WAMessageKey): string =>
-      key.fromMe === true ? 'fromMe' : this.host.toNeutralJid(key.participant || key.remoteJid || '');
-    if (chat(target) !== chat(envelope)) return false;
-    return (isDelete && parseWaId(chat(target)).kind === 'group') || author(target) === author(envelope);
+    const neutral = (jids: Array<string | null | undefined>): string[] =>
+      jids.filter((jid): jid is string => !!jid).map(jid => this.host.toNeutralJid(jid));
+    const chat = (key: WAMessageKey): string[] => neutral([key.remoteJid, key.remoteJidAlt]);
+    const author = (key: WAMessageKey): string[] =>
+      key.fromMe === true ? ['fromMe'] : key.participant ? neutral([key.participant, key.participantAlt]) : chat(key);
+    const overlap = (a: string[], b: string[]): boolean => a.some(jid => b.includes(jid));
+    if (!overlap(chat(target), chat(envelope))) return false;
+    const inGroup = chat(target).some(jid => parseWaId(jid).kind === 'group');
+    return (isDelete && inGroup) || overlap(author(target), author(envelope));
   }
 
   handleMessagesUpdate(updates: Array<{ key?: { id?: string | null }; update?: { status?: number | null } }>): void {

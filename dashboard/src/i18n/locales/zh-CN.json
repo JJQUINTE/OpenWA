@@ -99,6 +99,25 @@
       "delete": "删除消息"
     },
     "replyingTo": "正在回复 {{name}}",
+    "messageType": {
+      "text": "文本",
+      "image": "图片",
+      "video": "视频",
+      "audio": "音频",
+      "voice": "语音消息",
+      "document": "文档",
+      "sticker": "贴纸",
+      "location": "位置",
+      "contact": "联系人",
+      "poll": "投票",
+      "call": "通话",
+      "revoked": "已删除的消息",
+      "order": "订单",
+      "product": "商品",
+      "masked": "已隐藏的消息",
+      "unknown": "消息",
+      "unknownType": "未知类型"
+    },
     "you": "你",
     "youPrefix": "你：",
     "yesterday": "昨天",
@@ -121,7 +140,9 @@
       "group": "群组",
       "channel": "频道",
       "status": "状态",
-      "broadcast": "广播"
+      "broadcast": "广播",
+      "individual": "个人",
+      "unknown": "未知"
     },
     "tab": {
       "chats": "聊天",
@@ -276,7 +297,8 @@
       "successTitle": "会话已创建",
       "successDesc": "会话 \"{{name}}\" 已成功创建",
       "errorTitle": "创建失败",
-      "errorDefault": "创建会话失败"
+      "errorDefault": "创建会话失败",
+      "tooShort": "名称至少需要 3 个字符。"
     },
     "delete": {
       "title": "确认删除",
@@ -313,21 +335,21 @@
       "autoRejectCallsHint": "来电响铃后立即拒接。call.received webhook 仍会先行触发。下一通来电起生效，无需重启。仅限 Baileys 引擎：whatsapp-web.js 无法拒接来电。"
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "代理配置",
+      "status": "当前",
+      "enabled": "使用代理",
+      "url": "代理 URL",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "输入新的 URL 以替换 {{host}}（不显示凭据）",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "未配置代理",
+      "hasCredentials": "凭据已保存，但不会显示。输入完整的 URL 即可更改。",
+      "hint": "更改将在下次启动会话时生效，不会作用于正在运行的连接。代理必须真实且可访问：无法访问的代理会导致 QR 码无法送达，启动请求将返回 504。",
+      "createHint": "仅当你的网络无法直接访问 WhatsApp 时才需要。必须是真实且可访问的代理。",
+      "invalidUrl": "请输入有效的 http、https、socks4 或 socks5 代理 URL。",
+      "saveSuccessTitle": "代理已保存",
+      "saveSuccess": "代理设置已保存，将在下次启动会话时生效。",
+      "saveError": "保存代理设置失败"
     },
     "actions": {
       "view": "查看",
@@ -598,7 +620,10 @@
     },
     "empty": {
       "title": "尚未创建 API 密钥",
-      "description": "创建 API 密钥以认证你的请求"
+      "description": "创建 API 密钥以认证你的请求",
+      "loadErrorTitle": "无法加载 API 密钥",
+      "forbiddenTitle": "无权访问 API 密钥",
+      "forbiddenDesc": "管理 API 密钥需要一个不受特定会话限制的管理员密钥。"
     },
     "confirm": {
       "deleteTitle": "删除 API 密钥",
@@ -651,7 +676,10 @@
       "filteredTitle": "本页无匹配项",
       "filteredDescription": "搜索仅过滤当前页。请清除搜索、翻页，或使用严重级别筛选在服务端收窄。",
       "filteredServerDescription": "没有符合这些筛选条件的日志。请调整严重级别筛选以扩大搜索范围。"
-    }
+    },
+    "exportFailed": "无法导出审计日志",
+    "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。",
+    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。"
   },
   "messageTester": {
     "title": "消息测试器",
@@ -886,15 +914,16 @@
       "export": "导出数据",
       "import": "导入数据",
       "exportFailed": "无法导出数据",
-      "exportPartialTitle": "Backup is missing some media",
-      "exportPartial": "{{count}} attachment payload(s) exceeded the export media budget and were saved as placeholders. The messages restore; their media does not.",
+      "exportPartialTitle": "备份缺少部分媒体",
+      "exportPartial": "{{count}} 个附件超出了导出的媒体容量上限，已保存为占位符。消息可以恢复，但其媒体无法恢复。",
       "importFailed": "无法导入数据",
       "importOk": "数据已导入",
       "importConfirm": "导入操作将用备份数据替换（REPLACE）当前所有数据（{{rows}} 行）。此操作无法撤销。是否继续？",
       "invalidFile": "该文件不是有效的 OpenWA 数据备份。",
       "importTooLarge": "备份超出请求大小限制。请在服务器上调高 BODY_SIZE_LIMIT 后重试。"
     },
-    "statusLoadError": "无法加载当前基础设施状态。请刷新重试。"
+    "statusLoadError": "无法加载当前基础设施状态。请刷新重试。",
+    "configLoadError": "无法加载已保存的配置，因此无法在此编辑。请刷新重试。"
   },
   "plugins": {
     "title": "插件",
@@ -989,7 +1018,6 @@
       "title": "实例",
       "description": "为此集成按账户配置实例。每个实例都有自己的签名密钥和接入 URL。",
       "create": "创建实例",
-      "save": "Save",
       "empty": "暂无实例。创建一个以获取接入 URL 和密钥。",
       "loadError": "加载实例失败。",
       "allSessions": "所有会话",
@@ -1013,7 +1041,8 @@
         "title": "实例已创建",
         "hint": "请立即复制密钥——它只会显示一次。",
         "secret": "签名密钥",
-        "ingressUrls": "接入 URL"
+        "ingressUrls": "接入 URL",
+        "verifyToken": "验证令牌"
       },
       "regenerate": {
         "title": "重新生成密钥",

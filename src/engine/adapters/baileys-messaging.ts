@@ -16,6 +16,7 @@ import {
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
 import { toEngineParticipants } from './baileys-groups';
+import { findSelfParticipant } from './baileys-group-mapper';
 import { buildVCard } from './vcard';
 import { resolveBaileysButtonClick, setBaileysText } from './baileys-message-mapper';
 import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
@@ -49,6 +50,10 @@ export interface BaileysMessagingHost {
   loadLib(): Promise<typeof BaileysLib>;
   /** Persist a just-sent message to the store; undefined when no store is configured. */
   putStoredMessage(msg: WAMessage): Promise<void> | undefined;
+  /** Make a just-sent message the chat's last-message preview and sort time (its echo is skipped). */
+  recordMessage(msg: WAMessage): void;
+  /** Replace the chat preview's text when the message is still the chat's last one (edit, or '' once deleted). */
+  recordMessageEdit(chatId: string, messageId: string, text: string): void;
   /** Record the id of a message this session just sent, so its library echo is recognised as ours. */
   rememberOwnSend(id: string | null | undefined): void;
   /** Look up a previously-seen message from the store (the reply/forward/react/delete handle). */
@@ -143,15 +148,22 @@ async function toWebpSticker(data: Buffer, mimetype: string): Promise<Buffer> {
   }
 }
 
+/** Fetched Content-Types that say nothing about the bytes (a missing header reads as ''). */
+const GENERIC_FETCHED_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
+
 /**
  * Resolve a MediaInput's data (Buffer | base64 string | http(s) URL) to bytes + mimetype.
  *
  * `sessionProxyUrl` is this session's egress proxy, which the URL fetch leaves through (#1626). It
  * is required, not optional, so a new call site cannot fetch direct on a proxied session by omission.
+ *
+ * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg), used for a URL whose type
+ * neither the caller nor the host names. A document send passes none and keeps what it was given.
  */
 export async function resolveMediaBuffer(
   media: MediaInput,
   sessionProxyUrl: string | undefined,
+  fallbackType?: string,
 ): Promise<{ data: Buffer; mimetype: string }> {
   if (Buffer.isBuffer(media.data)) {
     return { data: media.data, mimetype: media.mimetype };
@@ -159,11 +171,14 @@ export async function resolveMediaBuffer(
   if (/^https?:\/\//i.test(media.data)) {
     const fetched = await loadRemoteMediaBuffer(media.data, sessionProxyUrl);
     // A generic placeholder mimetype (buildMediaInput's 'application/octet-stream' default when the
-    // caller supplied none) carries no real signal — defer to the fetched response content-type,
-    // which was sniffed from the actual bytes. This fixes URL-based sends where the caller has no
-    // mimetype to pass through the conversation-send facade (e.g. chatwoot-adapter outbound relay).
+    // caller supplied none) carries no real signal, so the fetched Content-Type decides. That header
+    // is taken as the host sent it, not sniffed from the bytes, so a missing or generic one is no
+    // better than the placeholder and the kind's default stands in. This serves URL-based sends where
+    // the caller has no mimetype to pass through the conversation-send facade (e.g. chatwoot-adapter
+    // outbound relay).
     const callerMimetype = media.mimetype && media.mimetype !== 'application/octet-stream' ? media.mimetype : null;
-    return { data: fetched.data, mimetype: callerMimetype ?? fetched.mimetype };
+    const unknown = fallbackType !== undefined && GENERIC_FETCHED_TYPES.has(fetched.mimetype.toLowerCase());
+    return { data: fetched.data, mimetype: callerMimetype ?? (unknown ? fallbackType : fetched.mimetype) };
   }
   return { data: Buffer.from(media.data, 'base64'), mimetype: media.mimetype };
 }
@@ -236,6 +251,7 @@ export class BaileysMessaging {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
+      this.host.recordMessage(sent);
       // Parity with the wwjs engine's message_create → message.sent (see emitOwnSendEcho).
       void this.emitOwnSendEcho(sent);
     }
@@ -320,7 +336,7 @@ export class BaileysMessaging {
         title: product.name,
         description: product.description,
         currencyCode: product.currency,
-        priceAmount1000: Math.round(product.price * 1000),
+        priceAmount1000: product.price === undefined ? undefined : Math.round(product.price * 1000),
         retailerId: product.retailerId,
         url: product.url || undefined,
         productImage: { url: product.imageUrl },
@@ -333,7 +349,7 @@ export class BaileysMessaging {
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'image/jpeg');
     return this.sendContent(
       chatId,
       {
@@ -348,7 +364,7 @@ export class BaileysMessaging {
 
   async sendVideoMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'video/mp4');
     return this.sendContent(
       chatId,
       {
@@ -363,7 +379,7 @@ export class BaileysMessaging {
 
   async sendAudioMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'audio/mpeg');
     return this.sendContent(
       chatId,
       // Audio carries no caption, so a mention here tags the recipient through contextInfo without
@@ -540,8 +556,16 @@ export class BaileysMessaging {
     // A message already deleted for everyone can still be deleted for me: that clears its placeholder.
     const target = await this.requireStored(messageId, true);
     this.assertStoredInChat(target, chatId, messageId);
-    if (forEveryone) {
+    // Only the sender, or a group admin, can delete a message for everyone. WhatsApp ignores any other
+    // revoke, yet the send resolves, so it would report a deletion that never happened. WhatsApp Web
+    // deletes such a message for the account alone instead, and so does this. A group whose member
+    // list shows no row for the account proves nothing either way, so the revoke still goes out there.
+    // Whichever branch runs, the text leaves this account's view, so it must not stay the chat
+    // preview. The echo of an own revoke is skipped as an own send, so the inbound path never clears it.
+    const chatJid = target.key.remoteJid ?? chatId;
+    if (forEveryone && (target.key.fromMe === true || (await this.selfIsGroupAdmin(target.key.remoteJid)) !== false)) {
       await this.send(await this.toDeliverableJid(chatId), { delete: target.key });
+      this.host.recordMessageEdit(chatJid, messageId, '');
       // The echo of this delete is skipped as an own send, so the stored copy is emptied here, as
       // processInboundMessage does for a delete made from the phone or by the other side. Recorded
       // first, so the message stays deleted even if the store write fails or a repeat delivery of the
@@ -565,6 +589,22 @@ export class BaileysMessaging {
       ),
       'the delete-for-me',
     );
+    this.host.recordMessageEdit(chatJid, messageId, '');
+  }
+
+  /**
+   * Whether the account is an admin of this chat: false for anything that is not a group, and
+   * undefined when no participant row can be identified as the account.
+   */
+  private async selfIsGroupAdmin(jid: string | null | undefined): Promise<boolean | undefined> {
+    if (!jid?.endsWith('@g.us')) return false;
+    const metadata = await withQueryDeadline(
+      this.sock().groupMetadata(jid),
+      this.queryBudgetMs,
+      'WhatsApp did not answer the group metadata query in time',
+    );
+    const self = findSelfParticipant(metadata, this.host.normalizedSelfJid(), id => this.host.toNeutralJid(id));
+    return self === undefined ? undefined : self.admin === 'admin' || self.admin === 'superadmin';
   }
 
   async editMessage(chatId: string, messageId: string, body: string, mentions?: string[]): Promise<MessageResult> {
@@ -593,6 +633,8 @@ export class BaileysMessaging {
     const editContent = { text: body, ...this.withMentions(mentions), edit: target.key };
     const b = await this.host.loadLib();
     await this.send(jid, this.previewSafe(editContent), this.previewSafeOptions(editContent));
+    // The edit's echo is skipped as an own send, so the chat preview follows it from here.
+    this.host.recordMessageEdit(target.key.remoteJid ?? chatId, messageId, body);
     // Same reason as deleteMessage: the stored copy is what a later quote carries, and this edit's
     // echo never reaches processInboundMessage.
     await this.changeStored(messageId, stored => {
@@ -707,6 +749,7 @@ export class BaileysMessaging {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
+      this.host.recordMessage(sent);
       // wwjs fires `message_create` for its own API sends, which SessionService turns into `message.sent`.
       // Baileys' own socket-sends echo back only as a `type:'append'` upsert, which handleMessagesUpsert
       // skips by the id send() recorded, so that event never fired for API sends. Emit the outbound

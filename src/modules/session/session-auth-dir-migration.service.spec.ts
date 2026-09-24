@@ -196,6 +196,49 @@ describe('SessionAuthDirMigration', () => {
     expect(fs.existsSync(path.join(baileysDir, BOB_ID))).toBe(false);
   });
 
+  // The name rule lets a session be named after another session's id. The "legacy" directory that
+  // name points at is then the other session's live id-keyed login, and moving it would hand that
+  // WhatsApp account to the misnamed row.
+  it.each([
+    ['UUID-shaped and another session id', BOB_ID],
+    ['another session id that is not UUID-shaped', 'imported-bob'],
+  ])('leaves another session login alone when a name is %s', async (_case, bobId) => {
+    seed(path.join(sessionsDir, `session-${bobId}`), 'wwjs-bob');
+    seed(path.join(baileysDir, bobId), 'baileys-bob');
+    const migration = buildMigration([
+      { id: bobId, name: 'bob' },
+      { id: ALICE_ID, name: bobId },
+    ]);
+    const warn = jest
+      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await migration.onModuleInit();
+
+    expect(markerAt(path.join(sessionsDir, `session-${bobId}`))).toBe('wwjs-bob');
+    expect(markerAt(path.join(baileysDir, bobId))).toBe('baileys-bob');
+    expect(fs.existsSync(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe(false);
+    expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
+    // Known to be another session's login, so nothing tells the operator to hand it over.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // Only an exact live id is held back. On an upgrade from a release that keyed directories by name,
+  // a session named after, say, a tenant UUID owns the directory its name points at, and leaving it
+  // there would bring the session back at a QR code.
+  it('moves the directories of a UUID-shaped name that is not a session id onto the session id', async () => {
+    const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+    seed(path.join(sessionsDir, `session-${uuidName}`), 'wwjs-legacy');
+    seed(path.join(baileysDir, uuidName), 'baileys-legacy');
+
+    await buildMigration([{ id: ALICE_ID, name: uuidName }]).onModuleInit();
+
+    expect(markerAt(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe('wwjs-legacy');
+    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-legacy');
+    expect(fs.existsSync(path.join(sessionsDir, `session-${uuidName}`))).toBe(false);
+    expect(fs.existsSync(path.join(baileysDir, uuidName))).toBe(false);
+  });
+
   it('skips the query and the filesystem entirely when there are no sessions', async () => {
     seed(path.join(sessionsDir, 'session-orphan'), 'orphan');
 

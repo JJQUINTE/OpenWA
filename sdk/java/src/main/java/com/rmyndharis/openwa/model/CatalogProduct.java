@@ -5,7 +5,7 @@ public record CatalogProduct(
     String id,
     String name,
     String description,
-    double price,
+    Double price,
     String currency,
     String priceFormatted,
     String imageUrl,

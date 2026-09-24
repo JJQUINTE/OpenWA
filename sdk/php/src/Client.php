@@ -39,8 +39,10 @@ use OpenWA\Resources\WebhooksResource;
  *     'apiKey'  => 'owa_k1_…',
  * ]);
  *
- * $client->sessions->start('my-session');
- * $result = $client->messages->sendText('my-session', [
+ * // Sessions are addressed by the UUID that create() returns, not by name.
+ * $session = $client->sessions->create(['name' => 'my-session']);
+ * $client->sessions->start($session['id']);
+ * $result = $client->messages->sendText($session['id'], [
  *     'chatId' => '628123456789@c.us',
  *     'text'   => 'Hello from the OpenWA PHP SDK!',
  * ]);
@@ -76,7 +78,8 @@ class Client
      *     apiKey:string,
      *     timeout?:float,
      *     httpClient?:?\GuzzleHttp\ClientInterface|null,
-     *     defaultHeaders?:array<string,string>
+     *     defaultHeaders?:array<string,string>,
+     *     allowInsecureHttp?:bool
      * } $config
      *
      * @throws OpenWAException If baseUrl or apiKey is missing.
@@ -90,7 +93,9 @@ class Client
             throw new OpenWAException('OpenWA Client: apiKey is required');
         }
 
-        self::warnIfInsecureHttp($config['baseUrl']);
+        if (empty($config['allowInsecureHttp'])) {
+            self::warnIfInsecureHttp($config['baseUrl']);
+        }
 
         $this->http = new HttpExecutor(
             $config['baseUrl'],
@@ -122,7 +127,9 @@ class Client
      * Warn (not throw) when baseUrl is http:// and the host is not localhost. The API key is sent
      * as an X-API-Key header on every request — over plaintext http to a non-local host that's
      * cleartext on the wire. Warning (not refusing) keeps local dev and TLS-terminating-proxy
-     * topologies working.
+     * topologies working. It goes to error_log(), not trigger_error(): Laravel, Symfony and
+     * PHPUnit's failOnWarning turn a PHP warning into an exception, which would make the client
+     * impossible to construct. Set allowInsecureHttp to skip the check.
      */
     private static function warnIfInsecureHttp(string $url): void
     {
@@ -131,10 +138,9 @@ class Client
         if ($scheme === 'http' && $host !== null && $host !== false) {
             $host = \trim($host, '[]');
             if (!\in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
-                \trigger_error(
+                \error_log(
                     "OpenWA Client: baseUrl uses an insecure http:// URL (host: {$host}). "
-                    . 'The API key will be sent in cleartext. Use https:// in production.',
-                    \E_USER_WARNING
+                    . 'The API key will be sent in cleartext. Use https:// in production.'
                 );
             }
         }

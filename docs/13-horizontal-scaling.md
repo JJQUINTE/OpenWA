@@ -60,6 +60,24 @@
 > which is exactly how a takeover begins. Without `NODE_URL` the whole path is inert and
 > single-node deployments pay nothing.
 >
+> A path on `NODE_URL` is kept (0.23.7 and later) and put in front of the forwarded request's own
+> path, which already starts with `/api`. Give one only when the node is reached through a reverse
+> proxy under that prefix (`NODE_URL=https://gw.example.com/node-a`); a node reached directly takes
+> none. A `NODE_URL` ending in `/api` forwards to `/api/api/...`, and every routed request answers
+> `404`.
+>
+> **List and stats routes answer from the node that received them.** `GET /api/sessions` and
+> `GET /api/sessions/stats/overview` name no session, so they are never forwarded. `lastError`,
+> `restriction`, the stats `active` count and `memoryUsage` are that node's own view, not the owner's:
+> the first two come from what this node's engines recorded, `active` counts only this node's engines,
+> and `memoryUsage` is this process's. `engineLoaded` is the exception, since it also counts a live
+> claim by another node. With routing on, `GET /api/sessions/:sessionId` is forwarded to the owner, so
+> its answer is the owner's; `start`, `stop`, `logout` and `force-kill` are forwarded the same way, so a
+> `true` means `stop`, `logout` and `force-kill` can act (and `start` answers `400`, as it does on the
+> owner). Without `NODE_URL` nothing is forwarded, so a node that does not hold the
+> session still reports `true` but cannot act on it: `start` and `stop` answer `409` there, and `logout`
+> and `force-kill` answer `400`.
+>
 > **A failed forward says whether the owner could have acted.** When the owner cannot be
 > reached at all (connection refused, unresolvable or unusable `NODE_URL`), the answer is
 > `503` and the request was not carried out, so it is safe to retry. A timeout answers `504`
@@ -380,10 +398,11 @@ spec:
       # OS-level containment is the second half of the plugin sandbox boundary (see docs/23-plugin-
       # sandboxing.md). Without it a worker_thread plugin that abuses Node built-ins (fs, net) runs with
       # the same privileges as the API and can read host files / open raw sockets outside the capability
-      # model. The shipped Docker image already runs read-only + non-root + cap_drop:ALL; the manifest
-      # below mirrors that so a k8s deploy is not silently weaker.
+      # model. The shipped compose file runs the image read-only + cap_drop:ALL, and the node process
+      # runs as the non-root openwa user; the manifest below mirrors that so a k8s deploy is not
+      # silently weaker. Do NOT add runAsNonRoot: the entrypoint starts as root to chown /app/data,
+      # then drops to openwa via gosu (same as charts/openwa/values.yaml).
       securityContext:
-        runAsNonRoot: true
         fsGroup: 1000
       containers:
         - name: openwa
@@ -414,6 +433,8 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ['ALL']
+              # Only for the root entrypoint's chown and the gosu privilege drop.
+              add: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID']
           resources:
             requests:
               memory: '512Mi'

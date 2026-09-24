@@ -99,6 +99,25 @@
       "delete": "Nachricht löschen"
     },
     "replyingTo": "Antwort an {{name}}",
+    "messageType": {
+      "text": "Text",
+      "image": "Bild",
+      "video": "Video",
+      "audio": "Audio",
+      "voice": "Sprachnachricht",
+      "document": "Dokument",
+      "sticker": "Sticker",
+      "location": "Standort",
+      "contact": "Kontakt",
+      "poll": "Umfrage",
+      "call": "Anruf",
+      "revoked": "Gelöschte Nachricht",
+      "order": "Bestellung",
+      "product": "Produkt",
+      "masked": "Ausgeblendete Nachricht",
+      "unknown": "Nachricht",
+      "unknownType": "Unbekannter Typ"
+    },
     "you": "Du",
     "youPrefix": "Du: ",
     "yesterday": "Gestern",
@@ -121,7 +140,9 @@
       "group": "Gruppe",
       "channel": "Kanal",
       "status": "Status",
-      "broadcast": "Broadcast"
+      "broadcast": "Broadcast",
+      "individual": "Einzelchat",
+      "unknown": "Unbekannt"
     },
     "tab": {
       "chats": "Chats",
@@ -276,7 +297,8 @@
       "successTitle": "Sitzung erstellt",
       "successDesc": "Sitzung „{{name}}“ wurde erfolgreich erstellt",
       "errorTitle": "Erstellung fehlgeschlagen",
-      "errorDefault": "Sitzung konnte nicht erstellt werden"
+      "errorDefault": "Sitzung konnte nicht erstellt werden",
+      "tooShort": "Der Name muss mindestens 3 Zeichen lang sein."
     },
     "delete": {
       "title": "Löschen bestätigen",
@@ -313,21 +335,21 @@
       "autoRejectCallsHint": "Eingehende Anrufe werden abgelehnt, sobald sie klingeln. Der Webhook call.received wird trotzdem zuerst ausgelöst. Gilt ab dem nächsten Anruf, kein Neustart nötig. Nur mit der Baileys-Engine: whatsapp-web.js kann keine Anrufe ablehnen."
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "Proxy-Konfiguration",
+      "status": "Aktuell",
+      "enabled": "Proxy verwenden",
+      "url": "Proxy-URL",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "Neue URL eingeben, um {{host}} zu ersetzen (Zugangsdaten werden nicht angezeigt)",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "Kein Proxy konfiguriert",
+      "hasCredentials": "Zugangsdaten sind gespeichert, werden aber nicht angezeigt. Gib eine vollständige URL ein, um sie zu ändern.",
+      "hint": "Änderungen gelten ab dem nächsten Sitzungsstart, nicht für eine laufende Verbindung. Der Proxy muss echt und erreichbar sein: Ein nicht erreichbarer Wert blockiert die QR-Zustellung, und der Start gibt 504 zurück.",
+      "createHint": "Nur nötig, wenn dein Netzwerk WhatsApp nicht direkt erreichen kann. Muss ein echter, erreichbarer Proxy sein.",
+      "invalidUrl": "Gib eine gültige http-, https-, socks4- oder socks5-Proxy-URL ein.",
+      "saveSuccessTitle": "Proxy gespeichert",
+      "saveSuccess": "Proxy-Einstellungen gespeichert. Sie gelten ab dem nächsten Sitzungsstart.",
+      "saveError": "Proxy-Einstellungen konnten nicht gespeichert werden"
     },
     "actions": {
       "view": "Ansehen",
@@ -598,7 +620,10 @@
     },
     "empty": {
       "title": "Keine API-Schlüssel erstellt",
-      "description": "Erstelle einen API-Schlüssel, um deine Anfragen zu authentifizieren"
+      "description": "Erstelle einen API-Schlüssel, um deine Anfragen zu authentifizieren",
+      "loadErrorTitle": "API-Schlüssel konnten nicht geladen werden",
+      "forbiddenTitle": "Kein Zugriff auf API-Schlüssel",
+      "forbiddenDesc": "Zum Verwalten von API-Schlüsseln ist ein Admin-Schlüssel erforderlich, der nicht auf bestimmte Sitzungen beschränkt ist."
     },
     "confirm": {
       "deleteTitle": "API-Schlüssel löschen",
@@ -651,7 +676,10 @@
       "filteredTitle": "Keine Treffer auf dieser Seite",
       "filteredDescription": "Die Suche filtert nur die aktuelle Seite. Leere sie, blättere weiter oder grenze serverseitig über den Severity-Filter ein.",
       "filteredServerDescription": "Keine Protokolle passen auf diese Filter. Passe den Severity-Filter an, um die Suche zu erweitern."
-    }
+    },
+    "exportFailed": "Audit-Protokoll konnte nicht exportiert werden",
+    "exportTruncated": "Der Export umfasst nur die neuesten {{rows}} Einträge. Grenze den Severity-Filter ein, um ältere Einträge zu exportieren.",
+    "exportThrottled": "Der Export umfasst nur die neuesten {{rows}} Einträge, weil das Gateway Abfragen des Audit-Logs drosselt. Warte eine Minute und exportiere erneut."
   },
   "messageTester": {
     "title": "Nachrichtentester",
@@ -867,8 +895,8 @@
       "export": "Daten exportieren",
       "import": "Daten importieren",
       "exportFailed": "Daten konnten nicht exportiert werden",
-      "exportPartialTitle": "Backup is missing some media",
-      "exportPartial": "{{count}} attachment payload(s) exceeded the export media budget and were saved as placeholders. The messages restore; their media does not.",
+      "exportPartialTitle": "In der Sicherung fehlen einige Medien",
+      "exportPartial": "Anhänge über dem Medienbudget des Exports: {{count}}. Sie wurden als Platzhalter gespeichert. Die Nachrichten werden wiederhergestellt, ihre Medien nicht.",
       "importFailed": "Daten konnten nicht importiert werden",
       "importOk": "Daten wurden importiert",
       "importConfirm": "Beim Import werden alle aktuellen Daten durch die Sicherung ERSETZT ({{rows}} Zeilen). Dies kann nicht rückgängig gemacht werden. Fortfahren?",
@@ -894,7 +922,8 @@
     "toasts": {
       "saveFailed": "Speichern fehlgeschlagen"
     },
-    "statusLoadError": "Der aktuelle Infrastrukturstatus konnte nicht geladen werden. Aktualisiere die Seite und versuche es erneut."
+    "statusLoadError": "Der aktuelle Infrastrukturstatus konnte nicht geladen werden. Aktualisiere die Seite und versuche es erneut.",
+    "configLoadError": "Die gespeicherte Konfiguration konnte nicht geladen werden und lässt sich hier daher nicht bearbeiten. Aktualisiere die Seite und versuche es erneut."
   },
   "plugins": {
     "title": "Plugins",
@@ -989,7 +1018,6 @@
       "title": "Instanzen",
       "description": "Erstelle kontobezogene Instanzen für diese Integration. Jede Instanz besitzt ein eigenes Signaturgeheimnis und eine eigene Ingress-URL.",
       "create": "Instanz erstellen",
-      "save": "Save",
       "empty": "Noch keine Instanzen vorhanden. Erstelle eine, um eine Ingress-URL und ein Geheimnis zu erhalten.",
       "loadError": "Instanzen konnten nicht geladen werden.",
       "allSessions": "Alle Sitzungen",
@@ -1013,7 +1041,8 @@
         "title": "Instanz erstellt",
         "hint": "Kopiere das Geheimnis jetzt — es wird nur einmal angezeigt.",
         "secret": "Signaturgeheimnis",
-        "ingressUrls": "Ingress-URL(s)"
+        "ingressUrls": "Ingress-URL(s)",
+        "verifyToken": "Verifizierungstoken"
       },
       "regenerate": {
         "title": "Geheimnis neu erstellen",

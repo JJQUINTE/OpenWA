@@ -88,6 +88,7 @@
     "noMessageYet": "Aucun message pour le moment",
     "unreadBadge": "{{count}} message non lu",
     "unreadBadge_other": "{{count}} messages non lus",
+    "unreadBadge_many": "{{count}} messages non lus",
     "loadingMessages": "Chargement des messages...",
     "loadingOlderMessages": "Chargement des messages plus anciens...",
     "loadOlderMessagesError": "Impossible de charger les messages plus anciens. Faites défiler vers le haut pour réessayer.",
@@ -99,6 +100,25 @@
       "delete": "Supprimer le message"
     },
     "replyingTo": "Réponse à {{name}}",
+    "messageType": {
+      "text": "Texte",
+      "image": "Image",
+      "video": "Vidéo",
+      "audio": "Audio",
+      "voice": "Message vocal",
+      "document": "Document",
+      "sticker": "Sticker",
+      "location": "Localisation",
+      "contact": "Contact",
+      "poll": "Sondage",
+      "call": "Appel",
+      "revoked": "Message supprimé",
+      "order": "Commande",
+      "product": "Produit",
+      "masked": "Message masqué",
+      "unknown": "Message",
+      "unknownType": "Type inconnu"
+    },
     "you": "Vous",
     "youPrefix": "Vous : ",
     "yesterday": "Hier",
@@ -121,7 +141,9 @@
       "group": "Groupe",
       "channel": "Chaîne",
       "status": "Statut",
-      "broadcast": "Diffusion"
+      "broadcast": "Diffusion",
+      "individual": "Individuel",
+      "unknown": "Inconnu"
     },
     "tab": {
       "chats": "Discussions",
@@ -131,6 +153,7 @@
     "status": {
       "itemCount": "{{count}} mise à jour",
       "itemCount_other": "{{count}} mises à jour",
+      "itemCount_many": "{{count}} mises à jour",
       "empty": "Aucun contact n'a de statut actif.",
       "loadError": "Échec du chargement des statuts.",
       "mediaUnavailable": "Média indisponible",
@@ -155,7 +178,8 @@
       "empty": "Vous n'êtes abonné à aucune chaîne pour le moment.",
       "notReady": "La session n'est pas encore prête.",
       "subscribers": "{{count}} abonné",
-      "subscribers_other": "{{count}} abonnés"
+      "subscribers_other": "{{count}} abonnés",
+      "subscribers_many": "{{count}} abonnés"
     },
     "errors": {
       "loadSessions": "Échec du chargement des sessions",
@@ -276,7 +300,8 @@
       "successTitle": "Session créée",
       "successDesc": "La session \"{{name}}\" a été créée avec succès",
       "errorTitle": "Échec de la création",
-      "errorDefault": "Impossible de créer la session"
+      "errorDefault": "Impossible de créer la session",
+      "tooShort": "Le nom doit contenir au moins 3 caractères."
     },
     "delete": {
       "title": "Confirmer la suppression",
@@ -313,21 +338,21 @@
       "autoRejectCallsHint": "Les appels entrants sont refusés dès qu'ils sonnent. Le webhook call.received est tout de même émis avant. S'applique au prochain appel, aucun redémarrage nécessaire. Moteur Baileys uniquement : whatsapp-web.js ne peut pas refuser les appels."
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "Configuration du proxy",
+      "status": "Actuel",
+      "enabled": "Utiliser un proxy",
+      "url": "URL du proxy",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "Saisissez une nouvelle URL pour remplacer {{host}} (identifiants non affichés)",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "Aucun proxy configuré",
+      "hasCredentials": "Les identifiants sont enregistrés mais ne sont pas affichés. Saisissez une URL complète pour les modifier.",
+      "hint": "Les modifications s'appliquent au prochain démarrage de la session, pas à une connexion en cours. Le proxy doit être réel et joignable : une valeur injoignable bloque l'envoi du QR code et le démarrage renvoie 504.",
+      "createHint": "Nécessaire uniquement si votre réseau ne peut pas joindre WhatsApp directement. Doit être un proxy réel et joignable.",
+      "invalidUrl": "Saisissez une URL de proxy http, https, socks4 ou socks5 valide.",
+      "saveSuccessTitle": "Proxy enregistré",
+      "saveSuccess": "Paramètres du proxy enregistrés. Ils s'appliquent au prochain démarrage de la session.",
+      "saveError": "Impossible d'enregistrer les paramètres du proxy"
     },
     "actions": {
       "view": "Voir",
@@ -428,6 +453,7 @@
       "hint": "Déclencher uniquement lorsque toutes les conditions sont remplies. S'applique aux événements de message.",
       "badge": "{{count}} filtre",
       "badge_other": "{{count}} filtres",
+      "badge_many": "{{count}} filtres",
       "addCondition": "Ajouter une condition",
       "removeCondition": "Supprimer la condition",
       "caseSensitive": "Sensible à la casse",
@@ -598,7 +624,10 @@
     },
     "empty": {
       "title": "Aucune clé API créée",
-      "description": "Créez une clé API pour authentifier vos requêtes"
+      "description": "Créez une clé API pour authentifier vos requêtes",
+      "loadErrorTitle": "Impossible de charger les clés API",
+      "forbiddenTitle": "Aucun accès aux clés API",
+      "forbiddenDesc": "La gestion des clés API nécessite une clé administrateur qui n'est pas limitée à des sessions précises."
     },
     "confirm": {
       "deleteTitle": "Supprimer la clé API",
@@ -651,7 +680,10 @@
       "filteredTitle": "Aucune correspondance sur cette page",
       "filteredDescription": "La recherche ne filtre que la page actuelle. Effacez-la, naviguez entre les pages ou utilisez le filtre de gravité côté serveur.",
       "filteredServerDescription": "Aucun journal ne correspond à ces filtres. Ajustez le filtre de gravité pour élargir la recherche."
-    }
+    },
+    "exportFailed": "Impossible d'exporter le journal d'audit",
+    "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes.",
+    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export."
   },
   "messageTester": {
     "title": "Testeur de messages",
@@ -886,15 +918,16 @@
       "export": "Exporter les données",
       "import": "Importer les données",
       "exportFailed": "Impossible d'exporter les données",
-      "exportPartialTitle": "Backup is missing some media",
-      "exportPartial": "{{count}} attachment payload(s) exceeded the export media budget and were saved as placeholders. The messages restore; their media does not.",
+      "exportPartialTitle": "Il manque des médias dans la sauvegarde",
+      "exportPartial": "Pièces jointes au-delà de la limite de médias de l'exportation : {{count}}. Elles ont été enregistrées comme espaces réservés. Les messages sont restaurés ; leurs médias ne le sont pas.",
       "importFailed": "Impossible d'importer les données",
       "importOk": "Données importées",
       "importConfirm": "L'importation REMPLACERA toutes les données actuelles par la sauvegarde ({{rows}} lignes). Cette action est irréversible. Continuer ?",
       "invalidFile": "Ce fichier n'est pas une sauvegarde de données OpenWA valide.",
       "importTooLarge": "La sauvegarde dépasse la limite de la requête. Augmentez BODY_SIZE_LIMIT sur le serveur, puis réessayez."
     },
-    "statusLoadError": "Impossible de charger l'état actuel de l'infrastructure. Actualisez pour réessayer."
+    "statusLoadError": "Impossible de charger l'état actuel de l'infrastructure. Actualisez pour réessayer.",
+    "configLoadError": "Impossible de charger la configuration enregistrée, elle ne peut donc pas être modifiée ici. Actualisez pour réessayer."
   },
   "plugins": {
     "title": "Plugins",
@@ -989,7 +1022,6 @@
       "title": "Instances",
       "description": "Provisionnez des instances par compte pour cette intégration. Chaque instance dispose de son propre secret de signature et de sa propre URL d'entrée.",
       "create": "Créer une instance",
-      "save": "Save",
       "empty": "Aucune instance pour le moment. Créez-en une pour obtenir une URL d'entrée et un secret.",
       "loadError": "Échec du chargement des instances.",
       "allSessions": "Toutes les sessions",
@@ -1013,7 +1045,8 @@
         "title": "Instance créée",
         "hint": "Copiez le secret maintenant — il ne sera affiché qu'une seule fois.",
         "secret": "Secret de signature",
-        "ingressUrls": "URL(s) d'entrée"
+        "ingressUrls": "URL(s) d'entrée",
+        "verifyToken": "Jeton de vérification"
       },
       "regenerate": {
         "title": "Régénérer le secret",

@@ -96,8 +96,7 @@ export class LoggerService implements NestLoggerService {
   }
 
   error(message: string, trace?: string, context?: string | LogContext): void {
-    const ctx = typeof context === 'string' ? { context } : context;
-    this.writeLog(LogLevel.ERROR, message, { ...ctx, trace });
+    this.writeLog(LogLevel.ERROR, message, context, trace);
   }
 
   warn(message: string, context?: string | LogContext): void {
@@ -112,7 +111,7 @@ export class LoggerService implements NestLoggerService {
     this.writeLog(LogLevel.VERBOSE, message, context);
   }
 
-  private writeLog(level: LogLevel, message: string, context?: string | LogContext): void {
+  private writeLog(level: LogLevel, message: string, context?: string | LogContext, trace?: string): void {
     if (!this.shouldLog(level)) return;
 
     const timestamp = new Date().toISOString();
@@ -123,12 +122,17 @@ export class LoggerService implements NestLoggerService {
     // Stamp every log line with the active request id (set by requestContextMiddleware) so a request
     // can be traced across logs. Absent outside a request scope (boot, workers, cron).
     const requestId = getRequestId();
+    // Caller metadata never replaces the structural fields: a plugin's ctx.logger meta arrives here
+    // verbatim, and a `level`, `context` or `message` key in it would otherwise forge the whole line.
     const logEntry = {
       timestamp,
       level,
       context: contextName,
       message,
-      ...metadata,
+      ...Object.fromEntries(
+        Object.entries(metadata).filter(([key]) => !STRUCTURAL_KEYS.has(key) && key !== 'requestId'),
+      ),
+      ...(trace !== undefined ? { trace } : {}),
       ...(requestId ? { requestId } : {}),
     };
 

@@ -12,7 +12,7 @@ This example demonstrates how to receive OpenWA webhooks using n8n and forward i
 
 1. **Import the Workflow**: Open n8n, click the "Import from file" option, and select the [`workflow.json`](./workflow.json) file.
 2. **Set the Discord Webhook URL**: Open the Post to Discord node and replace the placeholder URL with your Discord webhook URL. Paste the URL itself rather than reading it from `$env`: n8n 2.0 and later block `$env` in expressions by default.
-3. **Protect the Webhook**: Open the OpenWA Webhook node, set **Authentication** to **Header Auth**, and create a Header Auth credential with **Name** `X-Webhook-Token` and a long random **Value**. Without it, anyone who learns the URL can post into your Discord channel.
+3. **Protect the Webhook**: Open the OpenWA Webhook node, set **Authentication** to **Header Auth**, and create a Header Auth credential with **Name** `X-Webhook-Token` and a long random **Value**. Without it, anyone who learns the URL can post into your Discord channel. Header Auth only guards the n8n URL: the message text still comes from any WhatsApp sender, so the workflow sends it with Discord's `allowed_mentions: { "parse": [] }` and a message cannot ping `@everyone`, `@here`, a role, or a user.
 4. **Get the Webhook URL**: Publish the workflow (activate it on n8n 1.x) and copy the **Production URL** from the OpenWA Webhook node (e.g., `https://n8n.example.com/webhook/openwa-discord`).
 5. **Register in OpenWA**: Register the Production URL for the `message.received` event, with the same header and value:
 
@@ -42,8 +42,8 @@ This workflow expects the standard OpenWA webhook payload for the `message.recei
   "event": "message.received",
   "timestamp": "2024-01-15T10:30:00Z",
   "sessionId": "default",
-  "idempotencyKey": "a1b2c3d4e5f6...",
-  "deliveryId": "9f8e7d6c5b4a...",
+  "idempotencyKey": "msg_default_3EB0F5A2B4C..._f1e2d3c4-b5a6-7890-1234-567890abcdef",
+  "deliveryId": "dlv_0f8c1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
   "data": {
     "id": "3EB0F5A2B4C...",
     "chatId": "628123456789@c.us",
@@ -55,4 +55,4 @@ This workflow expects the standard OpenWA webhook payload for the `message.recei
 }
 ```
 
-The workflow posts `{{ $json.body.data.author || $json.body.data.from }}` as the sender and `{{ $json.body.data.body }}` as the message. In a group, `from` is the group and `author` is the member who sent the message; a direct message has no `author`, so `from` is used.
+The workflow posts `data.author || data.from` as the sender and `data.body` as the message. In a group, `from` is the group and `author` is the member who sent the message; a direct message has no `author`, so `from` is used. Discord rejects a message over 2000 characters, and n8n has already answered OpenWA by then, so nothing would retry it; the workflow therefore cuts a longer message at 2000 characters.

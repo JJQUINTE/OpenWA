@@ -76,11 +76,13 @@ const client = new OpenWAClient({
 });
 
 async function main() {
-  // Start a session and bring the WhatsApp connection up.
-  await client.sessions.start('my-session');
+  // Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+  // afterwards, find its id with client.sessions.list({ name: 'my-session' }).
+  const session = await client.sessions.create({ name: 'my-session' });
+  await client.sessions.start(session.id);
 
   // Send a text message.
-  const result = await client.messages.sendText('my-session', {
+  const result = await client.messages.sendText(session.id, {
     chatId: '628123456789@c.us',
     text: 'Hello from the OpenWA SDK!',
   });
@@ -103,13 +105,13 @@ const { OpenWAClient } = require('@rmyndharis/openwa');
 
 The constructor takes a single `OpenWAClientOptions` object. `baseUrl` and `apiKey` are required (the constructor throws synchronously if either is missing).
 
-| Option           | Type                     | Required | Default            | Description                                                                                                                                                                    |
-| ---------------- | ------------------------ | -------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `baseUrl`        | `string`                 | yes      | —                  | Base URL of the OpenWA API, e.g. `http://localhost:2785`. A trailing slash is trimmed; a path prefix (e.g. `https://host/v1`) is preserved.                                    |
-| `apiKey`         | `string`                 | yes      | —                  | API key sent as the `X-API-Key` header on every request.                                                                                                                       |
-| `timeoutMs`      | `number`                 | no       | `30000`            | Per-request timeout in milliseconds. Overridable per call via `RequestOptions.timeoutMs` on the raw `request()` method.                                                        |
-| `defaultHeaders` | `Record<string, string>` | no       | `{}`               | Headers merged onto every request. The `Content-Type: application/json` and `X-API-Key` headers always take precedence.                                                        |
-| `fetch`          | `FetchLike`              | no       | `globalThis.fetch` | Injectable transport (the WHATWG `fetch` signature). Use this to wrap requests with retry/observability middleware, or to supply a `fetch` on runtimes that lack a global one. |
+| Option           | Type                     | Required | Default            | Description                                                                                                                                                                                                                 |
+| ---------------- | ------------------------ | -------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl`        | `string`                 | yes      | —                  | Base URL of the OpenWA API, e.g. `http://localhost:2785`. A trailing slash is trimmed; a path prefix (e.g. `https://host/v1`) is preserved.                                                                                 |
+| `apiKey`         | `string`                 | yes      | —                  | API key sent as the `X-API-Key` header on every request.                                                                                                                                                                    |
+| `timeoutMs`      | `number`                 | no       | `30000`            | Per-request timeout in milliseconds; `0` or `Infinity` turns it off, and a value that is not a non-negative number throws a `TypeError`. Overridable per call via `RequestOptions.timeoutMs` on the raw `request()` method. |
+| `defaultHeaders` | `Record<string, string>` | no       | `{}`               | Headers merged onto every request. The `Content-Type: application/json` and `X-API-Key` headers always take precedence.                                                                                                     |
+| `fetch`          | `FetchLike`              | no       | `globalThis.fetch` | Injectable transport (the WHATWG `fetch` signature). Use this to wrap requests with retry/observability middleware, or to supply a `fetch` on runtimes that lack a global one.                                              |
 
 ### Resources & Methods
 
@@ -376,7 +378,7 @@ import {
 } from '@rmyndharis/openwa';
 
 try {
-  await client.messages.sendText('my-session', {
+  await client.messages.sendText(sessionId, {
     chatId: '628123456789@c.us',
     text: 'Hi!',
   });
@@ -440,12 +442,13 @@ client = OpenWAClient(
     api_key="owa_k1_…",
 )
 
-# Create then start a session
-client.sessions.create({"name": "my-session"})
-client.sessions.start("my-session")
+# Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+# afterwards, find its id with client.sessions.list({"name": "my-session"}).
+session = client.sessions.create({"name": "my-session"})
+client.sessions.start(session["id"])
 
 # Send a text message
-result = client.messages.send_text("my-session", {
+result = client.messages.send_text(session["id"], {
     "chatId": "628123456789@c.us",
     "text": "Hello from the OpenWA Python SDK!",
 })
@@ -748,7 +751,7 @@ from openwa import (
 client = OpenWAClient(base_url="http://localhost:2785", api_key="owa_k1_…")
 
 try:
-    client.messages.send_text("my-session", {
+    client.messages.send_text(session_id, {
         "chatId": "628123456789@c.us",
         "text": "Hi!",
     })
@@ -804,9 +807,12 @@ $client = new Client([
     'apiKey'  => 'owa_k1_…',
 ]);
 
-$client->sessions->start('my-session');
+// Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+// afterwards, find its id with $client->sessions->list(['name' => 'my-session']).
+$session = $client->sessions->create(['name' => 'my-session']);
+$client->sessions->start($session['id']);
 
-$result = $client->messages->sendText('my-session', [
+$result = $client->messages->sendText($session['id'], [
     'chatId' => '628123456789@c.us',
     'text'   => 'Hello from the OpenWA PHP SDK!',
 ]);
@@ -827,13 +833,14 @@ Two escape hatches sit on the client itself:
 
 The constructor takes a single associative `$config` array:
 
-| Key              | Type                           | Default          | Description                                                                                                                                                        |
-| ---------------- | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `baseUrl`        | `string`                       | — (**required**) | API base URL, e.g. `http://localhost:2785`. A trailing `/` is stripped; any path prefix (e.g. `/v1` behind a proxy) is preserved.                                  |
-| `apiKey`         | `string`                       | — (**required**) | Sent as the `X-API-Key` header on every request.                                                                                                                   |
-| `timeout`        | `float`                        | `30.0`           | Per-request timeout in seconds.                                                                                                                                    |
-| `httpClient`     | `?\GuzzleHttp\ClientInterface` | `null`           | Inject a Guzzle client (e.g. one built on a `MockHandler`) for testing or middleware. When `null`, a default Guzzle client is created with the configured timeout. |
-| `defaultHeaders` | `array<string,string>`         | `[]`             | Extra headers applied on every request, **under** the SDK's auth/JSON headers (which always win).                                                                  |
+| Key                 | Type                           | Default          | Description                                                                                                                                                        |
+| ------------------- | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `baseUrl`           | `string`                       | — (**required**) | API base URL, e.g. `http://localhost:2785`. A trailing `/` is stripped; any path prefix (e.g. `/v1` behind a proxy) is preserved.                                  |
+| `apiKey`            | `string`                       | — (**required**) | Sent as the `X-API-Key` header on every request.                                                                                                                   |
+| `timeout`           | `float`                        | `30.0`           | Per-request timeout in seconds.                                                                                                                                    |
+| `httpClient`        | `?\GuzzleHttp\ClientInterface` | `null`           | Inject a Guzzle client (e.g. one built on a `MockHandler`) for testing or middleware. When `null`, a default Guzzle client is created with the configured timeout. |
+| `defaultHeaders`    | `array<string,string>`         | `[]`             | Extra headers applied on every request, **under** the SDK's auth/JSON headers (which always win).                                                                  |
+| `allowInsecureHttp` | `bool`                         | `false`          | Skip the `error_log()` warning written for an `http://` `baseUrl` whose host is not localhost (e.g. a private Docker network or a TLS-terminating proxy).          |
 
 Missing `baseUrl` or `apiKey` throws `OpenWA\Exceptions\OpenWAException` from the constructor.
 
@@ -1090,7 +1097,7 @@ use OpenWA\Exceptions\OpenWATimeoutException;
 use OpenWA\Exceptions\OpenWAApiException;
 
 try {
-    $result = $client->messages->sendText('my-session', [
+    $result = $client->messages->sendText($sessionId, [
         'chatId' => '628123456789@c.us',
         'text'   => 'Hello!',
     ]);
@@ -1111,7 +1118,7 @@ try {
 
 - **Redirects are never followed.** Guzzle is configured with `allow_redirects => false`, so a `3xx` surfaces as an `OpenWAApiException` rather than being followed — the `X-API-Key` header is never re-sent to a redirect target.
 - **Auth/JSON headers take precedence.** `defaultHeaders` are merged in first, then `X-API-Key`, `Content-Type: application/json`, and `Accept: application/json` are applied on top, so they can't be clobbered.
-- **Path segments are percent-encoded.** Ids (chat/message/group ids, session names) pass through `encodeSegment()`, which `rawurlencode`s the value but keeps the WhatsApp-id-safe characters `@`, `:`, and `+` readable — so a value containing `/`, `#`, or `?` cannot break out of its path position.
+- **Path segments are percent-encoded.** Ids (session/chat/message/group ids) pass through `encodeSegment()`, which `rawurlencode`s the value but keeps the WhatsApp-id-safe characters `@`, `:`, and `+` readable — so a value containing `/`, `#`, or `?` cannot break out of its path position.
 - **Base-URL path prefix is preserved.** The base URL has its trailing `/` trimmed and requests are issued against an absolute `baseUrl . $path`; Guzzle's `base_uri` is intentionally unset, so a prefix like `/v1` behind a reverse proxy is retained.
 - **Null query values are dropped.** Absent optional query parameters (`null`) are filtered out before the request, so they are never sent.
 - **No automatic retries.** A failed request throws immediately; wrap calls in your own backoff if you need retries (notably for `429`). The injectable `httpClient` is the extension point for retry/observability middleware.

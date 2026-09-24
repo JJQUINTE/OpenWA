@@ -40,7 +40,7 @@ before(async () => {
   const { installJsdomGlobals } = await import('../test-helpers/jsdom.ts');
   await installJsdomGlobals();
   installFetchStub();
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   const { i18nReady } = await import('../i18n/index.ts');
   await i18nReady;
   rtl = await import('@testing-library/react');
@@ -98,4 +98,36 @@ test('a failed refetch keeps the cached list and flags the error above it', asyn
   await rtl.act(() => queryClient!.refetchQueries({ queryKey: ['webhooks'] }));
   await rtl.screen.findByText('Failed to load data');
   rtl.screen.getByText('https://example.test/hook');
+});
+
+test('the filter badge popover names enum values in words, like the filter builder', async () => {
+  webhooksStatus = 200;
+  webhookList = [
+    {
+      id: 'w1',
+      sessionId: 'sess-1',
+      url: 'https://example.test/hook',
+      events: ['message.received'],
+      active: true,
+      filters: {
+        conditions: [
+          { field: 'type', operator: 'is', value: ['image', 'unknown', 'future-type'] },
+          { field: 'kind', operator: 'isNot', value: ['individual'] },
+          { field: 'sender', operator: 'is', value: ['628123@c.us'] },
+        ],
+      },
+    },
+  ];
+  renderWebhooks();
+  const badge = (await rtl.screen.findByText('3 filters')).closest('.filter-badge') as HTMLElement;
+  rtl.fireEvent.focus(badge);
+
+  const rows = Array.from(document.querySelectorAll('.filter-popover-row')).map(r => r.textContent);
+  assert.deepEqual(rows, [
+    // An unmapped value stays raw rather than disappearing.
+    'Message type is Image, Unknown type, future-type',
+    'Chat kind is not Individual',
+    // A contact field has no labels; its JIDs are shown as they are.
+    'Sender is 628123@c.us',
+  ]);
 });

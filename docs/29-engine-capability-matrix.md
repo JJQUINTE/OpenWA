@@ -59,7 +59,9 @@ flowchart LR
 
 Key adapter facts:
 
-- **Engine is chosen per session** (`wwjs` is the default, `baileys` the browser-free alternative).
+- **Engine is selected once per deployment** by `ENGINE_TYPE` (`whatsapp-web.js` is the default,
+  `baileys` the browser-free alternative); every session on the gateway runs the same engine, and
+  switching engines needs a restart.
   The REST surface is identical for both; availability differences surface only as 501s, which the
   matrix in 29.4 enumerates.
 - **The 501 contract is deliberate.** A capability the engine cannot deliver throws
@@ -908,10 +910,15 @@ adapter boundary — none silently stubs.
   `sendAudioMessage`, `sendDocumentMessage` and `sendStickerMessage` are ✅ on wwjs for chats and
   groups, but a `<id>@newsletter` recipient throws `ChannelMediaNotSupportedError` (a
   `NotImplementedException` → HTTP 501) at `ensureNotChannelRecipient`
-  (`wwebjs-messaging.ts:425` for the media funnel, `:492` for stickers). whatsapp-web.js calls
+  (`wwebjs-messaging.ts:446` for the media funnel, `:515` for stickers). whatsapp-web.js calls
   `msg.avParams()`, removed in a recent WA Web build (upstream wwebjs#201823, unresolved).
-  Text→channel is unaffected, and Baileys has no such restriction, so these five rows answer `501`
-  without a per-row ❌ in 29.4.
+  Unquoted text→channel is unaffected, and Baileys has no such restriction, so these five rows answer
+  `501` without a per-row ❌ in 29.4. A few other sends answer `501` on wwjs by recipient, because
+  whatsapp-web.js drops them without touching the page (`Client.js` `sendMessage` returns `null`): a
+  reply (any send carrying a quoted message), a location or a contact card to a channel,
+  `status@broadcast` or a broadcast list, and a poll or a sticker to `status@broadcast` or a
+  broadcast list. `ensureSendable` (`wwebjs-messaging.ts:206`) refuses them before the library is
+  called, so nothing is sent. The Baileys adapter refuses none of them.
 - **`sendStickerMessage` — what each engine converts.** Both engines guarantee the payload really is
   WebP, but they reach it differently and they do not accept the same inputs. whatsapp-web.js passes
   `sendMediaAsSticker: true`, and `Util.formatToWebpSticker` converts `image/*` **and** `video/*`
@@ -924,10 +931,16 @@ adapter boundary — none silently stubs.
   `400` on Baileys. ffmpeg is deliberately not wired in on the Baileys side: the binary ships only
   in the Docker image, so depending on it would make the same request succeed or fail depending on
   how the gateway was installed.
-- **`deleteStatus` (baileys).** Marked ✅ (no throw), but the `sendMessage(status@broadcast,
-{delete})` revoke shape is _empirically unverified_ — only posting was live-spiked. May fall back
-  to 501 if WA rejects the shape. On wwjs it calls `revokeStatusMessage(statusId)` (own status
-  only).
+- **`deleteStatus` (baileys).** Baileys sends a status stanza, the revoke included, to exactly its
+  `statusJidList`, so the revoke is addressed to the recipients the adapter remembered when it posted
+  the status. It keeps them in memory for 24 hours, so a status this session did not post in the last
+  24 hours (one posted from the phone or from another node, or before the session's engine was last
+  created: a process restart, a session stop and start, or a reconnect the gateway runs itself, such
+  as after a failed liveness check) is refused with `403` (`EngineRefusedError`) instead of a revoke
+  that reaches nobody while the status stays up. The transient reconnects Baileys runs on its own keep
+  the same engine, and the list with it.
+  The `sendMessage(status@broadcast, {delete})` revoke shape is _empirically unverified_: only posting
+  was live-spiked. On wwjs it calls `revokeStatusMessage(statusId)` (own status only).
 - **`getContactStatus` / `getContactStatuses` (wwjs).** `Status.type` is the `text|image|video`
   union — audio/other story types collapse to `text`.
 - **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** All
@@ -968,6 +981,11 @@ adapter boundary — none silently stubs.
 - **`deleteContact` addressing.** wwjs addresses by phone number
   (`deleteAddressbookContact`), Baileys by JID (`removeContact`) — the adapter converts.
 - **`deleteMessage` (baileys, `forEveryone=false`).** Wired via `chatModify({deleteForMe})`.
+  `forEveryone=true` on a message the account cannot revoke (not its own, and not in a group it
+  administers) falls back to that same delete-for-me, as whatsapp-web.js does. WhatsApp ignores such
+  a revoke while the send still resolves, so sending it would report a deletion that never happened.
+  When the group's member list shows no row the gateway can identify as the account, admin status is
+  unknown and the revoke is still sent.
 
 ## 29.8 Snapshot summary
 

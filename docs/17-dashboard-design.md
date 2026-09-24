@@ -701,7 +701,8 @@ export default defineConfig({
   server: {
     port: 2886,
     proxy: {
-      '/api': {
+      // Trailing slash: a plain '/api' prefix would also proxy the /api-keys SPA route.
+      '/api/': {
         target: 'http://localhost:2785',
         changeOrigin: true,
         secure: false,

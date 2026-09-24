@@ -1,6 +1,7 @@
 import { DataSource, Repository } from 'typeorm';
 import { IngressEvent } from './entities/ingress-event.entity';
 import { IntegrationDeliveryFailure } from './entities/integration-delivery-failure.entity';
+import { PluginInstance } from './entities/plugin-instance.entity';
 import { IngressReconcilerService, IngressReconcilerOptions } from './ingress-reconciler.service';
 import { IngressEnqueueService } from './ingress-enqueue.service';
 import { PluginInstanceService } from './plugin-instance.service';
@@ -28,12 +29,15 @@ describe('IngressReconcilerService.sweep', () => {
     ds = new DataSource({
       type: 'better-sqlite3',
       database: ':memory:',
-      entities: [IngressEvent, IntegrationDeliveryFailure],
+      entities: [IngressEvent, IntegrationDeliveryFailure, PluginInstance],
       synchronize: true,
     });
     await ds.initialize();
     events = ds.getRepository(IngressEvent);
     failures = ds.getRepository(IntegrationDeliveryFailure);
+    await ds
+      .getRepository(PluginInstance)
+      .save({ id: 'plug:inst', pluginId: 'plug', instanceId: 'inst', secret: 's', enabled: true });
     enqueue = jest.fn().mockResolvedValue({ outcome: 'queued' });
     getPlugin = jest.fn().mockReturnValue(undefined);
     resolveInstance = jest.fn().mockResolvedValue({ enabled: true });
@@ -115,11 +119,31 @@ describe('IngressReconcilerService.sweep', () => {
 
     const stats = await service.sweep(OPTS);
 
-    expect(stats).toMatchObject({ scanned: 0, skipped: 1 });
+    expect(stats).toMatchObject({ scanned: 0, skipped: 0 }); // filtered out before it can hold a batch slot
     expect(enqueue).not.toHaveBeenCalled();
     const event = await stored(id);
     expect(event.dispatchState).toBe('pending');
     expect(event.dispatchAttempts).toBe(0);
+  });
+
+  it('does not let rows it cannot replay starve a later row of an enabled instance', async () => {
+    await ds
+      .getRepository(PluginInstance)
+      .save({ id: 'plug:off', pluginId: 'plug', instanceId: 'off', secret: 's', enabled: false });
+    resolveInstance.mockImplementation((_p: string, i: string) =>
+      Promise.resolve(i === 'off' ? { enabled: false } : { enabled: true }),
+    );
+    const disabled = await insertEvent({ instanceId: 'off', createdAt: minutesAgo(10) });
+    await insertEvent({ instanceId: 'gone', createdAt: minutesAgo(9) }); // instance deleted
+    await insertEvent({ payload: null, createdAt: minutesAgo(8) });
+    const live = await insertEvent({ createdAt: minutesAgo(5) });
+
+    const stats = await service.sweep({ ...OPTS, batchSize: 3 });
+
+    expect(stats.replayed).toBe(1);
+    expect(enqueuedJobs().map(([d]) => d.instanceId)).toEqual(['inst']);
+    expect((await stored(live)).dispatchState).toBe('dispatched');
+    expect((await stored(disabled)).dispatchState).toBe('pending'); // replayed once re-enabled
   });
 
   it('re-derives the conversation lane from the manifest route instead of degrading per-instance', async () => {

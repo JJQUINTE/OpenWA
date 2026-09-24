@@ -514,8 +514,8 @@ export class SessionEngineLifecycle {
   isEngineActive(id: string): boolean {
     if (this.engines.has(id) || this.initializingSessions.has(id)) return true;
     // Reconnect state counts only while an attempt is actually pending: a timer armed by
-    // scheduleReconnect, or one that has fired and is running executeReconnect (which leaves the
-    // spent handle in place and has already counted its attempt). The entry start() creates up
+    // scheduleReconnect, or one that has fired and is running executeReconnect (which has already
+    // counted its attempt). The entry start() creates up
     // front — {attempts: 0, timer: null} — is dormant: a start that then failed leaves nothing
     // that will ever re-register an engine, and treating it as liveness would pin the claim to
     // this node forever.
@@ -1006,6 +1006,11 @@ export class SessionEngineLifecycle {
 
     const state = this.reconnectStates.get(id);
     if (!state) return;
+    // A reconnect is already armed for this episode. Another disconnect report (the liveness watchdog
+    // re-probes a wedged engine that still says READY) must neither consume an attempt nor push the
+    // pending one back: re-arming each time kept a long base delay from ever firing. Also keeps two
+    // back-to-back disconnects from stacking two timers and double-initializing the engine.
+    if (state.timer) return;
 
     // All the backoff rules (budget, exponential delay, loop cadence) live in the
     // pure policy; this method only applies the effects the decision calls for.
@@ -1080,10 +1085,9 @@ export class SessionEngineLifecycle {
       });
     }
 
-    // Clear any timer a prior scheduleReconnect left pending so two back-to-back disconnects
-    // don't stack two timers (which would run executeReconnect twice and double-init the engine).
-    if (state.timer) clearTimeout(state.timer);
     state.timer = setTimeout(() => {
+      // Spent: the attempt's own failure path schedules the next one through the guard above.
+      state.timer = null;
       void this.executeReconnect(id, session, state);
     }, delay);
   }
@@ -1130,7 +1134,7 @@ export class SessionEngineLifecycle {
   private async executeReconnect(id: string, session: Session, state: ReconnectState): Promise<void> {
     // The session may have been stopped/deleted before this fired — don't resurrect it.
     if (this.stoppingSessions.has(id)) {
-      // Drop the spent state too: its non-null timer would otherwise keep isEngineActive() pinning the lease.
+      // Drop the spent state too: its attempt count would otherwise keep isEngineActive() pinning the lease.
       if (this.reconnectStates.get(id) === state) this.cancelReconnect(id);
       return;
     }

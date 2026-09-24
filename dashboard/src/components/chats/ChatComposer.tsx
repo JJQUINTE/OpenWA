@@ -73,6 +73,12 @@ function ChatComposer({
   const queryClient = useQueryClient();
 
   const [sending, setSending] = useState<boolean>(false);
+  // "[Image]" for a non-text message; an unexpected type still reads as itself rather than a raw key.
+  // An `unknown` one quotes as "[Message]" on purpose: here it is a message, not a type category
+  // (the chart and the webhook filter name it through messageTypeLabelKey instead).
+  const typeLabel = (type: string) => `[${t(`chats.messageType.${type}`, { defaultValue: type })}]`;
+  // Audio carries no caption on either engine, so text typed next to it is never sent with it.
+  const attachmentIsAudio = attachment?.mimetype.startsWith('audio/') ?? false;
 
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
   // Monotonic token invalidating an in-flight attachment FileReader: picking a second file (or
@@ -194,7 +200,8 @@ function ChatComposer({
     const textToSend = messageInput.trim();
     if (!textToSend && !attachment) return;
 
-    setMessageInput('');
+    // Text that cannot travel with an audio file stays in the input to be sent as its own message.
+    if (!attachmentIsAudio) setMessageInput('');
     setSending(true);
 
     const tempId = `temp_${Date.now()}`;
@@ -204,9 +211,7 @@ function ChatComposer({
       from: 'me',
       to: activeChat.id,
       body: attachment
-        ? attachment.mimetype.startsWith('image/') ||
-          attachment.mimetype.startsWith('video/') ||
-          attachment.mimetype.startsWith('audio/')
+        ? attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')
           ? textToSend
           : attachment.filename
         : textToSend,
@@ -214,7 +219,7 @@ function ChatComposer({
       direction: 'outgoing',
       status: 'pending',
       createdAt: new Date().toISOString(),
-      metadata: buildOptimisticMetadata(attachment, replyingTo),
+      metadata: buildOptimisticMetadata(attachment, replyingTo, typeLabel),
     };
 
     appendMessage(selectedSessionId, activeChat.id, tempMessage);
@@ -269,7 +274,8 @@ function ChatComposer({
       upsertCachedMessage(queryClient, sendKey, reconciled, { dropId: tempId });
 
       // Update sidebar chat list (move active chat to the top with the new snippet)
-      const snippet = currentAttachment ? `[${currentAttachment.mimetype.split('/')[0]}]` : textToSend;
+      // Named by the type the bubble uses, not the MIME major type: a PDF is a document, not "application".
+      const snippet = currentAttachment ? typeLabel(messageTypeFromMime(currentAttachment.mimetype)) : textToSend;
       const sentAt = Math.floor(Date.now() / 1000);
       setChats(prevChats => promoteChatWithSnippet(prevChats, activeChat.id, snippet, sentAt));
     } catch (err) {
@@ -327,7 +333,7 @@ function ChatComposer({
               })}
             </div>
             <div className="replying-to-body">
-              {replyingTo.type !== 'text' ? `[${replyingTo.type}]` : replyingTo.body}
+              {replyingTo.type !== 'text' ? typeLabel(replyingTo.type) : replyingTo.body}
             </div>
           </div>
           <button className="btn-close-reply" onClick={() => setReplyingTo(null)}>
@@ -365,7 +371,7 @@ function ChatComposer({
             type="text"
             placeholder={
               canWrite
-                ? attachment
+                ? attachment && !attachmentIsAudio
                   ? t('chats.captionPlaceholder')
                   : t('chats.messagePlaceholder')
                 : t('chats.noPermission')

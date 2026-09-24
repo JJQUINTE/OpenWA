@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidInstanceId, isValidInstanceSecret, parseInstanceConfig } from './instanceForm.ts';
+import { isValidInstanceId, isValidInstanceSecret, parseEditScope, parseInstanceConfig } from './instanceForm.ts';
 
 test('isValidInstanceId accepts the backend charset, rejects the rest', () => {
   assert.equal(isValidInstanceId('acme-support_1'), true);
@@ -24,4 +24,15 @@ test('parseInstanceConfig: blank → undefined, object → parsed, invalid → n
   assert.deepEqual(parseInstanceConfig('{"a":1}'), { ok: true, value: { a: 1 } });
   assert.equal(parseInstanceConfig('nope').ok, false);
   assert.equal(parseInstanceConfig('[1,2]').ok, false); // array is not a config object
+});
+
+test('parseEditScope: a blank field resets a bound scope to all sessions', () => {
+  assert.equal(parseEditScope('sess-a', ' sess-b '), 'sess-b');
+  assert.equal(parseEditScope('sess-a', 'sess-a'), 'sess-a');
+  assert.equal(parseEditScope(null, 'sess-b'), 'sess-b');
+  // Blank on an all-sessions instance: omit, nothing changes.
+  assert.equal(parseEditScope(null, '  '), undefined);
+  // Blank on a scoped instance: null, which PATCH reads as all sessions (an omitted field would keep it).
+  assert.equal(parseEditScope('sess-a', ''), null);
+  assert.equal(parseEditScope('*', ''), null);
 });

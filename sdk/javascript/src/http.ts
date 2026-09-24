@@ -25,7 +25,7 @@ export interface RequestOptions {
   query?: object;
   /** JSON-serializable request body. */
   body?: unknown;
-  /** Override the per-client timeout (ms) for this single request. */
+  /** Override the per-client timeout (ms) for this single request; `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Extra headers merged on top of the client defaults (auth/JSON win). */
   headers?: Record<string, string>;
@@ -36,7 +36,7 @@ export interface ClientConfig {
   baseUrl: string;
   /** API key sent as `X-API-Key`. */
   apiKey: string;
-  /** Per-request timeout in milliseconds (default 30000). */
+  /** Per-request timeout in milliseconds (default 30000); `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Default headers applied to every request. */
   defaultHeaders?: Record<string, string>;
@@ -114,6 +114,21 @@ export async function requestBytes(
 }
 
 /**
+ * A timeout in milliseconds, coerced once: untyped JS config can pass a numeric string (process.env).
+ * `0` or `Infinity` turns the timeout off, so any other value that is not a non-negative number (an
+ * empty variable, `30s`) is refused rather than read as "off", which would let a request hang forever.
+ */
+export function toTimeoutMs(value: unknown): number {
+  const ms = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+  if (Number.isNaN(ms) || ms < 0) {
+    throw new TypeError(
+      `OpenWA: timeoutMs must be a non-negative number of milliseconds, got ${JSON.stringify(value)}`,
+    );
+  }
+  return ms;
+}
+
+/**
  * Shared transport for {@link request} and {@link requestBytes}: builds the
  * URL/headers, performs the fetch under the per-request timeout, translates a
  * non-2xx into a typed error, then hands the response to `consume` — still
@@ -125,23 +140,33 @@ async function send<T>(
   consume: (res: Response) => Promise<T>,
 ): Promise<T> {
   const url = buildUrl(config.baseUrl, options.path, options.query);
-  const timeoutMs = options.timeoutMs ?? config.timeoutMs;
+  const timeoutMs = toTimeoutMs(options.timeoutMs ?? config.timeoutMs);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // 0 or Infinity means no client timeout. setTimeout fires after 1 ms for a delay that is not
+  // finite or exceeds 2^31-1, so cap it rather than abort every request.
+  const timer =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), Math.min(timeoutMs, 2_147_483_647))
+      : undefined;
 
   // Auth and JSON content-type WIN over caller-supplied defaults/per-request headers — the SDK only
   // ever sends a JSON body, and this matches the Python and PHP SDKs (which force JSON) and the
-  // documented "JSON headers win" contract. Put them last so a defaultHeaders Content-Type can't clobber.
-  const headers: Record<string, string> = {
-    ...config.defaultHeaders,
-    ...options.headers,
-    'Content-Type': 'application/json',
-    'X-API-Key': config.apiKey,
-  };
+  // documented "JSON headers win" contract. Header names are case-insensitive and fetch joins duplicates,
+  // so drop a caller's copy in any case before adding ours; putting ours last is not enough.
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries({ ...config.defaultHeaders, ...options.headers })) {
+    const lower = name.toLowerCase();
+    if (lower !== 'content-type' && lower !== 'x-api-key') headers[name] = value;
+  }
+  headers['Content-Type'] = 'application/json';
+  headers['X-API-Key'] = config.apiKey;
 
+  // Called without a receiver: a platform fetch passed in as `fetch: globalThis.fetch` throws
+  // "Illegal invocation" in browsers and Workers when invoked as a method of `config`.
+  const doFetch = config.fetch;
   try {
-    const res = await config.fetch(url, {
+    const res = await doFetch(url, {
       method: options.method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

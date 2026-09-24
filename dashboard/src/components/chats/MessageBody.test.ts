@@ -76,3 +76,16 @@ test('a mention inside *bold* renders bold with the <bdi> as a child, not litera
   assert.equal(container.querySelector('strong')?.textContent, 'Reminder @Ravi at 10');
   assert.ok(container.querySelector('strong bdi'), 'the mention sits inside the bold element');
 });
+
+test('a backtick in a push name cannot pair with one in the body and hand the name tail to Linkify', () => {
+  const names = buildMentionNameMap([
+    { author: '6281112345@c.us', chatName: 'a`evil.com' },
+    { author: '6281112346@c.us', chatName: '`x`evil.com/login' },
+  ]);
+  for (const body of ['` look @6281112345', 'please ask @6281112346 about it']) {
+    const { container } = rtl.render(createElement(MessageBody, { text: resolveMentions(body, names) }));
+    assert.equal(container.querySelectorAll('a').length, 0, body);
+    assert.equal(container.querySelectorAll('bdi').length, 1, body);
+    rtl.cleanup();
+  }
+});

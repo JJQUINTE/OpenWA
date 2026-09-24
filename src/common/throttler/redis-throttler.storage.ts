@@ -38,8 +38,10 @@ return {hits, ttl}
  *
  * The guard sets `Retry-After: timeToBlockExpire` and `RateLimit-Reset: timeToExpire` — both HTTP
  * conventions are SECONDS — so the values here are ceil(ms / 1000), matching the default in-memory
- * storage. Fail-OPEN on Redis error: rate limiting is a secondary control, and fail-closed would
- * self-DoS the gateway (every request 500s on the storage call).
+ * storage. Unlike that storage there is no separate block key: the over-limit counter IS the block,
+ * so it lifts when the window expires and Retry-After advertises that, not blockDuration.
+ * Fail-OPEN on Redis error: rate limiting is a secondary control, and fail-closed would self-DoS the
+ * gateway (every request 500s on the storage call).
  *
  * This class owns the client lifecycle: it is registered as the `ThrottlerStorage` provider by
  * @nestjs/throttler (its ThrottlerStorageProvider returns the configured instance), so Nest invokes
@@ -100,7 +102,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnModuleDestroy 
         totalHits: hits,
         timeToExpire: ttlMs > 0 ? Math.ceil(ttlMs / 1000) : 0,
         isBlocked,
-        timeToBlockExpire: isBlocked ? Math.ceil(blockDuration / 1000) : 0,
+        timeToBlockExpire: isBlocked ? Math.max(1, Math.ceil(ttlMs / 1000)) : 0,
       };
     } catch (error) {
       this.logger.warn('Redis throttler storage failed; failing OPEN (allowing)', {

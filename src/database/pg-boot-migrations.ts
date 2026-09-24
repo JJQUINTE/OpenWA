@@ -58,23 +58,29 @@ export async function createBootDataSource(
   // DataSource itself never starts them unsynchronized inside initialize(). The UTC pin is merged in
   // at the same point, because this is the one place the runtime postgres data connection is built
   // (the migration CLI's own data source carries it directly).
-  const dataSource = createDataSource({
-    ...options,
-    migrationsRun: false,
-    extra: { ...(options.extra as Record<string, unknown> | undefined), ...postgresUtcExtra() },
-  });
+  const build = (extra: Record<string, unknown> | undefined): DataSource =>
+    createDataSource({ ...options, migrationsRun: false, extra: { ...extra, ...postgresUtcExtra() } });
+  const runtimeExtra = options.extra as Record<string, unknown> | undefined;
+
+  // statement_timeout bounds live runtime queries, and pg sends it in the startup packet, so every
+  // statement on a pool built with it inherits the limit. A backfill or index build over a large
+  // table can legitimately run longer, so the chain runs on its own short-lived pool without it (as
+  // the migration CLI does), and the runtime DataSource is built only once the chain is applied.
+  const migrationExtra = { ...runtimeExtra };
+  delete migrationExtra.statement_timeout;
+  const migrator = build(migrationExtra);
   try {
-    await dataSource.initialize();
+    await migrator.initialize();
     // Before any migration writes a row: a connection whose UTC pin did not take stores timestamps in
     // one zone and reads them in another, which nothing downstream can detect (see postgres-utc.ts).
-    await assertDataConnectionUtc(dataSource);
+    await assertDataConnectionUtc(migrator);
     const lockClient = createLockClient(lockClientConfig(options));
     try {
       await lockClient.connect();
       await lockClient.query('SELECT pg_advisory_lock($1, $2)', [...POSTGRES_BOOT_MIGRATION_LOCK_KEYS]);
       try {
         // Same transaction mode DataSource.initialize() passes for the built-in migrationsRun.
-        await dataSource.runMigrations({ transaction: options.migrationsTransactionMode });
+        await migrator.runMigrations({ transaction: options.migrationsTransactionMode });
       } finally {
         // Session-scoped lock: even when the unlock call itself fails, end() below tears the
         // session — and with it the lock — down, so no crashed boot can leave it held.
@@ -85,10 +91,18 @@ export async function createBootDataSource(
     } finally {
       await lockClient.end().catch(() => undefined);
     }
+  } finally {
+    // The migration pool never outlives this block: on success the runtime DataSource below replaces
+    // it, and on failure a half-open one would stack pools across the boot retry loop. The failure
+    // still fails boot via the factory's rejection; a teardown error never masks it.
+    await migrator.destroy().catch(() => undefined);
+  }
+
+  const dataSource = build(runtimeExtra);
+  try {
+    await dataSource.initialize();
+    await assertDataConnectionUtc(dataSource);
   } catch (error) {
-    // Same failure handling as DataSource.initialize()'s own migrate step: never leave a
-    // half-open DataSource behind (the boot retry loop would stack their pools). The error still
-    // fails boot via the factory's rejection.
     await dataSource.destroy().catch(() => undefined);
     throw error;
   }

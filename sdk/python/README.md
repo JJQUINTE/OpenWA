@@ -22,9 +22,12 @@ client = OpenWAClient(
     api_key="owa_k1_…",
 )
 
-client.sessions.start("my-session")
+# Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+# afterwards, find its id with client.sessions.list({"name": "my-session"}).
+session = client.sessions.create({"name": "my-session"})
+client.sessions.start(session["id"])
 
-result = client.messages.send_text("my-session", {
+result = client.messages.send_text(session["id"], {
     "chatId": "628123456789@c.us",
     "text": "Hello from the OpenWA Python SDK!",
 })
@@ -35,7 +38,7 @@ The client is also a context manager (it closes the underlying connection pool o
 
 ```python
 with OpenWAClient(base_url="…", api_key="…") as client:
-    client.messages.send_text("my-session", {"chatId": "…@c.us", "text": "hi"})
+    client.messages.send_text(session_id, {"chatId": "…@c.us", "text": "hi"})
 ```
 
 For tests, pass an httpx transport — no global monkey-patching required:
@@ -54,7 +57,7 @@ The active search provider (built-in DB full-text, or a plugin) answers; if none
 is configured the server returns 501.
 
 ```python
-res = client.search.search({"q": "invoice", "sessionId": "my-session", "limit": 20})
+res = client.search.search({"q": "invoice", "sessionId": session_id, "limit": 20})
 for hit in res["hits"]:
     print(hit["snippet"], hit["score"])
 ```
@@ -77,7 +80,7 @@ the owner node answers 502 or 504.
 from openwa import OpenWANotFoundError
 
 try:
-    client.sessions.get("missing")
+    client.sessions.get("00000000-0000-0000-0000-000000000000")
 except OpenWANotFoundError as e:
     print(e.status)  # 404
 ```

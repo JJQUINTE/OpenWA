@@ -161,7 +161,7 @@ async function signIn(apiKey: string): Promise<void> {
   const input = await screen.findByLabelText('API Key');
   fireEvent.change(input, { target: { value: apiKey } });
   fireEvent.submit(input.closest('form')!);
-  await waitFor(() => assert.ok(localStorage.getItem(ROLE_KEY), 'expected a role to be stored after sign-in'));
+  await waitFor(() => assert.ok(sessionStorage.getItem(ROLE_KEY), 'expected a role to be stored after sign-in'));
   // Give the post-login render and its effects a macrotask to fire before counting requests.
   await new Promise(resolve => setTimeout(resolve, 50));
 }
@@ -174,7 +174,7 @@ test('a fresh sign-in makes exactly one /auth/validate request, feeding the role
   // The login page's own validate is the one request; the startup re-validation effect must not
   // re-fire on the null→key transition that storing the fresh key causes.
   assert.equal(validateCallCount(), 1);
-  assert.equal(localStorage.getItem(ROLE_KEY), 'operator');
+  assert.equal(sessionStorage.getItem(ROLE_KEY), 'operator');
   assert.equal(sessionStorage.getItem(LOGIN_KEY), 'fresh-key');
 });
 
@@ -185,16 +185,16 @@ test('a fresh sign-in with a role-less validate response still degrades to viewe
   await signIn('fresh-key');
 
   assert.equal(validateCallCount(), 1);
-  assert.equal(localStorage.getItem(ROLE_KEY), 'viewer');
+  assert.equal(sessionStorage.getItem(ROLE_KEY), 'viewer');
 });
 
 test('a page reload with a saved key re-validates once at startup and refreshes the cached role', async () => {
   sessionStorage.setItem(LOGIN_KEY, 'saved-key');
-  localStorage.setItem(ROLE_KEY, 'viewer'); // stale cached role
+  sessionStorage.setItem(ROLE_KEY, 'viewer'); // stale cached role
   validateBody = { valid: true, role: 'admin' };
   rtl.render(createElement(App));
 
-  await rtl.waitFor(() => assert.equal(localStorage.getItem(ROLE_KEY), 'admin'));
+  await rtl.waitFor(() => assert.equal(sessionStorage.getItem(ROLE_KEY), 'admin'));
   await new Promise(resolve => setTimeout(resolve, 50));
 
   assert.equal(validateCallCount(), 1);

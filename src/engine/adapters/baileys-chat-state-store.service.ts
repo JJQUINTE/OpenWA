@@ -20,6 +20,10 @@ export interface ChatStateStore {
   remember(sessionId: string, chatId: string, patch: Partial<ChatStateValue>): Promise<void>;
   /** (Re)load the in-memory mirror from the table (boot, and after a full-replace restore). */
   reload(): Promise<void>;
+  /** Forget every chat state of one session (an unlink: the next account to link it starts clean). */
+  clearSession(sessionId: string): Promise<void>;
+  /** Re-read a session's chats known to have no row (a start: another node may have written them since). */
+  forgetAbsent(sessionId: string): void;
 }
 
 const DEFAULT_STATE: ChatStateValue = { muteEndTime: null, archived: false, pinned: false };
@@ -44,6 +48,12 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
   private readonly states = new Map<string, ChatStateValue>();
   /** Repository fallbacks in flight, one per key, so a hot miss path can't stack duplicate queries. */
   private readonly pendingLookups = new Set<string>();
+  /**
+   * Keys the table has no row for, so a chat never muted, archived or pinned (most of them) is not
+   * queried again on every chat-list read. Kept apart from `states` so it never evicts a real row;
+   * bounded by the same cap, and a key leaves it the moment a state is indexed for it.
+   */
+  private readonly absent = new Set<string>();
   private readonly maxEntries: number;
 
   constructor(
@@ -64,6 +74,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
         take: this.maxEntries > 0 ? this.maxEntries : undefined,
       });
       this.states.clear();
+      this.absent.clear();
       for (const row of rows) {
         this.index(this.key(row.sessionId, row.chatId), {
           muteEndTime: row.muteEndTime,
@@ -87,7 +98,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       this.states.set(k, value);
       return value;
     }
-    this.warmFromTable(k, sessionId, chatId);
+    if (!this.absent.has(k)) this.warmFromTable(k, sessionId, chatId);
     return undefined;
   }
 
@@ -98,10 +109,19 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     // miss the persisted row is that base: the read path warms lazily, but the write path upserts every
     // column, so it has to read-through first or a lone pin update on an evicted muted chat wipes its
     // mute. A row absent from the table resolves to DEFAULT_STATE, which is the correct base for a chat
-    // whose state has never been persisted.
+    // whose state has never been persisted. A read that FAILS is not an absent row: with no base to
+    // merge onto, only the patched columns are written (upsert leaves the others as persisted) and the
+    // cache stays cold, so the next read warms from the table instead of from a guess.
     let existing = this.states.get(k);
     if (!existing) {
-      const row = await this.repo.findOne({ where: { sessionId, chatId } }).catch(() => null);
+      let row: ChatState | null;
+      try {
+        row = await this.repo.findOne({ where: { sessionId, chatId } });
+      } catch {
+        await this.persist(sessionId, chatId, patch);
+        this.absent.delete(k);
+        return;
+      }
       existing = row ? { muteEndTime: row.muteEndTime, archived: row.archived, pinned: row.pinned } : DEFAULT_STATE;
     }
     const next: ChatStateValue = { ...existing, ...patch };
@@ -114,12 +134,32 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       return; // nothing changed against the current state; skip the write that would just churn updatedAt
     }
     this.index(k, next);
+    await this.persist(sessionId, chatId, next);
+  }
+
+  private async persist(sessionId: string, chatId: string, values: Partial<ChatStateValue>): Promise<void> {
     try {
-      await this.repo.upsert({ sessionId, chatId, ...next, updatedAt: new Date() }, ['sessionId', 'chatId']);
+      await this.repo.upsert({ sessionId, chatId, ...values, updatedAt: new Date() }, ['sessionId', 'chatId']);
     } catch (err) {
       this.logger.warn(
         `Failed to persist chat state for ${chatId}: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    await this.repo.delete({ sessionId });
+    // Evicted after the delete, so a read-through that raced it cannot leave a deleted row cached.
+    const prefix = `${sessionId}${SEP}`;
+    for (const k of [...this.states.keys()]) {
+      if (k.startsWith(prefix)) this.states.delete(k);
+    }
+  }
+
+  forgetAbsent(sessionId: string): void {
+    const prefix = `${sessionId}${SEP}`;
+    for (const k of [...this.absent]) {
+      if (k.startsWith(prefix)) this.absent.delete(k);
     }
   }
 
@@ -130,8 +170,14 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     void this.repo
       .findOne({ where: { sessionId, chatId } })
       .then(row => {
-        if (row && !this.states.has(k)) {
+        if (this.states.has(k)) return;
+        if (row) {
           this.index(k, { muteEndTime: row.muteEndTime, archived: row.archived, pinned: row.pinned });
+        } else {
+          this.absent.add(k);
+          if (this.maxEntries && this.absent.size > this.maxEntries) {
+            this.absent.delete(this.absent.values().next().value!);
+          }
         }
       })
       .catch(() => undefined)
@@ -139,6 +185,7 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
   }
 
   private index(k: string, value: ChatStateValue): void {
+    this.absent.delete(k);
     this.states.delete(k); // re-insert so the entry moves to the most-recent end even on update
     this.states.set(k, value);
     this.evictIfOverCap();

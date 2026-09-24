@@ -25,9 +25,12 @@ $client = new Client([
     'apiKey'  => 'owa_k1_…',
 ]);
 
-$client->sessions->start('my-session');
+// Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+// afterwards, find its id with $client->sessions->list(['name' => 'my-session']).
+$session = $client->sessions->create(['name' => 'my-session']);
+$client->sessions->start($session['id']);
 
-$result = $client->messages->sendText('my-session', [
+$result = $client->messages->sendText($session['id'], [
     'chatId' => '628123456789@c.us',
     'text'   => 'Hello from the OpenWA PHP SDK!',
 ]);
@@ -38,7 +41,7 @@ For tests, inject a Guzzle client whose handler is a `MockHandler` — no networ
 
 ```php
 $client = new Client([
-    'baseUrl'    => 'http://x',
+    'baseUrl'    => 'http://localhost',
     'apiKey'     => 'k',
     'httpClient' => $mockGuzzleClient,
 ]);
@@ -63,7 +66,7 @@ was never carried out: a forward that fails after the request reached the owner 
 use OpenWA\Exceptions\OpenWANotFoundException;
 
 try {
-    $client->sessions->get('missing');
+    $client->sessions->get('00000000-0000-0000-0000-000000000000');
 } catch (OpenWANotFoundException $e) {
     echo $e->getStatus();  // 404
 }
@@ -72,6 +75,8 @@ try {
 ## Notes
 
 - **Use HTTPS in production** — the API key is sent as `X-API-Key` and is bearer-equivalent.
+  Over plaintext `http://` to a non-localhost host the client writes a warning with `error_log()`;
+  pass `'allowInsecureHttp' => true` to skip it (for example on a private Docker network).
 - The SDK does **not** retry, and **never follows redirects** (so the key is never re-sent to
   a redirect target). Path segments are percent-encoded; a base-URL path prefix (e.g. behind a
   reverse proxy) is preserved.

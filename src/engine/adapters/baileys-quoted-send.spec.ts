@@ -50,6 +50,7 @@ function makeMessaging(stored: unknown = STORED): {
     wasDeletedForEveryone: () => false,
     markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
+    recordMessage: () => undefined,
     rememberOwnSend: () => undefined,
     recordLidMapping: () => undefined,
     getOnMessageCreate: () => undefined,

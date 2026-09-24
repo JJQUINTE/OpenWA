@@ -99,6 +99,25 @@
       "delete": "Mesajı sil"
     },
     "replyingTo": "{{name}} kişisine yanıt veriliyor",
+    "messageType": {
+      "text": "Metin",
+      "image": "Görsel",
+      "video": "Video",
+      "audio": "Ses",
+      "voice": "Sesli mesaj",
+      "document": "Belge",
+      "sticker": "Çıkartma",
+      "location": "Konum",
+      "contact": "Kişi",
+      "poll": "Anket",
+      "call": "Arama",
+      "revoked": "Silinen mesaj",
+      "order": "Sipariş",
+      "product": "Ürün",
+      "masked": "Gizlenen mesaj",
+      "unknown": "Mesaj",
+      "unknownType": "Bilinmeyen tür"
+    },
     "you": "Siz",
     "youPrefix": "Siz: ",
     "yesterday": "Dün",
@@ -121,7 +140,9 @@
       "group": "Grup",
       "channel": "Kanal",
       "status": "Durum",
-      "broadcast": "Toplu Mesaj Listesi"
+      "broadcast": "Toplu Mesaj Listesi",
+      "individual": "Bireysel",
+      "unknown": "Bilinmiyor"
     },
     "tab": {
       "chats": "Sohbetler",
@@ -276,7 +297,8 @@
       "successTitle": "Oturum Oluşturuldu",
       "successDesc": "\"{{name}}\" oturumu başarıyla oluşturuldu",
       "errorTitle": "Oluşturma Başarısız",
-      "errorDefault": "Oturum oluşturulamadı"
+      "errorDefault": "Oturum oluşturulamadı",
+      "tooShort": "Ad en az 3 karakter olmalıdır."
     },
     "delete": {
       "title": "Silmeyi Onayla",
@@ -318,21 +340,21 @@
       "autoRejectCallsHint": "Gelen aramalar çaldığı anda reddedilir. call.received webhook'u yine de ilk olarak tetiklenir. Bir sonraki arama için geçerlidir, yeniden başlatma gerekmez. Yalnızca Baileys motorunda: whatsapp-web.js aramaları reddedemez."
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "Proxy Yapılandırması",
+      "status": "Mevcut",
+      "enabled": "Proxy kullan",
+      "url": "Proxy URL'si",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "{{host}} adresini değiştirmek için yeni bir URL girin (kimlik bilgileri gösterilmez)",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "Yapılandırılmış proxy yok",
+      "hasCredentials": "Kimlik bilgileri kayıtlı ancak gösterilmiyor. Değiştirmek için tam bir URL girin.",
+      "hint": "Değişiklikler çalışan bir bağlantıya değil, oturumun bir sonraki başlatılışında uygulanır. Proxy gerçek ve erişilebilir olmalıdır: erişilemeyen bir değer QR teslimini engeller ve başlatma 504 döndürür.",
+      "createHint": "Yalnızca ağınız WhatsApp'a doğrudan erişemiyorsa gereklidir. Gerçek ve erişilebilir bir proxy olmalıdır.",
+      "invalidUrl": "Geçerli bir http, https, socks4 veya socks5 proxy URL'si girin.",
+      "saveSuccessTitle": "Proxy Kaydedildi",
+      "saveSuccess": "Proxy ayarları kaydedildi. Oturumun bir sonraki başlatılışında uygulanır.",
+      "saveError": "Proxy ayarları kaydedilemedi"
     },
     "actions": {
       "view": "Görüntüle",
@@ -598,7 +620,10 @@
     },
     "empty": {
       "title": "Oluşturulmuş API anahtarı yok",
-      "description": "İsteklerinizin kimliğini doğrulamak için bir API anahtarı oluşturun"
+      "description": "İsteklerinizin kimliğini doğrulamak için bir API anahtarı oluşturun",
+      "loadErrorTitle": "API anahtarları yüklenemedi",
+      "forbiddenTitle": "API anahtarlarına erişim yok",
+      "forbiddenDesc": "API anahtarlarını yönetmek, belirli oturumlarla sınırlı olmayan bir yönetici anahtarı gerektirir."
     },
     "confirm": {
       "deleteTitle": "API Anahtarını Sil",
@@ -651,7 +676,10 @@
       "filteredTitle": "Bu sayfada eşleşme yok",
       "filteredDescription": "Arama yalnızca geçerli sayfayı filtreler. Temizleyin, sayfalar arasında gezinin veya sunucu tarafında önem filtresini kullanın.",
       "filteredServerDescription": "Bu filtrelerle eşleşen log yok. Aramayı genişletmek için önem filtresini ayarlayın."
-    }
+    },
+    "exportFailed": "Denetim kaydı dışa aktarılamadı",
+    "exportTruncated": "Dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Daha eski kayıtları dışa aktarmak için önem filtresini daraltın.",
+    "exportThrottled": "Ağ geçidi denetim günlüğü okumalarını sınırladığı için dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Bir dakika bekleyip yeniden dışa aktarın."
   },
   "messageTester": {
     "title": "Mesaj Test Aracı",
@@ -894,7 +922,8 @@
     "toasts": {
       "saveFailed": "Kaydetme Başarısız"
     },
-    "statusLoadError": "Mevcut altyapı durumu yüklenemedi. Yeniden denemek için sayfayı yenileyin."
+    "statusLoadError": "Mevcut altyapı durumu yüklenemedi. Yeniden denemek için sayfayı yenileyin.",
+    "configLoadError": "Kayıtlı yapılandırma yüklenemedi, bu yüzden burada düzenlenemiyor. Yeniden denemek için sayfayı yenileyin."
   },
   "plugins": {
     "title": "Eklentiler",
@@ -989,7 +1018,6 @@
       "title": "Örnekler (Instances)",
       "description": "Bu entegrasyon için hesap başına örnekler tanımlayın. Her örneğin kendi imzalama gizli anahtarı ve giriş URL'si vardır.",
       "create": "Örnek oluştur",
-      "save": "Save",
       "empty": "Henüz örnek yok. Giriş URL'si ve gizli anahtar almak için bir tane oluşturun.",
       "loadError": "Örnekler yüklenemedi.",
       "allSessions": "Tüm oturumlar",
@@ -1013,7 +1041,8 @@
         "title": "Örnek oluşturuldu",
         "hint": "Gizli anahtarı şimdi kopyalayın — yalnızca bir kez gösterilir.",
         "secret": "İmzalama gizli anahtarı",
-        "ingressUrls": "Giriş URL'leri"
+        "ingressUrls": "Giriş URL'leri",
+        "verifyToken": "Doğrulama belirteci"
       },
       "regenerate": {
         "title": "Gizli anahtarı yeniden oluştur",

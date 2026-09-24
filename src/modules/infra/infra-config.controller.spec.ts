@@ -260,6 +260,76 @@ describe('InfraConfigController.saveConfig rejects values that would inject extr
   });
 });
 
+describe('InfraConfigController.saveConfig writes values the next boot reads back unchanged', () => {
+  const newController = () => new InfraConfigController({} as never, {} as never, {} as never);
+
+  function savedPassword(password: string): { line: string | undefined; parsed: string | undefined } {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({ database: { type: 'postgres', builtIn: false, host: 'db', password } } as never);
+    const content = ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+    return {
+      line: content.split('\n').find(l => l.startsWith('DATABASE_PASSWORD=')),
+      parsed: jest.requireActual<typeof import('dotenv')>('dotenv').parse(content).DATABASE_PASSWORD,
+    };
+  }
+
+  // dotenv reads an unquoted `#` as a comment and trims outer quotes and whitespace, so a raw
+  // `KEY=value` line would boot with a different secret than the one saved.
+  it.each(['S3cr#tPass', ' spaced ', "'quoted'", '"dq"', 'p\\nq', `it's#`, `a'b"c#`])(
+    'round-trips %j through dotenv',
+    password => {
+      expect(savedPassword(password).parsed).toBe(password);
+    },
+  );
+
+  it('keeps a value that needs no quoting bare', () => {
+    expect(savedPassword('Str0ng!Passw0rd').line).toBe('DATABASE_PASSWORD=Str0ng!Passw0rd');
+  });
+
+  // Each line reads back on its own, but the next boot parses the whole file, where a quote one value
+  // leaves open can run on to a later line that holds the same quote character.
+  function savedFile(databasePassword: string, redisPassword: string): string {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({
+      database: { type: 'postgres', builtIn: false, host: 'db', password: databasePassword },
+      redis: { enabled: true, builtIn: false, host: 'cache', password: redisPassword },
+    } as never);
+    return ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+  }
+
+  it('keeps every key intact when a value opens a quote that a later line closes', () => {
+    const dotenv = jest.requireActual<typeof import('dotenv')>('dotenv');
+    const content = savedFile('"x7Kp', 'ab"#cd');
+    const whole = dotenv.parse(content);
+    const lineByLine = Object.assign({}, ...content.split('\n').map(line => dotenv.parse(line))) as Record<
+      string,
+      string
+    >;
+
+    expect(whole).toEqual(lineByLine);
+    expect(whole).toMatchObject({ DATABASE_TYPE: 'postgres', DATABASE_PASSWORD: '"x7Kp', REDIS_PASSWORD: 'ab"#cd' });
+  });
+
+  it('refuses a quoted value that a later line would extend, writing nothing', () => {
+    // `#x\` needs quoting, and its `\'` escapes the closing quote once a later line holds a `'#`.
+    expect(() => savedFile('#x\\', `a'#b`)).toThrow(/DATABASE_PASSWORD/);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a value no dotenv form can carry, writing nothing', () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    expect(() =>
+      newController().saveConfig({
+        database: { type: 'postgres', builtIn: false, host: 'db', password: `a'b"c\`d#` },
+      } as never),
+    ).toThrow(BadRequestException);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+});
+
 describe('InfraConfigController.saveConfig engine selection (persist ENGINE_TYPE — Infrastructure tile)', () => {
   const engineFactory = {
     getAvailableEngines: () => [{ id: 'whatsapp-web.js' }, { id: 'baileys' }],

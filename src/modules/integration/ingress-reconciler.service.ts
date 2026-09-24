@@ -1,8 +1,9 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { IngressEvent } from './entities/ingress-event.entity';
 import { IntegrationDeliveryFailure } from './entities/integration-delivery-failure.entity';
+import { PluginInstance } from './entities/plugin-instance.entity';
 import { IngressEnqueueService, buildIngressDeadLetterRow } from './ingress-enqueue.service';
 import { extractConversationId } from './ingress.service';
 import { PluginInstanceService } from './plugin-instance.service';
@@ -104,11 +105,24 @@ export class IngressReconcilerService implements OnModuleInit, OnModuleDestroy {
     this.sweeping = true;
     try {
       const cutoff = new Date(now.getTime() - opts.graceMs);
-      const rows = await this.events.find({
-        where: { dispatchState: 'pending', createdAt: LessThan(cutoff) },
-        order: { createdAt: 'ASC' },
-        take: opts.batchSize,
-      });
+      // Only rows the sweep can act on may take a batch slot: a row of a disabled or deleted instance,
+      // or one without a payload, is skipped without being written, so selecting it would hand the same
+      // oldest rows back every sweep and starve every other instance's stranded deliveries. The join is
+      // 1:1 (plugin_instances is unique on pluginId+instanceId), so limit() bounds rows, not join fan-out.
+      const rows = await this.events
+        .createQueryBuilder('e')
+        .innerJoin(
+          PluginInstance,
+          'pi',
+          'pi.pluginId = e.pluginId AND pi.instanceId = e.instanceId AND pi.enabled = :enabled',
+          { enabled: true },
+        )
+        .where('e.dispatchState = :state', { state: 'pending' })
+        .andWhere('e.createdAt < :cutoff', { cutoff })
+        .andWhere('e.payload IS NOT NULL')
+        .orderBy('e.createdAt', 'ASC')
+        .limit(opts.batchSize)
+        .getMany();
       for (const row of rows) {
         // A row whose latest attempt is still inside the grace window cools down between replays;
         // it keeps its batch slot (bounded by maxAttempts, so the leak is capped) but is not hit again.
@@ -117,8 +131,8 @@ export class IngressReconcilerService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
         // A 'pending' row without a payload cannot be replayed (payloads are retired only once an
-        // outcome is recorded, so this means an imported/corrupt row). Skip it loudly rather than
-        // dispatching an empty delivery or spinning the attempt budget on a row that can never fire.
+        // outcome is recorded, so this means an imported/corrupt row). The query already excludes it;
+        // this narrows the type and still refuses to dispatch an empty delivery.
         if (!hasPayload(row)) {
           this.logger.error('Ingress event is pending without a payload; cannot replay', undefined, {
             pluginId: row.pluginId,

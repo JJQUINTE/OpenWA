@@ -89,6 +89,17 @@ describe('HealthController', () => {
       expect(result.version).toBeDefined();
       expect(validateApiKey).toHaveBeenCalledWith('good-key', '127.0.0.1');
     });
+
+    // The auth scheme is case-insensitive (RFC 7235), and the REST guard, Bull Board and MCP already
+    // read it that way; an exact 'Bearer ' match here withheld the version from the same valid key.
+    it.each(['bearer good-key', 'BEARER good-key'])('accepts the scheme in any case (%s)', async header => {
+      validateApiKey.mockResolvedValue({ id: 'k1' });
+
+      const result = await controller.check(reqWith({ authorization: header }));
+
+      expect(result.version).toBeDefined();
+      expect(validateApiKey).toHaveBeenCalledWith('good-key', '127.0.0.1');
+    });
   });
 
   describe('key-probe auditing', () => {

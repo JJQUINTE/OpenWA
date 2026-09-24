@@ -9,6 +9,10 @@
  *      `{{name}}`) silently breaks interpolation, which a key-presence check can't see.
  *   3. UNTRANSLATED PROSE (warning): a long leaf value byte-identical to en.json is very likely still
  *      English — surfaced as a non-fatal drift signal (short coincidental matches are ignored).
+ *   4. PLURAL FORMS (hard fail): for every plural key in en.json (one with an `_other` variant), a
+ *      locale carries a form for each category `Intl.PluralRules` gives its language. i18next falls
+ *      back to the bare (singular) key for a missing category, so French without `_many` renders
+ *      "1000000 abonné". The bare key covers `one`.
  *
  * Wire into CI with: `npm run i18n:check`
  */
@@ -66,6 +70,7 @@ function load(file) {
 
 const referenceKeys = flatten(load(REFERENCE));
 const referenceEntries = flattenEntries(load(REFERENCE));
+const pluralBases = [...referenceKeys].filter((k) => k.endsWith('_other')).map((k) => k.slice(0, -'_other'.length));
 const localeFiles = readdirSync(LOCALES_DIR)
   .filter((f) => f.endsWith('.json') && f !== REFERENCE)
   .sort();
@@ -76,7 +81,12 @@ for (const file of localeFiles) {
   const keys = flatten(load(file));
   const entries = flattenEntries(load(file));
   const missing = [...referenceKeys].filter((k) => !keys.has(k)).sort();
-  const extra = [...keys].filter((k) => !referenceKeys.has(k)).sort();
+  const pluralCategories = new Intl.PluralRules(file.replace(/\.json$/, '')).resolvedOptions().pluralCategories;
+  const pluralForms = new Set(pluralBases.flatMap((base) => pluralCategories.map((c) => `${base}_${c}`)));
+  const missingPlurals = [...pluralForms]
+    .filter((k) => !keys.has(k) && !(k.endsWith('_one') && keys.has(k.slice(0, -'_one'.length))))
+    .sort();
+  const extra = [...keys].filter((k) => !referenceKeys.has(k) && !pluralForms.has(k)).sort();
 
   const placeholderMismatches = [];
   const untranslated = [];
@@ -102,6 +112,12 @@ for (const file of localeFiles) {
     for (const k of placeholderMismatches) {
       console.error(`  ! ${k}: expected ${[...placeholders(referenceEntries.get(k))].join(', ') || '(none)'}`);
     }
+  }
+
+  if (missingPlurals.length > 0) {
+    hasErrors = true;
+    console.error(`[FAIL] ${file}: missing ${missingPlurals.length} plural form(s) its language needs:`);
+    for (const k of missingPlurals) console.error(`  - ${k}`);
   }
 
   if (extra.length > 0) {

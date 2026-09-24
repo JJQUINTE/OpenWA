@@ -88,6 +88,7 @@
     "noMessageYet": "Ancora nessun messaggio",
     "unreadBadge": "{{count}} messaggio non letto",
     "unreadBadge_other": "{{count}} messaggi non letti",
+    "unreadBadge_many": "{{count}} messaggi non letti",
     "loadingMessages": "Caricamento messaggi...",
     "loadingOlderMessages": "Caricamento messaggi precedenti...",
     "loadOlderMessagesError": "Impossibile caricare i messaggi precedenti. Scorri verso l’alto per riprovare.",
@@ -99,6 +100,25 @@
       "delete": "Elimina messaggio"
     },
     "replyingTo": "Risposta a {{name}}",
+    "messageType": {
+      "text": "Testo",
+      "image": "Immagine",
+      "video": "Video",
+      "audio": "Audio",
+      "voice": "Messaggio vocale",
+      "document": "Documento",
+      "sticker": "Sticker",
+      "location": "Posizione",
+      "contact": "Contatto",
+      "poll": "Sondaggio",
+      "call": "Chiamata",
+      "revoked": "Messaggio eliminato",
+      "order": "Ordine",
+      "product": "Prodotto",
+      "masked": "Messaggio nascosto",
+      "unknown": "Messaggio",
+      "unknownType": "Tipo sconosciuto"
+    },
     "you": "Tu",
     "youPrefix": "Tu: ",
     "yesterday": "Ieri",
@@ -121,7 +141,9 @@
       "group": "Gruppo",
       "channel": "Canale",
       "status": "Stato",
-      "broadcast": "Trasmissione"
+      "broadcast": "Trasmissione",
+      "individual": "Individuale",
+      "unknown": "Sconosciuto"
     },
     "tab": {
       "chats": "Chat",
@@ -131,6 +153,7 @@
     "status": {
       "itemCount": "{{count}} aggiornamento",
       "itemCount_other": "{{count}} aggiornamenti",
+      "itemCount_many": "{{count}} aggiornamenti",
       "empty": "Nessun contatto ha uno stato attivo.",
       "loadError": "Impossibile caricare gli stati.",
       "mediaUnavailable": "Contenuto multimediale non disponibile",
@@ -155,7 +178,8 @@
       "empty": "Non sei ancora iscritto a nessun canale.",
       "notReady": "La sessione non è ancora pronta.",
       "subscribers": "{{count}} iscritto",
-      "subscribers_other": "{{count}} iscritti"
+      "subscribers_other": "{{count}} iscritti",
+      "subscribers_many": "{{count}} iscritti"
     },
     "errors": {
       "loadSessions": "Impossibile caricare le sessioni",
@@ -276,7 +300,8 @@
       "successTitle": "Sessione Creata",
       "successDesc": "Sessione \"{{name}}\" creata con successo",
       "errorTitle": "Creazione Fallita",
-      "errorDefault": "Impossibile creare la sessione"
+      "errorDefault": "Impossibile creare la sessione",
+      "tooShort": "Il nome deve contenere almeno 3 caratteri."
     },
     "delete": {
       "title": "Conferma Eliminazione",
@@ -428,6 +453,7 @@
       "hint": "Attiva solo quando tutte le condizioni corrispondono. Si applica agli eventi dei messaggi.",
       "badge": "{{count}} filtro",
       "badge_other": "{{count}} filtri",
+      "badge_many": "{{count}} filtri",
       "addCondition": "Aggiungi condizione",
       "removeCondition": "Rimuovi condizione",
       "caseSensitive": "Distingui maiuscole",
@@ -598,7 +624,10 @@
     },
     "empty": {
       "title": "Nessuna chiave API creata",
-      "description": "Crea una chiave API per autenticare le tue richieste"
+      "description": "Crea una chiave API per autenticare le tue richieste",
+      "loadErrorTitle": "Impossibile caricare le chiavi API",
+      "forbiddenTitle": "Nessun accesso alle chiavi API",
+      "forbiddenDesc": "Per gestire le chiavi API serve una chiave amministratore non limitata a sessioni specifiche."
     },
     "confirm": {
       "deleteTitle": "Elimina Chiave API",
@@ -651,7 +680,10 @@
       "filteredTitle": "Nessuna corrispondenza in questa pagina",
       "filteredDescription": "La ricerca filtra solo la pagina corrente. Cancellala, sfoglia le pagine o usa il filtro severità lato server.",
       "filteredServerDescription": "Nessun log corrisponde a questi filtri. Modifica il filtro severità per ampliare la ricerca."
-    }
+    },
+    "exportFailed": "Impossibile esportare il log di controllo",
+    "exportTruncated": "L'esportazione copre solo le {{rows}} voci più recenti. Restringi il filtro severità per esportare quelle più vecchie.",
+    "exportThrottled": "L'esportazione copre solo le {{rows}} voci più recenti perché il gateway sta limitando le letture del registro di audit. Attendi un minuto ed esporta di nuovo."
   },
   "messageTester": {
     "title": "Messaggio di prova",
@@ -894,7 +926,8 @@
       "invalidFile": "Questo file non è un backup dati valido di OpenWA.",
       "importTooLarge": "Il backup supera il limite della richiesta. Aumenta BODY_SIZE_LIMIT sul server e riprova."
     },
-    "statusLoadError": "Impossibile caricare lo stato attuale dell'infrastruttura. Aggiorna per riprovare."
+    "statusLoadError": "Impossibile caricare lo stato attuale dell'infrastruttura. Aggiorna per riprovare.",
+    "configLoadError": "Impossibile caricare la configurazione salvata, quindi non è modificabile qui. Aggiorna per riprovare."
   },
   "plugins": {
     "title": "Plugin",
@@ -989,7 +1022,6 @@
       "title": "Istanze",
       "description": "Effettua il provisioning di istanze per account per questa integrazione. Ogni istanza ha il proprio segreto di firma e URL di ingresso.",
       "create": "Crea istanza",
-      "save": "Save",
       "empty": "Nessuna istanza ancora. Creane una per ottenere un URL di ingresso e un segreto.",
       "loadError": "Impossibile caricare le istanze.",
       "allSessions": "Tutte le sessioni",
@@ -1013,7 +1045,8 @@
         "title": "Istanza creata",
         "hint": "Copia subito il segreto — viene mostrato solo una volta.",
         "secret": "Segreto di firma",
-        "ingressUrls": "URL di ingresso"
+        "ingressUrls": "URL di ingresso",
+        "verifyToken": "Token di verifica"
       },
       "regenerate": {
         "title": "Rigenera segreto",

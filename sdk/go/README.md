@@ -29,11 +29,17 @@ func main() {
 	}
 
 	ctx := context.Background()
-	if _, err := client.Sessions.Start(ctx, "my-session"); err != nil {
+	// Sessions are addressed by the UUID that Create returns, not by name. Create a
+	// session once; afterwards, find its ID with Sessions.List and a Name filter.
+	session, err := client.Sessions.Create(ctx, openwa.CreateSessionRequest{Name: "my-session"})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := client.Sessions.Start(ctx, session.ID); err != nil {
 		log.Fatal(err)
 	}
 
-	res, err := client.Messages.SendText(ctx, "my-session", openwa.SendTextRequest{
+	res, err := client.Messages.SendText(ctx, session.ID, openwa.SendTextRequest{
 		ChatID: "628123456789@c.us",
 		Text:   "Hello from the OpenWA Go SDK!",
 	})
@@ -80,7 +86,7 @@ func main() {
 ## Typed errors
 
 ```go
-res, err := client.Messages.SendText(ctx, "my-session", req)
+res, err := client.Messages.SendText(ctx, sessionID, req)
 switch {
 case errors.Is(err, openwa.ErrConflict):
 	// 409 — engine not ready; retry once the session is "ready".

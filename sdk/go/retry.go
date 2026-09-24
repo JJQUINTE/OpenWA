@@ -77,7 +77,9 @@ type RetryPolicy struct {
 	// Defaults (via DefaultRetryPolicy) to 429, 500, 502, 503, 504.
 	RetryableStatuses []int
 	// RespectRetryAfter honors a Retry-After header on a 429/503 response,
-	// using it as the delay when it is longer than the computed backoff.
+	// using it as the delay when it is longer than the computed backoff. A
+	// delay that would outlast the request deadline is not waited out: the
+	// response is returned as-is.
 	RespectRetryAfter bool
 }
 
@@ -187,15 +189,22 @@ func retryMiddleware(p RetryPolicy, log Logger) Middleware {
 					return resp, err
 				}
 
+				delay := p.backoff(attempt)
+				if resp != nil && p.RespectRetryAfter {
+					if ra, ok := parseRetryAfter(resp); ok && ra > delay {
+						delay = ra
+					}
+				}
+				// A wait that outlasts the request deadline can only end in a
+				// timeout. Return this attempt's result now, so the caller gets
+				// the typed 429/503 at once instead of a *TimeoutError later.
+				if dl, ok := req.Context().Deadline(); ok && time.Until(dl) < delay {
+					return resp, err
+				}
+
 				// Drain and close the response body so the connection can be
 				// reused before the next attempt.
-				delay := p.backoff(attempt)
 				if resp != nil {
-					if p.RespectRetryAfter {
-						if ra, ok := parseRetryAfter(resp); ok && ra > delay {
-							delay = ra
-						}
-					}
 					_, _ = io.Copy(io.Discard, resp.Body)
 					_ = resp.Body.Close()
 				}

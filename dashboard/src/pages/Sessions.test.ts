@@ -101,6 +101,7 @@ function resetFetchCalls(): void {
   startGate = null;
   startResult = null;
   stopFailure = null;
+  qrGate = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -129,6 +130,8 @@ let startResult: { answer: Partial<Session>; leaves?: Partial<Session> } | null 
 let stopFailure: { status: number; message: string } | null = null;
 // When set, POST .../start answers, whichever way it answers, only once this settles.
 let startGate: Promise<void> | null = null;
+// When set, GET .../qr for that one session answers only once `until` settles.
+let qrGate: { sessionId: string; until: Promise<void> } | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -226,7 +229,9 @@ function installFetchStub(): void {
     if (method === 'GET' && qrMatch) {
       const found = SESSIONS.find(s => s.id === qrMatch[1]);
       if (!found) return Promise.resolve(jsonResponse({ message: 'not found' }, 404));
-      return Promise.resolve(jsonResponse({ qrCode: 'data:image/png;base64,FAKE', status: found.status }));
+      const answer = () => jsonResponse({ qrCode: 'data:image/png;base64,FAKE', status: found.status });
+      if (qrGate?.sessionId === found.id) return qrGate.until.then(answer);
+      return Promise.resolve(answer());
     }
 
     const pairingMatch = path.match(/^\/api\/sessions\/([^/]+)\/pairing-code$/);
@@ -280,9 +285,9 @@ before(async () => {
   ({ installJsdomGlobals } = await import('../test-helpers/jsdom.ts'));
   await installJsdomGlobals();
   installFetchStub();
-  // RoleProvider seeds from localStorage; 'admin' makes canWrite true, or every action button
+  // RoleProvider seeds from sessionStorage; 'admin' makes canWrite true, or every action button
   // (New Session, Stop/Start, Unlink, Delete, Kill Stuck) is hidden and there is nothing to test.
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   // Deliberately NOT setting sessionStorage['openwa_api_key'] here: useWebSocket.connect() bails
   // with a console.warn when it's absent, so the page opens no socket. A case that drives the live
   // feed sets the key itself; the client it reaches is the socket.io double, which dials nothing.
@@ -389,6 +394,32 @@ test('creating a session issues POST /api/sessions with the entered name', async
   });
 
   await screen.findByText('backup-bot');
+});
+
+test('Enter in the name field follows the same gate as the Create button', async () => {
+  const { screen, fireEvent, waitFor, within } = rtl;
+  resetFetchCalls();
+  renderSessions();
+
+  await screen.findByText('new-device');
+  fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+  const dialog = await screen.findByRole('dialog');
+  const input = within(dialog).getByPlaceholderText('e.g., marketing-bot');
+  const posted = () => fetchCalls.filter(c => c.method === 'POST' && c.path === '/api/sessions').map(c => c.body);
+
+  // A name the form flags as invalid is not posted on Enter either.
+  fireEvent.change(input, { target: { value: 'ab' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  assert.deepEqual(posted(), [], 'Enter posted a name the Create button refuses');
+
+  // A second Enter while the first create is in flight does not post the same name again.
+  fireEvent.change(input, { target: { value: 'enter-bot' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  await screen.findByText('enter-bot');
+  await waitFor(() => assert.ok(!screen.queryByRole('dialog')));
+  assert.deepEqual(posted(), [{ name: 'enter-bot' }]);
 });
 
 test('opening the proxy modal fetches GET /api/sessions/:id/proxy', async () => {
@@ -511,6 +542,44 @@ test('stopping a session dismisses its own open QR modal', async () => {
     // instead of failing fast. Reduce to a boolean first.
     assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open after its session stopped');
   });
+});
+
+// Closing the modal does not cancel a GET .../qr already in flight. Its late answer must not reopen
+// the closed modal, nor replace the modal the operator has since opened for another session.
+test('a QR answer that lands after its modal closed changes nothing', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const other: Session = { ...SESSION_QR, id: 'sess-qr-2', name: 'second-device' };
+  SESSIONS.push(other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const otherCard = screen.getByText('second-device').closest('.session-card') as HTMLElement;
+    const closeModal = () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+
+    let release: () => void = () => {};
+    qrGate = { sessionId: SESSION_QR.id, until: new Promise<void>(resolve => (release = resolve)) };
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByRole('dialog');
+    closeModal();
+    release();
+    await waitFor(() => assert.ok(findFetchCall('GET', `/api/sessions/${SESSION_QR.id}/qr`)));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(!screen.queryByRole('dialog'), 'a late QR answer reopened the closed modal');
+
+    qrGate = { sessionId: SESSION_QR.id, until: new Promise<void>(resolve => (release = resolve)) };
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByRole('dialog');
+    closeModal();
+    fireEvent.click(within(otherCard).getByRole('button', { name: 'Show QR' }));
+    await screen.findByAltText('QR');
+    release();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const dialog = screen.getByRole('dialog');
+    assert.ok(within(dialog).queryByText('second-device'), "a late QR answer replaced another session's modal");
+  } finally {
+    SESSIONS.pop();
+  }
 });
 
 // A node that died mid-pairing leaves a row reading `qr_ready` with no engine behind it. Reconnect on
@@ -776,6 +845,27 @@ test('a failed status push closes that session QR modal', async () => {
   pushSessionStatus(SESSION_QR.id, 'failed');
 
   await waitFor(() => assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open after its session failed'));
+});
+
+// The gateway writes the linked phone and lastActive when a session reaches READY; the push carries
+// only the status, so the card needs a re-read to show them.
+test('a ready push re-reads the list so a newly linked card shows its phone', async () => {
+  const { screen, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-linking-1', name: 'linking', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('linking')).closest('.session-card') as HTMLElement;
+
+    Object.assign(row, { status: 'ready', phone: '15550003333', lastActive: new Date().toISOString() });
+    pushSessionStatus(row.id, 'ready');
+
+    await waitFor(() => within(card).getByText('15550003333'));
+  } finally {
+    SESSIONS.pop();
+  }
 });
 
 // `disconnected` covers both an engine inside its reconnect backoff and one that is gone, so the modal
@@ -1094,7 +1184,7 @@ test('a connect retries a failed list read once, even when each failure carries 
 test('a read-only key gets no Show QR button, since the QR is operator-only', async () => {
   const { screen, within } = rtl;
   resetFetchCalls();
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   try {
     renderSessions();
     const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
@@ -1102,7 +1192,7 @@ test('a read-only key gets no Show QR button, since the QR is operator-only', as
     assert.ok(card.querySelector('.qr-placeholder'));
     assert.equal(within(card).queryByRole('button', { name: 'Show QR' }) === null, true);
   } finally {
-    window.localStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
   }
 });
 

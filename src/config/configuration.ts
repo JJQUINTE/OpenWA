@@ -213,9 +213,12 @@ export default () => ({
       // Accept either delimiter: .env/compose use commas, the dashboard Infrastructure form
       // persists space-separated. Splitting on both keeps each flag a discrete argv token —
       // a single glued token like "--no-sandbox --disable-gpu" silently neuters --no-sandbox.
+      // A comma only splits before the next flag, since flag values carry commas of their own
+      // (--disable-features=A,B, --window-size=1280,720).
       args: withPinnedBrowserLocale(
         (process.env.PUPPETEER_ARGS || '--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu')
-          .split(/[\s,]+/)
+          .split(/\s+|,+(?=-)/)
+          .map(arg => arg.replace(/^,+|,+$/g, ''))
           .filter(Boolean),
       ),
       // Optional path to a system Chromium/Chrome binary. When unset, whatsapp-web.js

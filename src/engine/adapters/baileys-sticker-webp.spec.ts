@@ -61,6 +61,7 @@ function makeMessaging(): { messaging: BaileysMessaging; sock: { sendMessage: je
     wasDeletedForEveryone: () => false,
     markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
+    recordMessage: () => undefined,
     rememberOwnSend: () => undefined,
     recordLidMapping: () => undefined,
     getOnMessageCreate: () => undefined,

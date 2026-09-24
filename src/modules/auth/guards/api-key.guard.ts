@@ -23,6 +23,7 @@ import {
   ChatScopeKind,
 } from '../decorators/auth.decorators';
 import { resolveClientIp } from '../../../common/utils/ip';
+import { bearerToken } from '../../../common/security/bearer-token';
 import { setRequestActor } from '../../../common/services/request-context';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction } from '../../audit/entities/audit-log.entity';
@@ -225,12 +226,7 @@ export class ApiKeyGuard implements CanActivate {
     const xApiKey = request.headers['x-api-key'] as string;
     if (xApiKey) return xApiKey;
 
-    const authHeader = request.headers['authorization'];
-    if (authHeader?.startsWith('Bearer ')) {
-      return authHeader.substring(7);
-    }
-
-    return undefined;
+    return bearerToken(request.headers['authorization']);
   }
 
   /**

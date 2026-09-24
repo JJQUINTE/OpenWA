@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, Validate } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, Validate } from 'class-validator';
 import { HasDecodableProxyCredentialsConstraint } from './has-decodable-proxy-credentials.validator';
 
 export class CreateSessionDto {
@@ -30,6 +30,7 @@ export class CreateSessionDto {
     example: { autoRejectCalls: false, maxReconnectAttempts: 5, reconnectBaseDelay: 5000 },
   })
   @IsOptional()
+  @IsObject()
   config?: Record<string, unknown>;
 
   // Phase 3: Proxy per session

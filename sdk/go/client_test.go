@@ -421,6 +421,26 @@ func TestRetryHonorsRetryAfter(t *testing.T) {
 	}
 }
 
+// A Retry-After longer than the time left on the request cannot be honored, so
+// the 429 goes back to the caller at once instead of sleeping out the timeout
+// and surfacing as a *TimeoutError that hides the rate limit.
+func TestRetryReturnsResponseWhenRetryAfterOutlastsDeadline(t *testing.T) {
+	rt := &retryAfterTransport{header: "60"}
+	c := newTestClient(t, rt, WithTimeout(500*time.Millisecond), WithRetry(DefaultRetryPolicy()))
+
+	start := time.Now()
+	_, err := c.Messages.SendText(context.Background(), "s1", SendTextRequest{ChatID: "x", Text: "y"})
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Fatalf("expected the 429 back at once, waited %s", elapsed)
+	}
+	if rt.calls != 1 {
+		t.Fatalf("expected 1 attempt, got %d", rt.calls)
+	}
+}
+
 func TestParseRetryAfterHTTPDate(t *testing.T) {
 	resp := &http.Response{Header: http.Header{"Retry-After": {time.Now().Add(2 * time.Second).UTC().Format(http.TimeFormat)}}}
 	d, ok := parseRetryAfter(resp)

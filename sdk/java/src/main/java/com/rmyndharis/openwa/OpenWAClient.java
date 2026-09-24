@@ -45,8 +45,10 @@ import java.util.Map;
  *
  * <pre>{@code
  * OpenWAClient client = new OpenWAClient("http://localhost:2785", "owa_k1_…");
- * client.sessions.start("my-session");
- * client.messages.sendText("my-session",
+ * // Sessions are addressed by the UUID that create() returns, not by name.
+ * SessionResponse session = client.sessions.create(CreateSessionRequest.builder().name("my-session").build());
+ * client.sessions.start(session.id());
+ * client.messages.sendText(session.id(),
  *     SendTextRequest.builder().chatId("628123456789@c.us").text("Hello!").build());
  * }</pre>
  */

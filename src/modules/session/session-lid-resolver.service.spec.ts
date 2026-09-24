@@ -53,6 +53,14 @@ describe('SessionLidResolver', () => {
     await expect(resolver.resolveSenderPhone('s1', '111@lid')).resolves.toBeNull();
   });
 
+  it('does not cache a transient failure, so the sender resolves once the engine answers', async () => {
+    resolveContactPhone.mockRejectedValueOnce(new Error('Evaluation failed')).mockResolvedValueOnce('628111');
+
+    await expect(resolver.resolveSenderPhone('s1', '111@lid')).resolves.toBeNull();
+    await expect(resolver.resolveSenderPhone('s1', '111@lid')).resolves.toBe('628111');
+    expect(resolveContactPhone).toHaveBeenCalledTimes(2);
+  });
+
   it('returns null when the session has no live engine', async () => {
     await expect(resolver.resolveSenderPhone('not-started', '111@lid')).resolves.toBeNull();
   });

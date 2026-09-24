@@ -53,6 +53,9 @@ public final class Http {
         if (perRequest != null) {
             out.putAll(perRequest);
         }
+        // Header names are case-insensitive, and the transport sends every entry: drop a caller's
+        // copy in any case, or a lowercase "x-api-key" would travel alongside ours.
+        out.keySet().removeIf(k -> k.equalsIgnoreCase("Content-Type") || k.equalsIgnoreCase("X-API-Key"));
         out.put("Content-Type", "application/json");
         out.put("X-API-Key", apiKey);
         return out;

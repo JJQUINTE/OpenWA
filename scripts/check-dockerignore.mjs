@@ -107,6 +107,11 @@ const mustReject = [
   'data/.api-key',
   'openwa.sqlite',
   'backup.db',
+  // Backup archives and pre-restore snapshots (scripts/backup.sh, scripts/restore.sh)
+  'backups/openwa-backup-20260101-000000.tar.gz',
+  'data.pre-restore-20260101-000000/.api-key',
+  'data.pre-restore-20260101-000000/baileys/s1/creds.json',
+  'state/sessions.pre-restore-20260101-000000/session-s1/Default/Cookies',
   // VCS metadata
   '.git/HEAD',
   '.git/hooks/pre-commit',
