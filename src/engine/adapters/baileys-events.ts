@@ -252,14 +252,15 @@ export class BaileysEvents {
       // A live disappearing message (also viewOnce / documentWithCaption / edited) arrives wrapped, so the
       // raw `getContentType` returns the OUTER wrapper key (e.g. 'ephemeralMessage') and downstream type/
       // body/media/location detection would miss the real inner content. Normalize ONCE so the true inner
-      // type drives routing here AND mapMessage. normalizeMessageContent leaves protocolMessage and
-      // reactionMessage untouched, so the early-return branches below still match.
+      // type drives routing here AND mapMessage. The protocol and reaction branches below read the
+      // normalized content too: a client wraps an edit in `editedMessage`, and `ephemeralMessage` can hold
+      // a revoke or a reaction just as well, so the raw root does not always carry them.
       const normalizedRoot = b.normalizeMessageContent(msg.message ?? undefined) ?? msg.message ?? undefined;
       const contentType = b.getContentType(normalizedRoot);
 
       // --- protocolMessage REVOKE: don't emit onMessage ---
       if (contentType === 'protocolMessage') {
-        const pm = msg.message?.protocolMessage;
+        const pm = normalizedRoot?.protocolMessage;
         if (pm?.type === b.proto.Message.ProtocolMessage.Type.REVOKE) {
           const from = msg.key.fromMe === true ? this.host.normalizedSelfJid() : remoteJid;
           const to = msg.key.fromMe === true ? remoteJid : this.host.normalizedSelfJid();
@@ -327,7 +328,7 @@ export class BaileysEvents {
 
       // --- reactionMessage: don't emit onMessage ---
       if (contentType === 'reactionMessage') {
-        const rm = msg.message?.reactionMessage;
+        const rm = normalizedRoot?.reactionMessage;
         const event: ReactionEvent = {
           messageId: rm?.key?.id ?? '',
           chatId: this.host.toNeutralJid(remoteJid),

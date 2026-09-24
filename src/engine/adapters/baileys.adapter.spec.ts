@@ -3124,6 +3124,54 @@ describe('BaileysAdapter inbound fan-out', () => {
     );
   });
 
+  it('reads an edit, a revoke and a reaction that arrive inside a wrapper from the unwrapped content', async () => {
+    baileys.getContentType.mockImplementation(realGetContentType);
+    baileys.normalizeMessageContent.mockImplementation(
+      (m?: { editedMessage?: { message?: unknown }; ephemeralMessage?: { message?: unknown } }) =>
+        m?.editedMessage?.message ?? m?.ephemeralMessage?.message ?? m,
+    );
+    const onMessageEdited = jest.fn();
+    const onMessageRevoked = jest.fn();
+    const onMessageReaction = jest.fn();
+    const adapter = newAdapter();
+    await adapter.initialize({ onMessageEdited, onMessageRevoked, onMessageReaction });
+    const key = (id: string) => ({ remoteJid: '628111@s.whatsapp.net', fromMe: false, id });
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: key('WRAPPED_EDIT'),
+          message: {
+            editedMessage: {
+              message: {
+                protocolMessage: { key: { id: 'EDITED_ID' }, type: 14, editedMessage: { conversation: 'fixed' } },
+              },
+            },
+          },
+          messageTimestamp: 1700000050,
+        },
+        {
+          key: key('WRAPPED_REVOKE'),
+          message: { ephemeralMessage: { message: { protocolMessage: { key: { id: 'REVOKED_ID' }, type: 0 } } } },
+          messageTimestamp: 1700000051,
+        },
+        {
+          key: key('WRAPPED_REACTION'),
+          message: { ephemeralMessage: { message: { reactionMessage: { key: { id: 'REACTED_ID' }, text: 'ok' } } } },
+          messageTimestamp: 1700000052,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    expect(firstEditedMessage(onMessageEdited)).toMatchObject({ messageId: 'EDITED_ID', body: 'fixed' });
+    expect(onMessageRevoked).toHaveBeenCalledWith(expect.objectContaining({ id: 'REVOKED_ID' }));
+    expect(onMessageReaction).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'REACTED_ID', reaction: 'ok' }),
+    );
+  });
+
   it('reactionMessage: fires onMessageReaction and NOT onMessage', async () => {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const baileys = jest.requireMock('@whiskeysockets/baileys') as { getContentType: jest.Mock };
