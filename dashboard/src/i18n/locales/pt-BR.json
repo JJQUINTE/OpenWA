@@ -88,6 +88,7 @@
     "noMessageYet": "Ainda sem mensagens",
     "unreadBadge": "{{count}} mensagem não lida",
     "unreadBadge_other": "{{count}} mensagens não lidas",
+    "unreadBadge_many": "{{count}} mensagens não lidas",
     "loadingMessages": "Carregando mensagens...",
     "loadingOlderMessages": "Carregando mensagens anteriores...",
     "loadOlderMessagesError": "Não foi possível carregar mensagens anteriores. Role para cima para tentar novamente.",
@@ -131,6 +132,7 @@
     "status": {
       "itemCount": "{{count}} atualização",
       "itemCount_other": "{{count}} atualizações",
+      "itemCount_many": "{{count}} atualizações",
       "empty": "Nenhum contato tem um status ativo.",
       "loadError": "Falha ao carregar os status.",
       "mediaUnavailable": "Mídia indisponível",
@@ -155,7 +157,8 @@
       "empty": "Você ainda não está inscrito em nenhum canal.",
       "notReady": "A sessão ainda não está pronta.",
       "subscribers": "{{count}} inscrito",
-      "subscribers_other": "{{count}} inscritos"
+      "subscribers_other": "{{count}} inscritos",
+      "subscribers_many": "{{count}} inscritos"
     },
     "errors": {
       "loadSessions": "Erro ao carregar as sessões",
@@ -428,6 +431,7 @@
       "hint": "Disparar somente quando todas as condições forem atendidas. Aplica-se a eventos de mensagens.",
       "badge": "{{count}} filtro",
       "badge_other": "{{count}} filtros",
+      "badge_many": "{{count}} filtros",
       "addCondition": "Adicionar condição",
       "removeCondition": "Remover condição",
       "caseSensitive": "Diferenciar maiúsculas",

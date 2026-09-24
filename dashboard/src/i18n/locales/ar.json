@@ -91,6 +91,7 @@
     "unreadBadge_two": "{{count}} رسالتان غير مقروءتان",
     "unreadBadge_few": "{{count}} رسائل غير مقروءة",
     "unreadBadge_many": "{{count}} رسالة غير مقروءة",
+    "unreadBadge_zero": "{{count}} رسالة غير مقروءة",
     "loadingMessages": "جارٍ تحميل الرسائل...",
     "loadingOlderMessages": "جارٍ تحميل الرسائل الأقدم...",
     "loadOlderMessagesError": "تعذر تحميل الرسائل الأقدم. مرر لأعلى للمحاولة مرة أخرى.",
@@ -166,7 +167,8 @@
       "subscribers_other": "{{count}} مشترك",
       "subscribers_two": "{{count}} مشتركان",
       "subscribers_few": "{{count}} مشتركين",
-      "subscribers_many": "{{count}} مشترك"
+      "subscribers_many": "{{count}} مشترك",
+      "subscribers_zero": "{{count}} مشترك"
     },
     "errors": {
       "loadSessions": "فشل تحميل الجلسات",

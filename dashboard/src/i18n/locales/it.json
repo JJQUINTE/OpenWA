@@ -88,6 +88,7 @@
     "noMessageYet": "Ancora nessun messaggio",
     "unreadBadge": "{{count}} messaggio non letto",
     "unreadBadge_other": "{{count}} messaggi non letti",
+    "unreadBadge_many": "{{count}} messaggi non letti",
     "loadingMessages": "Caricamento messaggi...",
     "loadingOlderMessages": "Caricamento messaggi precedenti...",
     "loadOlderMessagesError": "Impossibile caricare i messaggi precedenti. Scorri verso l’alto per riprovare.",
@@ -131,6 +132,7 @@
     "status": {
       "itemCount": "{{count}} aggiornamento",
       "itemCount_other": "{{count}} aggiornamenti",
+      "itemCount_many": "{{count}} aggiornamenti",
       "empty": "Nessun contatto ha uno stato attivo.",
       "loadError": "Impossibile caricare gli stati.",
       "mediaUnavailable": "Contenuto multimediale non disponibile",
@@ -155,7 +157,8 @@
       "empty": "Non sei ancora iscritto a nessun canale.",
       "notReady": "La sessione non è ancora pronta.",
       "subscribers": "{{count}} iscritto",
-      "subscribers_other": "{{count}} iscritti"
+      "subscribers_other": "{{count}} iscritti",
+      "subscribers_many": "{{count}} iscritti"
     },
     "errors": {
       "loadSessions": "Impossibile caricare le sessioni",
@@ -428,6 +431,7 @@
       "hint": "Attiva solo quando tutte le condizioni corrispondono. Si applica agli eventi dei messaggi.",
       "badge": "{{count}} filtro",
       "badge_other": "{{count}} filtri",
+      "badge_many": "{{count}} filtri",
       "addCondition": "Aggiungi condizione",
       "removeCondition": "Rimuovi condizione",
       "caseSensitive": "Distingui maiuscole",

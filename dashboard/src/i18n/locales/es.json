@@ -88,6 +88,7 @@
     "noMessageYet": "Aún sin mensajes",
     "unreadBadge": "{{count}} mensaje sin leer",
     "unreadBadge_other": "{{count}} mensajes sin leer",
+    "unreadBadge_many": "{{count}} mensajes sin leer",
     "loadingMessages": "Cargando mensajes...",
     "loadingOlderMessages": "Cargando mensajes anteriores...",
     "loadOlderMessagesError": "No se pudieron cargar los mensajes anteriores. Desplázate hacia arriba para reintentar.",
@@ -131,6 +132,7 @@
     "status": {
       "itemCount": "{{count}} actualización",
       "itemCount_other": "{{count}} actualizaciones",
+      "itemCount_many": "{{count}} actualizaciones",
       "empty": "Ningún contacto tiene un estado activo.",
       "loadError": "No se pudieron cargar los estados.",
       "mediaUnavailable": "Contenido multimedia no disponible",
@@ -155,7 +157,8 @@
       "empty": "Aún no estás suscrito a ningún canal.",
       "notReady": "La sesión aún no está lista.",
       "subscribers": "{{count}} suscriptor",
-      "subscribers_other": "{{count}} suscriptores"
+      "subscribers_other": "{{count}} suscriptores",
+      "subscribers_many": "{{count}} suscriptores"
     },
     "errors": {
       "loadSessions": "Error al cargar las sesiones",
@@ -428,6 +431,7 @@
       "hint": "Activar solo cuando se cumplan todas las condiciones. Se aplica a eventos de mensajes.",
       "badge": "{{count}} filtro",
       "badge_other": "{{count}} filtros",
+      "badge_many": "{{count}} filtros",
       "addCondition": "Añadir condición",
       "removeCondition": "Eliminar condición",
       "caseSensitive": "Distinguir mayúsculas",
