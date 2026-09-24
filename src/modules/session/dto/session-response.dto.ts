@@ -88,13 +88,16 @@ export class SessionResponseDto {
 
   @ApiProperty({
     description:
-      'Whether the gateway currently holds a live engine for this session. This is the precondition ' +
-      'the lifecycle routes actually enforce, and `status` alone does not imply it: a `disconnected` ' +
-      'session keeps its engine for the duration of an automatic reconnect backoff, while a session ' +
-      'stopped through `POST /sessions/:sessionId/stop` carries the same status with no engine. When `true`, ' +
-      '`stop`, `logout` and `force-kill` can act and `start` answers 400; when `false`, the reverse. ' +
-      'Derived per request from live state, so it is never persisted and never historical: an engine in ' +
-      'the answering process or, in a multi-node deployment, a live claim by the node running the session.',
+      'Whether the gateway currently holds a live engine for this session: an engine in the answering ' +
+      'process or, in a multi-node deployment, a live claim by the node running the session. `status` ' +
+      'alone does not imply it: a `disconnected` session keeps its engine for the duration of an automatic ' +
+      'reconnect backoff, while a session stopped through `POST /sessions/:sessionId/stop` carries the same ' +
+      'status with no engine. On the node running the session, `true` means `stop`, `logout` and ' +
+      '`force-kill` can act and `start` answers 400; `false` means the reverse. For a session another node ' +
+      'runs, request routing (NODE_URL set on every node) forwards the lifecycle routes to that node, where ' +
+      'they act; without routing, only that node can act on it, and any other node answers 409 to `start` ' +
+      'and `stop` and 400 to `logout` and `force-kill`. Derived per request from live state, so it is never ' +
+      'persisted and never historical.',
     example: true,
   })
   engineLoaded!: boolean;
