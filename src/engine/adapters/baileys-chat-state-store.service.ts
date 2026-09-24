@@ -100,10 +100,17 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     // miss the persisted row is that base: the read path warms lazily, but the write path upserts every
     // column, so it has to read-through first or a lone pin update on an evicted muted chat wipes its
     // mute. A row absent from the table resolves to DEFAULT_STATE, which is the correct base for a chat
-    // whose state has never been persisted.
+    // whose state has never been persisted. A read that FAILS is not an absent row: with no base to
+    // merge onto, only the patched columns are written (upsert leaves the others as persisted) and the
+    // cache stays cold, so the next read warms from the table instead of from a guess.
     let existing = this.states.get(k);
     if (!existing) {
-      const row = await this.repo.findOne({ where: { sessionId, chatId } }).catch(() => null);
+      let row: ChatState | null;
+      try {
+        row = await this.repo.findOne({ where: { sessionId, chatId } });
+      } catch {
+        return this.persist(sessionId, chatId, patch);
+      }
       existing = row ? { muteEndTime: row.muteEndTime, archived: row.archived, pinned: row.pinned } : DEFAULT_STATE;
     }
     const next: ChatStateValue = { ...existing, ...patch };
@@ -116,8 +123,12 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       return; // nothing changed against the current state; skip the write that would just churn updatedAt
     }
     this.index(k, next);
+    await this.persist(sessionId, chatId, next);
+  }
+
+  private async persist(sessionId: string, chatId: string, values: Partial<ChatStateValue>): Promise<void> {
     try {
-      await this.repo.upsert({ sessionId, chatId, ...next, updatedAt: new Date() }, ['sessionId', 'chatId']);
+      await this.repo.upsert({ sessionId, chatId, ...values, updatedAt: new Date() }, ['sessionId', 'chatId']);
     } catch (err) {
       this.logger.warn(
         `Failed to persist chat state for ${chatId}: ${err instanceof Error ? err.message : String(err)}`,

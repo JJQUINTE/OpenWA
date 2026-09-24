@@ -21,8 +21,9 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
     findOne: jest.fn(({ where }: { where: { sessionId: string; chatId: string } }) =>
       Promise.resolve(rows.get(KEY(where.sessionId, where.chatId))),
     ),
+    // TypeORM's upsert overwrites only the columns the entity carries, so a partial one merges.
     upsert: jest.fn((v: ChatState) => {
-      rows.set(KEY(v.sessionId, v.chatId), { ...v });
+      rows.set(KEY(v.sessionId, v.chatId), { ...rows.get(KEY(v.sessionId, v.chatId)), ...v });
       return Promise.resolve(undefined);
     }),
     delete: jest.fn(({ sessionId }: { sessionId: string }) => {
@@ -106,6 +107,18 @@ describe('ChatStateStoreService', () => {
     expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ muteEndTime: 999, archived: true, pinned: true });
   });
 
+  it('writes only the patched column when the read-through for a cache-missed chat fails', async () => {
+    const repo = makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 999, archived: true, pinned: false }]);
+    repo.findOne.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    const svc = svcWith(repo);
+    await svc.remember('s', 'c', { pinned: true });
+    expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ muteEndTime: 999, archived: true, pinned: true });
+    // Nothing guessed is cached: the next read warms from the table.
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: 999, archived: true, pinned: true });
+  });
+
   it('does not churn a row when a cache-missed patch matches the persisted state', async () => {
     const repo = makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 999, archived: true, pinned: false }]);
     const svc = svcWith(repo);
@@ -131,7 +144,12 @@ describe('ChatStateStoreService', () => {
     const svc = new ChatStateStoreService(repo as unknown as Repository<ChatState>);
     await expect(svc.reload()).resolves.toBeUndefined();
     await expect(svc.remember('s', 'c', { archived: true })).resolves.toBeUndefined();
-    // the in-memory mirror still updated even though the write failed
-    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
+    // The read failed too, so there is no merge base: only the patched column is written, and no
+    // guessed state is cached (the chat reads from its live record until the table answers).
+    const [written] = repo.upsert.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(written).toMatchObject({ sessionId: 's', chatId: 'c', archived: true });
+    expect(written).not.toHaveProperty('muteEndTime');
+    expect(written).not.toHaveProperty('pinned');
+    expect(svc.get('s', 'c')).toBeUndefined();
   });
 });
