@@ -337,6 +337,7 @@ docker run -it --rm \
 - [OpenWA API Specification](./06-api-specification.md)
 - [Webhook System](./03-system-architecture.md#353-webhook-system)
 - [n8n Appointment Booking Workflow](./examples/n8n-appointment-booking.md)
+- [n8n to Discord Workflow](./examples/n8n/README.md), built from n8n's own Webhook and HTTP Request nodes
 - [n8n Documentation](https://docs.n8n.io/)
 
 ---

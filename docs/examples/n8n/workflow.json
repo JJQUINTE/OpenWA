@@ -1,0 +1,52 @@
+{
+  "name": "OpenWA to Discord via Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "openwa-discord",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "OpenWA Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [ 250, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=*New WhatsApp Message*\n**From:** `{{ $json.body.data.author || $json.body.data.from }}`\n**Message:** {{ $json.body.data.body }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 450, 300 ]
+    }
+  ],
+  "connections": {
+    "OpenWA Webhook": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {}
+}
