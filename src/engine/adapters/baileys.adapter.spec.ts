@@ -4384,27 +4384,33 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(fakeSock.sendMessage).toHaveBeenCalledWith('484848@lid', expect.objectContaining({ pin: stored.key }));
   });
 
-  it('getChannelById maps newsletterMetadata(jid) → Channel (optionals only when present)', async () => {
+  // newsletterMetadata hands back the raw GraphQL node (parseNewsletterMetadata returns it as-is), nested
+  // under thread_metadata with string counts; only newsletterCreate flattens. Recorded live in
+  // scripts/patch-baileys-newsletter-create.spec.js.
+  it('getChannelById maps the raw newsletterMetadata(jid) node → Channel (optionals only when present)', async () => {
     fakeSock.newsletterMetadata.mockResolvedValue({
       id: '120363N@newsletter',
-      name: 'Announcements',
-      description: 'News',
-      invite: 'ABC123',
-      subscribers: 421,
-      picture: { url: 'https://x/p.png' },
-      verification: 'VERIFIED',
-      creation_time: 1700000000,
+      thread_metadata: {
+        name: { text: 'Announcements' },
+        creation_time: '1700000000',
+        description: { text: 'News' },
+        invite: 'ABC123',
+        subscribers_count: '421',
+        verification: 'VERIFIED',
+        picture: { direct_path: '/v/t61/p', id: '1', type: 'IMAGE' },
+      },
+      viewer_metadata: { mute: 'OFF' },
     });
     const adapter = await ready();
     const channel = await adapter.getChannelById('120363N@newsletter');
     expect(fakeSock.newsletterMetadata).toHaveBeenCalledWith('jid', '120363N@newsletter');
+    // No picture: neither shape carries a URL, only a direct path.
     expect(channel).toEqual({
       id: '120363N@newsletter',
       name: 'Announcements',
       description: 'News',
       inviteCode: 'ABC123',
       subscriberCount: 421,
-      picture: 'https://x/p.png',
       verified: true,
       createdAt: 1700000000,
     });
@@ -4417,12 +4423,31 @@ describe('BaileysAdapter store-backed ops', () => {
   });
 
   it('subscribeToChannel resolves invite→jid via newsletterMetadata then follows', async () => {
-    fakeSock.newsletterMetadata.mockResolvedValue({ id: '120363S@newsletter', name: 'Solo', invite: 'CODE1' });
+    fakeSock.newsletterMetadata.mockResolvedValue({
+      id: '120363S@newsletter',
+      thread_metadata: {
+        name: { text: 'Solo' },
+        creation_time: '1786405315',
+        description: null,
+        invite: 'CODE1',
+        subscribers_count: '1',
+        verification: 'UNVERIFIED',
+        picture: null,
+      },
+      viewer_metadata: { mute: 'off' },
+    });
     const adapter = await ready();
     const channel = await adapter.subscribeToChannel('CODE1');
     expect(fakeSock.newsletterMetadata).toHaveBeenCalledWith('invite', 'CODE1');
     expect(fakeSock.newsletterFollow).toHaveBeenCalledWith('120363S@newsletter');
-    expect(channel).toEqual({ id: '120363S@newsletter', name: 'Solo', inviteCode: 'CODE1' });
+    expect(channel).toEqual({
+      id: '120363S@newsletter',
+      name: 'Solo',
+      inviteCode: 'CODE1',
+      subscriberCount: 1,
+      verified: false,
+      createdAt: 1786405315,
+    });
   });
 
   it('subscribeToChannel throws ChannelNotFoundError when the invite resolves null', async () => {
@@ -7068,6 +7093,26 @@ describe('BaileysAdapter channel administration', () => {
 
     expect(fakeSock.newsletterCreate).toHaveBeenCalledWith('Product updates', 'Release notes');
     expect(channel).toMatchObject({ id: CHANNEL, name: 'Product updates', inviteCode: 'ABC123' });
+  });
+
+  // parseNewsletterCreateResponse flattens with parseInt, so a field WhatsApp left out arrives as NaN,
+  // which would serialize as null in a field the contract types as a number.
+  it('drops a count or timestamp the flattened create response could not parse', async () => {
+    fakeSock.newsletterCreate.mockResolvedValue({
+      id: CHANNEL,
+      name: 'Product updates',
+      creation_time: Number.NaN,
+      subscribers: Number.NaN,
+      picture: { id: '1', directPath: '/v/t61/p' },
+      verification: 'UNVERIFIED',
+    });
+    const adapter = await readyAdapter();
+
+    await expect(adapter.createChannel('Product updates')).resolves.toEqual({
+      id: CHANNEL,
+      name: 'Product updates',
+      verified: false,
+    });
   });
 
   it('deletes a channel by id', async () => {
