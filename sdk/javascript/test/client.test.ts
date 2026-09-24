@@ -114,6 +114,21 @@ describe('OpenWAClient', () => {
     );
   });
 
+  it('renders a non-envelope error body as JSON in the message', async () => {
+    // The readiness probe answers 503 with `{ status, details }`, which has no `statusCode`/`message`.
+    const t = new MockTransport().on('GET', '/api/health/ready', {
+      status: 503,
+      body: { status: 'error', details: { mainDatabase: { status: 'down' } } },
+    });
+    const err = await client(t)
+      .health.ready()
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(OpenWAServiceUnavailableError);
+    expect((err as OpenWAApiError).message).toContain('"mainDatabase":{"status":"down"}');
+    expect((err as OpenWAApiError).message).not.toContain('[object Object]');
+  });
+
   it('exposes all expected resource properties', () => {
     const c = client(new MockTransport());
     for (const r of [

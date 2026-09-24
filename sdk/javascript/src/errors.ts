@@ -149,5 +149,8 @@ function isNestEnvelope(body: unknown): body is NestErrorEnvelope {
 function describeMessage(message: string | string[] | unknown): string {
   if (Array.isArray(message)) return message.join(', ');
   if (typeof message === 'string') return message;
+  // A body without the envelope, such as the readiness 503's `{ status, details }`. It came from
+  // JSON.parse, so it always stringifies.
+  if (typeof message === 'object' && message !== null) return JSON.stringify(message);
   return String(message);
 }
