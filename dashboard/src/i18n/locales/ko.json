@@ -902,6 +902,19 @@
     "refresh": "새로고침",
     "builtIn": "내장",
     "noDescription": "설명 없음",
+    "statuses": {
+      "installed": "설치됨",
+      "enabled": "사용함",
+      "disabled": "사용 안 함",
+      "error": "오류"
+    },
+    "types": {
+      "engine": "엔진",
+      "storage": "스토리지",
+      "queue": "큐",
+      "auth": "인증",
+      "extension": "확장"
+    },
     "enable": "사용",
     "disable": "사용 안 함",
     "healthCheck": "상태 확인",

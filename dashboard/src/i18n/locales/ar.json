@@ -917,6 +917,19 @@
     "refresh": "تحديث",
     "builtIn": "مدمج",
     "noDescription": "لا يوجد وصف متاح",
+    "statuses": {
+      "installed": "مُثبَّتة",
+      "enabled": "مُمكَّنة",
+      "disabled": "مُعطَّلة",
+      "error": "خطأ"
+    },
+    "types": {
+      "engine": "محرك",
+      "storage": "تخزين",
+      "queue": "قائمة",
+      "auth": "مصادقة",
+      "extension": "امتداد"
+    },
     "enable": "تمكين",
     "disable": "تعطيل",
     "healthCheck": "فحص الصحة",

@@ -902,6 +902,19 @@
     "refresh": "重新整理",
     "builtIn": "內置",
     "noDescription": "沒有可用描述",
+    "statuses": {
+      "installed": "已安裝",
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "error": "錯誤"
+    },
+    "types": {
+      "engine": "引擎",
+      "storage": "儲存",
+      "queue": "佇列",
+      "auth": "認證",
+      "extension": "擴充"
+    },
     "enable": "啟用",
     "disable": "停用",
     "healthCheck": "健康檢查",

@@ -902,6 +902,19 @@
     "refresh": "Aktualisieren",
     "builtIn": "Integriert",
     "noDescription": "Keine Beschreibung verfügbar",
+    "statuses": {
+      "installed": "Installiert",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "error": "Fehler"
+    },
+    "types": {
+      "engine": "Engine",
+      "storage": "Speicher",
+      "queue": "Warteschlange",
+      "auth": "Auth",
+      "extension": "Erweiterung"
+    },
     "enable": "Aktivieren",
     "disable": "Deaktivieren",
     "healthCheck": "Funktionsprüfung",

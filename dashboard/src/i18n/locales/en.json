@@ -902,6 +902,19 @@
     "refresh": "Refresh",
     "builtIn": "Built-in",
     "noDescription": "No description available",
+    "statuses": {
+      "installed": "Installed",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "error": "Error"
+    },
+    "types": {
+      "engine": "Engine",
+      "storage": "Storage",
+      "queue": "Queue",
+      "auth": "Auth",
+      "extension": "Extension"
+    },
     "enable": "Enable",
     "disable": "Disable",
     "healthCheck": "Health Check",

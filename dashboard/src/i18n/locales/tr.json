@@ -902,6 +902,19 @@
     "refresh": "Yenile",
     "builtIn": "Dahili",
     "noDescription": "Açıklama bulunmuyor",
+    "statuses": {
+      "installed": "Yüklü",
+      "enabled": "Etkin",
+      "disabled": "Devre Dışı",
+      "error": "Hata"
+    },
+    "types": {
+      "engine": "Motor",
+      "storage": "Depolama",
+      "queue": "Kuyruk",
+      "auth": "Kimlik Doğrulama",
+      "extension": "Uzantı"
+    },
     "enable": "Etkinleştir",
     "disable": "Devre Dışı Bırak",
     "healthCheck": "Sağlık Kontrolü",

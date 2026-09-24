@@ -132,6 +132,31 @@ test('new plugins.* keys carry the expected English copy', () => {
   assert.equal(i18n.t('plugins.toasts.updateFailed'), 'Update failed');
 });
 
+// Mirrors the `status` and `type` unions on `Plugin` in services/api.ts. The plugin card renders
+// both through these keys; a missing one falls back to the raw English value.
+const PLUGIN_STATUSES = ['installed', 'enabled', 'disabled', 'error'];
+const PLUGIN_TYPES = ['engine', 'storage', 'queue', 'auth', 'extension'];
+
+test('every plugin status and type label resolves in every locale', () => {
+  for (const lng of LOCALE_IDS) {
+    for (const [group, values] of [
+      ['statuses', PLUGIN_STATUSES],
+      ['types', PLUGIN_TYPES],
+    ] as const) {
+      for (const value of values) {
+        const key = `plugins.${group}.${value}`;
+        const label = i18n.t(key, { lng });
+        assert.ok(
+          label && label !== key && label !== value,
+          `${lng}: ${key} missing, card would render raw "${value}"`,
+        );
+      }
+    }
+  }
+  assert.equal(i18n.t('plugins.statuses.installed'), 'Installed');
+  assert.equal(i18n.t('plugins.types.extension'), 'Extension');
+});
+
 test('sessionStatus.failed and sessionStatus.authenticating resolve in every locale', () => {
   for (const lng of LOCALE_IDS) {
     for (const status of ['failed', 'authenticating']) {
