@@ -41,7 +41,7 @@ export class StatusDto {
     description:
       'Same-origin path to GET /sessions/{sessionId}/status/{statusId}/media, which needs X-API-Key like ' +
       'any other route. Present only when the stored status kept its media.',
-    example: '/api/sessions/my-session/status/ABCD1234/media',
+    example: '/api/sessions/0a941dac-a965-45e7-b318-74ae8be134f0/status/ABCD1234/media',
   })
   mediaUrl?: string;
 
