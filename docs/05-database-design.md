@@ -468,7 +468,7 @@ CREATE TABLE automation_rules (
     "sessionId" VARCHAR NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT true,
-    conditions JSONB,                    -- webhook filter shape; null = match every inbound message
+    conditions JSONB,                    -- webhook filter shape; null = match all except channel/broadcast/status (need a kind condition)
     "replyText" TEXT NOT NULL,
     "cooldownSeconds" INTEGER NOT NULL DEFAULT 60,  -- per-(rule, chat) quiet period; 0 disables
     "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),

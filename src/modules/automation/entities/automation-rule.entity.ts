@@ -42,7 +42,8 @@ export class AutomationRule {
   @Column({ type: 'boolean', default: true })
   enabled!: boolean;
 
-  // Null/absent means "match every inbound message" — mirrors webhook filters' additive default.
+  // Null/absent matches every inbound message except channel, broadcast-list and status chats (those need a
+  // kind condition); otherwise mirrors webhook filters' additive default.
   @Column({ type: jsonColumnType(), nullable: true })
   conditions!: WebhookFilters | null;
 
