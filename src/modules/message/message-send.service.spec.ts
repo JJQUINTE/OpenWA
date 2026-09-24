@@ -14,6 +14,7 @@ import { TemplateService } from '../template/template.service';
 import { Template } from '../template/entities/template.entity';
 import { SsrfBlockedError } from '../../common/security/ssrf-guard';
 import { SendPacingService } from './send-pacing.service';
+import type { MessageProjector } from '../session/message-projector.service';
 
 /** Pacing is off by default in these tests; the governor's own spec covers its behaviour. */
 const inertPacing = (): SendPacingService =>
@@ -1100,6 +1101,58 @@ describe('MessageSendService', () => {
       );
       await withStore.reply('sess-1', { chatId: '628111@c.us', quotedMessageId: 'wa-own', text: 'hi' });
       expect(quoteOf()).toEqual({ id: 'wa-own', body: 'same chat, lid form' });
+    });
+  });
+
+  describe('quoting a message whose message:received hooks are still running', () => {
+    // A plugin that replies from its message:received hook sends before the inbound row is written,
+    // so the table has nothing to quote. The projector's in-flight copy stands in for it.
+    const inFlight = { chatId: '628111@c.us', body: 'what are your hours?' };
+    const quoteOf = (): unknown => {
+      const calls = (repository.create as jest.Mock).mock.calls as [{ metadata: { quotedMessage: unknown } }][];
+      return calls[0][0].metadata.quotedMessage;
+    };
+    const withProjector = (live: { chatId: string; body: unknown } = inFlight): MessageSendService =>
+      new MessageSendService(
+        repository as Repository<Message>,
+        sessionService as unknown as SessionService,
+        engines,
+        hookManager as HookManager,
+        templateService as unknown as TemplateService,
+        inertPacing(),
+        undefined,
+        undefined,
+        undefined,
+        {
+          inFlightInbound: jest.fn((sessionId: string, id: string) =>
+            sessionId === 'sess-1' && id === 'wa-live' ? live : undefined,
+          ),
+        } as unknown as MessageProjector,
+      );
+
+    it('reply stores the body of the message the hook chain carries', async () => {
+      await withProjector().reply('sess-1', { chatId: '628111@c.us', quotedMessageId: 'wa-live', text: '9 to 5' });
+      expect(quoteOf()).toEqual({ id: 'wa-live', body: 'what are your hours?' });
+    });
+
+    it('a quoting send stores it too', async () => {
+      await withProjector().sendText('sess-1', { chatId: '628111@c.us', text: '9 to 5', quotedMessageId: 'wa-live' });
+      expect(quoteOf()).toEqual({ id: 'wa-live', body: 'what are your hours?' });
+    });
+
+    it('reply does not copy the in-flight body into another chat', async () => {
+      await withProjector().reply('sess-1', { chatId: '628999@c.us', quotedMessageId: 'wa-live', text: 'hi' });
+      expect(quoteOf()).toEqual({ id: 'wa-live', body: '' });
+    });
+
+    it('quotes a body a hook rewrote into something other than text as empty', async () => {
+      // A rewrite is only checked for its id and chatId; the dashboard renders the quote as a string.
+      await withProjector({ chatId: '628111@c.us', body: 42 }).reply('sess-1', {
+        chatId: '628111@c.us',
+        quotedMessageId: 'wa-live',
+        text: 'hi',
+      });
+      expect(quoteOf()).toEqual({ id: 'wa-live', body: '' });
     });
   });
 

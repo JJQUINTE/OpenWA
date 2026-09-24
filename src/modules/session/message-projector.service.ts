@@ -86,6 +86,10 @@ export class MessageProjector {
     this.logger.error(`Unexpected failure applying message mutation: ${key}`, String(err));
   });
 
+  // Inbound messages whose `message:received` chain is running, by `${sessionId}:${waMessageId}`. The
+  // row is written only after the chain, so a handler that quotes the message reads it from here.
+  private readonly inboundInFlight = new Map<string, { message: InboundMessageData }>();
+
   // Reaction/edit applies, extracted to a plain collaborator. It shares this instance's
   // messageMutations queue, so the public enqueue path and the queued applies serialize on one chain.
   private readonly mutationProjector: MessageMutationProjector;
@@ -138,18 +142,40 @@ export class MessageProjector {
     void this.sessionRepository.update(id, { lastActiveAt: new Date() }).catch(() => undefined);
     // Convert IncomingMessage to plain object for dispatch
     const messageData = { ...message };
+    // Tracks the chain's current copy, so a quote taken mid-chain carries an earlier handler's rewrite.
+    const inFlight = { message: messageData };
+    const inFlightKey = `${id}:${message.id}`;
+    this.inboundInFlight.set(inFlightKey, inFlight);
 
     // Execute hook for message received - plugins can modify or stop processing
     void this.hookManager
       .execute('message:received', messageData, {
         sessionId: id,
         source: 'Engine',
-        accept: isMessagePayload,
+        accept: data => {
+          if (!isMessagePayload(data)) return false;
+          inFlight.message = data;
+          return true;
+        },
       })
       .then(({ data }) =>
         this.projectInboundMessage(id, engine, this.messageOrEngineCopy(id, 'message:received', data, message)),
       )
-      .catch(err => this.logger.error(`onMessage handler failed for ${id}`, String(err)));
+      .catch(err => this.logger.error(`onMessage handler failed for ${id}`, String(err)))
+      .finally(() => {
+        // A re-fire of the same id may have replaced the entry; leave that one to its own chain.
+        if (this.inboundInFlight.get(inFlightKey) === inFlight) this.inboundInFlight.delete(inFlightKey);
+      });
+  }
+
+  /**
+   * The inbound message a `message:received` chain is carrying, as the chain last rewrote it, from the
+   * moment the chain starts until the message's row is written; undefined otherwise. The row does not
+   * exist while the chain runs, so a handler that replies to the message finds nothing to quote in the
+   * table.
+   */
+  inFlightInbound(sessionId: string, waMessageId: string): Pick<IncomingMessage, 'chatId' | 'body'> | undefined {
+    return waMessageId ? this.inboundInFlight.get(`${sessionId}:${waMessageId}`)?.message : undefined;
   }
 
   /**
