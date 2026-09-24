@@ -5968,8 +5968,12 @@ Content pinning: append `#sha256=<64 hex>` (URL fragment — never sent to the s
 | `url` | string | Yes      | `@IsUrl({ protocols:['http','https'], require_protocol:true })` | Absolute URL of the package; plain http only with a `#sha256=` digest pin, which production also requires on https |
 
 ```json
-{ "url": "https://github.com/openwa-plugins/chat-flow/releases/download/v1.0.0/chat-flow.zip" }
+{
+  "url": "https://github.com/openwa-plugins/chat-flow/releases/download/v1.0.0/chat-flow.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
 ```
+
+The digest shown is a placeholder: use the SHA-256 of the `.zip` (`sha256sum chat-flow.zip`).
 
 **Response** `201` — the newly installed `PluginDto`.
 
@@ -6142,7 +6146,9 @@ Update an installed plugin in place from a URL, preserving config + enabled stat
 | `url` | string | Yes      | `@IsUrl({ protocols:['http','https'], require_protocol:true })` | Absolute URL of the new `.zip` (SSRF-guarded download); http only with a `#sha256=` pin, which production also requires on https |
 
 ```json
-{ "url": "https://example.com/plugins/chat-flow-1.1.0.zip" }
+{
+  "url": "https://example.com/plugins/chat-flow-1.1.0.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
 ```
 
 **Response** `201` — the updated `PluginDto`.
