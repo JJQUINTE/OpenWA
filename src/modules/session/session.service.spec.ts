@@ -2025,9 +2025,11 @@ describe('SessionService', () => {
         i.reconnectStates.set('sess-uuid-1', state);
         const exec = jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
-        // Twelve consecutive disconnects — the pre-fix default (5) would have wedged FAILED at the
-        // 6th; with the unlimited default every one schedules another attempt.
+        // Twelve consecutive failed attempts (each timer fires, and its failure schedules the next) —
+        // the pre-fix default (5) would have wedged FAILED at the 6th; with the unlimited default
+        // every one schedules another attempt.
         for (let k = 0; k < 12; k++) {
+          jest.runOnlyPendingTimers();
           i.scheduleReconnect('sess-uuid-1', createMockSession());
         }
 
@@ -2037,6 +2039,7 @@ describe('SessionService', () => {
 
         // The 12th schedule computed its delay with attempts=11: 5000*2^11 ≈ 10.24M ms, clamped to
         // the 5-minute cap; the timer fires exactly at the cap, not earlier.
+        exec.mockClear();
         jest.advanceTimersByTime(299_999);
         expect(exec).not.toHaveBeenCalled();
         jest.advanceTimersByTime(1);
@@ -2093,6 +2096,31 @@ describe('SessionService', () => {
       }
     });
 
+    it('does not postpone an armed reconnect when the same episode reports another disconnect', () => {
+      // The liveness watchdog re-probes a wedged engine that still reports READY and calls onDead
+      // again ~120s later. With a 150s base delay, re-arming on every report would push the attempt
+      // back each time and it would never run.
+      jest.useFakeTimers();
+      try {
+        const i = internals();
+        const state = { attempts: 0, timer: null, maxAttempts: Number.POSITIVE_INFINITY, baseDelay: 150_000 };
+        i.reconnectStates.set('sess-uuid-1', state);
+        const exec = jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
+
+        i.scheduleReconnect('sess-uuid-1', createMockSession());
+        jest.advanceTimersByTime(120_000);
+        i.scheduleReconnect('sess-uuid-1', createMockSession());
+        expect(state.attempts).toBe(1); // the repeat consumed no attempt
+
+        jest.advanceTimersByTime(31_000); // past 150s + <1s jitter from the FIRST schedule
+        expect(exec).toHaveBeenCalledTimes(1);
+        expect(state.timer).toBeNull(); // spent, so the attempt's own failure can schedule the next one
+      } finally {
+        jest.clearAllTimers();
+        jest.useRealTimers();
+      }
+    });
+
     it('still wedges FAILED once an EXPLICIT cap is exhausted', () => {
       jest.useFakeTimers();
       try {
@@ -2100,11 +2128,13 @@ describe('SessionService', () => {
         (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
         const state = { attempts: 2, timer: null, maxAttempts: 3, baseDelay: 5000 };
         i.reconnectStates.set('sess-uuid-1', state);
+        jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
         i.scheduleReconnect('sess-uuid-1', createMockSession()); // attempt 3/3 still schedules
         expect(state.attempts).toBe(3);
         expect(i.sessionErrors.get('sess-uuid-1')).toBeUndefined();
 
+        jest.runOnlyPendingTimers(); // attempt 3 runs and fails
         i.scheduleReconnect('sess-uuid-1', createMockSession()); // budget exhausted → terminal FAILED
         expect(state.attempts).toBe(3); // no further attempt consumed
         expect(i.sessionErrors.get('sess-uuid-1')).toMatch(/Reconnection failed after 3 attempts/);
@@ -2129,9 +2159,15 @@ describe('SessionService', () => {
       >;
       engines: { set: (id: string, engine: unknown) => void };
       scheduleReconnect: (id: string, session: Session) => void;
+      executeReconnect: (...args: unknown[]) => Promise<void>;
       handleEngineReady: (id: string, engine: unknown, phone: string, pushName: string) => void;
     };
     const internals = (): LoopInternals => lifecycle as unknown as LoopInternals;
+    // One failed attempt: the pending timer (if any) fires, and that attempt's failure schedules the next.
+    const failedAttempt = (i: LoopInternals): void => {
+      jest.runOnlyPendingTimers();
+      i.scheduleReconnect('sess-uuid-1', createMockSession());
+    };
     const loopDispatches = (): unknown[][] =>
       ((webhookService.dispatch as jest.Mock).mock.calls as unknown[][]).filter(c => c[1] === 'session.reconnect_loop');
 
@@ -2141,13 +2177,12 @@ describe('SessionService', () => {
         const i = internals();
         const state = { attempts: 0, timer: null, maxAttempts: Number.POSITIVE_INFINITY, baseDelay: 5000 };
         i.reconnectStates.set('sess-uuid-1', state);
+        jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
         const attemptsBefore = getSessionReconnectAttemptsTotal();
         const alertsBefore = getSessionReconnectLoopAlertsTotal();
 
-        for (let k = 0; k < 4; k++) {
-          i.scheduleReconnect('sess-uuid-1', createMockSession());
-        }
+        for (let k = 0; k < 4; k++) failedAttempt(i);
 
         expect(state.attempts).toBe(4);
         // One counter tick per scheduled attempt.
@@ -2167,13 +2202,12 @@ describe('SessionService', () => {
         const i = internals();
         const state = { attempts: 0, timer: null, maxAttempts: Number.POSITIVE_INFINITY, baseDelay: 5000 };
         i.reconnectStates.set('sess-uuid-1', state);
+        jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
         const attemptsBefore = getSessionReconnectAttemptsTotal();
         const alertsBefore = getSessionReconnectLoopAlertsTotal();
 
-        for (let k = 0; k < 10; k++) {
-          i.scheduleReconnect('sess-uuid-1', createMockSession());
-        }
+        for (let k = 0; k < 10; k++) failedAttempt(i);
 
         expect(getSessionReconnectAttemptsTotal()).toBe(attemptsBefore + 10);
         expect(getSessionReconnectLoopAlertsTotal()).toBe(alertsBefore + 2);
@@ -2203,20 +2237,19 @@ describe('SessionService', () => {
         (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
         const engine = { getStatus: jest.fn().mockReturnValue(EngineStatus.READY) };
         i.engines.set('sess-uuid-1', engine);
+        jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
 
         const alertsBefore = getSessionReconnectLoopAlertsTotal();
 
         i.handleEngineReady('sess-uuid-1', engine, '628123', 'Tester');
-        for (let k = 0; k < 4; k++) {
-          i.scheduleReconnect('sess-uuid-1', createMockSession());
-        }
+        for (let k = 0; k < 4; k++) failedAttempt(i);
         // Without the reset the very first of these would have been attempt 5 and alerted; instead the
         // streak restarted at 0, so 4 fresh schedules reach only attempt 4 — still no alert.
         expect(state.attempts).toBe(4);
         expect(loopDispatches()).toHaveLength(0);
         expect(getSessionReconnectLoopAlertsTotal()).toBe(alertsBefore);
 
-        i.scheduleReconnect('sess-uuid-1', createMockSession()); // fresh attempt 5 → alert again
+        failedAttempt(i); // fresh attempt 5 → alert again
         expect(state.attempts).toBe(5);
         const calls = loopDispatches();
         expect(calls).toHaveLength(1);
@@ -2371,12 +2404,13 @@ describe('SessionService', () => {
         };
         i.reconnectStates.set('sess-uuid-1', { attempts: 0, timer: null, maxAttempts: 5, baseDelay: 5000 });
 
-        // Two disconnect events in a row each schedule a reconnect. The second must clear the
-        // first timer, leaving exactly one pending — otherwise both fire and double-init the engine.
+        // Two disconnect events in a row each schedule a reconnect. The second must leave the first
+        // timer as the only one pending — otherwise both fire and double-init the engine.
         i.scheduleReconnect('sess-uuid-1', createMockSession());
         i.scheduleReconnect('sess-uuid-1', createMockSession());
 
         expect(jest.getTimerCount()).toBe(1);
+        expect(i.reconnectStates.get('sess-uuid-1')?.attempts).toBe(1);
       } finally {
         jest.clearAllTimers();
         jest.useRealTimers();
