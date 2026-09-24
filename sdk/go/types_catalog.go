@@ -26,16 +26,18 @@ func (q *CatalogProductsQuery) values() url.Values {
 
 // CatalogProduct is a catalog product.
 type CatalogProduct struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	Description    *string `json:"description,omitempty"`
-	Price          float64 `json:"price,omitempty"`
-	Currency       string  `json:"currency,omitempty"`
-	PriceFormatted string  `json:"priceFormatted,omitempty"`
-	ImageURL       *string `json:"imageUrl,omitempty"`
-	URL            string  `json:"url,omitempty"`
-	IsAvailable    bool    `json:"isAvailable,omitempty"`
-	RetailerID     string  `json:"retailerId,omitempty"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	// Price is nil when the product has no price (PriceFormatted is empty then too). A genuine
+	// price of 0 is a pointer to 0.
+	Price          *float64 `json:"price,omitempty"`
+	Currency       string   `json:"currency,omitempty"`
+	PriceFormatted string   `json:"priceFormatted,omitempty"`
+	ImageURL       *string  `json:"imageUrl,omitempty"`
+	URL            string   `json:"url,omitempty"`
+	IsAvailable    bool     `json:"isAvailable,omitempty"`
+	RetailerID     string   `json:"retailerId,omitempty"`
 }
 
 // ProductPagination is the pagination block for catalog products.
