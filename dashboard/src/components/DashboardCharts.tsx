@@ -68,9 +68,12 @@ export function DashboardCharts() {
   if (isError && forbidden) return null;
 
   const timeSeries = (data?.timeSeries ?? []).map(p => ({ ...p, label: formatTick(p.timestamp, period) }));
-  // `name` keys the slice color; `label` is what the legend and tooltip show.
+  // `name` keys the slice color; `label` is what the legend and tooltip show. The `unknown` bucket
+  // reads "Unknown", not the chat bubble's generic "Message" placeholder.
+  const typeLabel = (name: string) =>
+    t(name === 'unknown' ? 'chats.kind.unknown' : `chats.messageType.${name}`, { defaultValue: name });
   const byType = Object.entries(data?.byType ?? {})
-    .map(([name, value]) => ({ name, label: t(`chats.messageType.${name}`, { defaultValue: name }), value }))
+    .map(([name, value]) => ({ name, label: typeLabel(name), value }))
     .sort((a, b) => b.value - a.value);
   const topChats = (data?.topChats ?? [])
     .slice(0, 8)

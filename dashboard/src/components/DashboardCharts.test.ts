@@ -51,6 +51,6 @@ test('the by-type pie legend names message types in words', async () => {
   const card = (await rtl.screen.findByText('Messages by type')).closest('.chart-card') as HTMLElement;
   await rtl.waitFor(() => {
     const legend = Array.from(card.querySelectorAll('.recharts-legend-item-text')).map(n => n.textContent);
-    assert.deepEqual(legend.sort(), ['Hidden message', 'Message', 'Voice message']);
+    assert.deepEqual(legend.sort(), ['Hidden message', 'Unknown', 'Voice message']);
   });
 });

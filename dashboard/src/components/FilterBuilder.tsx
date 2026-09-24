@@ -239,7 +239,11 @@ export function FilterBuilder({ filters, onChange, chats }: FilterBuilderProps) 
                           });
                         }}
                       >
-                        {t(`${def.enumLabels}.${option}`, { defaultValue: option })}
+                        {/* An `unknown` type reads "Unknown" like the unknown chat kind, not the chat
+                            bubble's generic "Message" placeholder. */}
+                        {t(option === 'unknown' ? 'chats.kind.unknown' : `${def.enumLabels}.${option}`, {
+                          defaultValue: option,
+                        })}
                       </button>
                     );
                   })}
