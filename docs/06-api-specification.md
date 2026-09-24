@@ -1703,6 +1703,10 @@ On whatsapp-web.js a quoted send to a channel, `status@broadcast` or a broadcast
 and nothing is sent: the library drops a reply to those recipients without sending it, so the
 gateway refuses it before the call. The Baileys engine does not refuse it.
 
+On Baileys a message deleted for everyone is not found (`404`): the store drops its content, so the
+deleted text or media is never quoted back into the chat. An edited message is quoted with its edited
+text.
+
 Quoting a message from a **different chat** is not validated on these `send-*` routes on either
 engine; the id is passed through as given. `POST /messages/reply` is stricter: both engines refuse a
 quoted id that does not belong to the target chat, with `404`.

@@ -84,6 +84,8 @@ function makeMessaging(stored: unknown = PROMPT, opts: { ephemeralExpiration?: n
         getContentType: (c: unknown) => contentTypeOf(c),
       } as never),
     getStoredMessage,
+    wasDeletedForEveryone: () => false,
+    markDeletedForEveryone: () => undefined,
     putStoredMessage,
     recordMessage: () => undefined,
     rememberOwnSend: () => undefined,

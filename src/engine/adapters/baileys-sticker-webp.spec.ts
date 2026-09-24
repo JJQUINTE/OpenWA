@@ -58,6 +58,8 @@ function makeMessaging(): { messaging: BaileysMessaging; sock: { sendMessage: je
     toUnixSeconds: () => 1,
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage: () => Promise.resolve(undefined),
+    wasDeletedForEveryone: () => false,
+    markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
     recordMessage: () => undefined,
     rememberOwnSend: () => undefined,

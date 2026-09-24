@@ -62,7 +62,13 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
   });
 
   it('passes the message store to the adapter', () => {
-    const store = { put: jest.fn(), getMessage: jest.fn(), getMessages: jest.fn(), clearSession: jest.fn() };
+    const store = {
+      put: jest.fn(),
+      getMessage: jest.fn(),
+      getMessages: jest.fn(),
+      update: jest.fn(),
+      clearSession: jest.fn(),
+    };
     const plugin = new BaileysPlugin(store);
     plugin.createEngine({ sessionId: 'sess-1' });
     expect(BaileysAdapter).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', messageStore: store }));

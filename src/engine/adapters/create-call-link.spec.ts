@@ -46,6 +46,8 @@ describe('BaileysMessaging.createCallLink', () => {
           CALL_AUDIO_PREFIX: 'https://call.whatsapp.com/voice/',
         } as never),
       getStoredMessage: () => Promise.resolve(undefined),
+      wasDeletedForEveryone: () => false,
+      markDeletedForEveryone: () => undefined,
       putStoredMessage: () => undefined,
       recordLidMapping: () => undefined,
       getOnMessageCreate: () => undefined,
