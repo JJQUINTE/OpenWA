@@ -67,16 +67,17 @@ export async function generateSafeLinkPreview(
         if (!type.includes('html') && !type.includes('xml')) return undefined;
 
         const html = await readCapped(response, maxBytes);
-        const title = firstMatch(html, [
-          /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*)["']/i,
-          /<meta[^>]+content=["']([^"']*)["'][^>]+property=["']og:title["']/i,
-          /<title[^>]*>([^<]*)<\/title>/i,
-        ]);
-        const description = firstMatch(html, [
-          /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["']/i,
-          /<meta[^>]+content=["']([^"']*)["'][^>]+property=["']og:description["']/i,
-          /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i,
-        ]);
+        // One pass over the <meta> tags, each read only up to the next '<', then one attribute at a
+        // time. Matching attribute pairs across the whole body backtracks from every '<meta' to the
+        // end of the text: a crafted page of unclosed tags held the event loop for minutes.
+        const metas = new Map<string, string>();
+        for (const [, attrs] of html.matchAll(/<meta\b([^<]*)/gi)) {
+          const key = (attribute(attrs, 'property') ?? attribute(attrs, 'name'))?.toLowerCase();
+          const content = attribute(attrs, 'content');
+          if (key && content && !metas.has(key)) metas.set(key, content);
+        }
+        const title = metas.get('og:title') ?? /<title\b[^<>]*>([^<]*)<\/title>/i.exec(html)?.[1]?.trim();
+        const description = metas.get('og:description') ?? metas.get('description');
 
         // A page with neither says nothing the raw link does not, so there is no point attaching a
         // preview at all.
@@ -151,12 +152,9 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
   return out;
 }
 
-function firstMatch(html: string, patterns: RegExp[]): string | undefined {
-  for (const pattern of patterns) {
-    const value = pattern.exec(html)?.[1]?.trim();
-    if (value) return value;
-  }
-  return undefined;
+/** A quoted attribute's trimmed value from one tag's attribute text. */
+function attribute(attrs: string, name: 'property' | 'name' | 'content'): string | undefined {
+  return new RegExp(`\\b${name}=["']([^"']*)["']`, 'i').exec(attrs)?.[1]?.trim();
 }
 
 /** The handful of entities that actually show up in title/description text. */
