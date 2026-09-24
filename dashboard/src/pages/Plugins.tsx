@@ -435,7 +435,13 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     if (overrideFormRef.current && !overrideFormRef.current.reportValidity()) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, sparseSessionOverride(overrideCfg, plugin));
+      // A rejected save answers 200 + {success:false}; the absence of a throw is not success.
+      const res = await pluginsApi.updateSessionConfig(
+        plugin.id,
+        selSession,
+        sparseSessionOverride(overrideCfg, plugin),
+      );
+      if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
@@ -449,7 +455,8 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     if (!selSession) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      const res = await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
