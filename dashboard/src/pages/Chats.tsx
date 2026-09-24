@@ -335,7 +335,9 @@ export function Chats() {
         showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {
-        if (sessionId === chatsSessionRef.current) setLoadingChats(false);
+        // Only the call that raised the spinner clears it: a background refetch settling first would
+        // otherwise uncover the previous session's list while the switch's own load is still out.
+        if (!background && sessionId === chatsSessionRef.current) setLoadingChats(false);
       }
     },
     [showLoadError],

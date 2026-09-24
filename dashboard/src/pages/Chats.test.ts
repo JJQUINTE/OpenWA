@@ -954,6 +954,65 @@ test('a chat list that answers after the user switched sessions does not replace
   }
 });
 
+test("a failed background refetch during a session switch keeps the spinner over the previous session's list", async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  let secondCalls = 0;
+  // Session 2's first list is held open; the realtime refetch that overtakes it is throttled.
+  chatsResponder = sessionId => {
+    if (sessionId === SESSION.id) return Promise.resolve(jsonResponse([CHAT]));
+    secondCalls += 1;
+    if (secondCalls === 1) return secondGate.then(() => jsonResponse([CHAT_2]));
+    return Promise.resolve(jsonResponse({ message: 'too many requests' }, 429));
+  };
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Alice');
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the switch showed no spinner'));
+
+    const DAVE = '15550009999@c.us';
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION_2.id,
+        data: {
+          id: 'wamid.dave.1',
+          chatId: DAVE,
+          from: DAVE,
+          to: 'me',
+          body: 'hi',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_003_000,
+        },
+      },
+    });
+    await waitFor(() => assert.equal(secondCalls, 2, 'the unlisted chat did not refetch the list'));
+    await flush();
+    await flush();
+
+    assert.ok(container.querySelector('.chats-list-loading'), 'the failed refetch cleared the switch spinner');
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats showed under the selected session");
+
+    releaseSecond();
+    await screen.findByText('Carol');
+    assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test('a chat list refetch lands while a newer one is out, and an older answer never overwrites a newer', async () => {
   const { screen, waitFor } = rtl;
   const { container } = renderChats();
