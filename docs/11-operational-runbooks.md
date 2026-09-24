@@ -529,20 +529,22 @@ docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
 # openwa-postgres container Dashboard > Infrastructure created), start only the database; openwa-api
 # stays stopped, or the rename below fails on its open connections. The upgraded database is kept
 # under a new name, as the SQLite path keeps data.pre-restore-<ts>, and an empty one takes its place.
-# The container's own POSTGRES_USER and POSTGRES_DB name the role and database the app uses
+# The container's own POSTGRES_USER and POSTGRES_DB name the role and database the app uses. The
+# image's pg_dump 17 writes `SET transaction_timeout = 0;`, which PostgreSQL 16 rejects, so sed
+# drops that line before psql
 docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
 docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
 docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
   -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
-tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql |
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
   docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 # An external PostgreSQL server: rename the upgraded database and create an empty one under the
 # DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
 # OpenWA setting: fill in your own URL for that database, such as
 # postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
-tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql |
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
   psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 3. Check out the previous release and rebuild the image
@@ -709,20 +711,21 @@ docker compose down
 #    only the database; the app stays stopped, or the rename below fails on its open connections.
 #    The current database is kept under a new name, as the data dir is kept in data.pre-restore-<ts>,
 #    and an empty one takes its place. The container's own POSTGRES_USER and POSTGRES_DB name the
-#    role and database the app uses
+#    role and database the app uses. The image's pg_dump 17 writes `SET transaction_timeout = 0;`,
+#    which PostgreSQL 16 rejects, so sed drops that line before psql
 docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
 docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
 docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
   -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
-tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql |
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
   docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 #    An external PostgreSQL server: rename the current database and create an empty one under the
 #    DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
 #    OpenWA setting: fill in your own URL for that database, such as
 #    postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
-tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql |
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
   psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 4. Start the app and CONFIRM an existing API key still authenticates
