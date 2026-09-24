@@ -673,7 +673,9 @@
       "filteredTitle": "Keine Treffer auf dieser Seite",
       "filteredDescription": "Die Suche filtert nur die aktuelle Seite. Leere sie, blättere weiter oder grenze serverseitig über den Severity-Filter ein.",
       "filteredServerDescription": "Keine Protokolle passen auf diese Filter. Passe den Severity-Filter an, um die Suche zu erweitern."
-    }
+    },
+    "exportFailed": "Audit-Protokoll konnte nicht exportiert werden",
+    "exportTruncated": "Der Export umfasst nur die neuesten {{rows}} Einträge. Grenze den Severity-Filter ein, um ältere Einträge zu exportieren."
   },
   "messageTester": {
     "title": "Nachrichtentester",

@@ -5,7 +5,7 @@
 // renders null fields with its fallbacks rather than crashing, and that the search filter matches
 // action and errorMessage case-insensitively over rows whose other fields are null.
 import '../test-helpers/register-hooks.ts';
-import { test, before } from 'node:test';
+import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -51,13 +51,46 @@ function jsonResponse(data: unknown): Response {
   return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
 }
 
+// When set, the export's page walk (limit=200) fails with this status; the on-screen page still loads.
+let exportFailure: number | null = null;
+// When set, the export's page walk sees a table of this many rows, served 200 at a time.
+let exportTotal: number | null = null;
+
 function installFetchStub(): void {
-  globalThis.fetch = ((): Promise<Response> =>
-    Promise.resolve(jsonResponse({ data: LOGS, total: LOGS.length }))) as typeof fetch;
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (exportFailure && url.includes('limit=200')) {
+      return Promise.resolve(new Response(JSON.stringify({ message: 'boom' }), { status: exportFailure }));
+    }
+    if (exportTotal && url.includes('limit=200')) {
+      return Promise.resolve(jsonResponse({ data: Array(200).fill(LOG_FAILED_SEND), total: exportTotal }));
+    }
+    return Promise.resolve(jsonResponse({ data: LOGS, total: LOGS.length }));
+  }) as typeof fetch;
+}
+
+/** Record the export's blobs instead of handing them to jsdom, which has no object URLs. */
+function recordDownloads(): { downloads: Blob[]; restore: () => void } {
+  const downloads: Blob[] = [];
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = (blob: Blob) => {
+    downloads.push(blob);
+    return 'blob:export';
+  };
+  URL.revokeObjectURL = () => {};
+  return {
+    downloads,
+    restore: () => {
+      URL.createObjectURL = realCreate;
+      URL.revokeObjectURL = realRevoke;
+    },
+  };
 }
 
 let rtl: typeof import('@testing-library/react');
 let Logs: () => React.ReactElement;
+let ToastProvider: (typeof import('../components/Toast.tsx'))['ToastProvider'];
 
 before(async () => {
   const { installJsdomGlobals } = await import('../test-helpers/jsdom.ts');
@@ -66,12 +99,17 @@ before(async () => {
   const { i18nReady } = await import('../i18n/index.ts');
   await i18nReady;
   rtl = await import('@testing-library/react');
+  ({ ToastProvider } = await import('../components/Toast.tsx'));
   ({ Logs } = await import('./Logs.tsx'));
 });
 
+afterEach(() => rtl.cleanup());
+
 function renderLogs(): HTMLElement {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return rtl.render(createElement(QueryClientProvider, { client }, createElement(Logs))).container;
+  return rtl.render(
+    createElement(QueryClientProvider, { client }, createElement(ToastProvider, null, createElement(Logs))),
+  ).container;
 }
 
 test('the log table renders rows whose nullable fields are null without crashing, and shows both severities', async () => {
@@ -83,4 +121,46 @@ test('the log table renders rows whose nullable fields are null without crashing
   // The fallback for a null ip is an em-dash, not a crash and not the string "null".
   assert.ok(container.textContent?.includes('—'), 'null ip falls back to the dash placeholder');
   assert.ok(!container.textContent?.includes('null'), 'no raw null leaks into the DOM');
+});
+
+test('a failed full export is reported, and the rows on screen are not downloaded in its place', async () => {
+  const { screen, fireEvent } = rtl;
+  const { downloads, restore } = recordDownloads();
+  exportFailure = 500;
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await screen.findByText("Couldn't export the audit log");
+    assert.equal(downloads.length, 0, 'the current page was downloaded as if it were the full export');
+  } finally {
+    exportFailure = null;
+    restore();
+  }
+});
+
+test('an export that stops at the row cap says so, counted in the UI language', async () => {
+  const { screen, fireEvent } = rtl;
+  const { downloads, restore } = recordDownloads();
+  // Stand in for a machine whose default locale groups digits with a dot, as de-DE does.
+  const realToLocaleString = Number.prototype.toLocaleString;
+  Number.prototype.toLocaleString = function (
+    this: number,
+    locales?: Intl.LocalesArgument,
+    options?: Intl.NumberFormatOptions,
+  ) {
+    return realToLocaleString.call(this, locales ?? 'de-DE', options);
+  };
+  exportTotal = 60_000;
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await screen.findByText(/covers only the newest 18,000 entries/, {}, { timeout: 10_000 });
+    assert.equal(downloads.length, 1, 'the rows fetched up to the cap are still downloaded');
+  } finally {
+    exportTotal = null;
+    Number.prototype.toLocaleString = realToLocaleString;
+    restore();
+  }
 });

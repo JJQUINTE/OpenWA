@@ -673,7 +673,9 @@
       "filteredTitle": "이 페이지에 일치하는 항목이 없습니다",
       "filteredDescription": "검색은 현재 페이지만 필터링합니다. 지우거나 페이지를 이동하거나 서버 측 심각도 필터를 사용하세요.",
       "filteredServerDescription": "이 필터에 일치하는 로그가 없습니다. 검색 범위를 넓히려면 심각도 필터를 조정하세요."
-    }
+    },
+    "exportFailed": "감사 로그를 내보내지 못했습니다",
+    "exportTruncated": "내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 이전 항목을 내보내려면 심각도 필터를 좁히세요."
   },
   "messageTester": {
     "title": "메시지 테스터",

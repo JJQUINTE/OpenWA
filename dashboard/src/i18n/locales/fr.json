@@ -677,7 +677,9 @@
       "filteredTitle": "Aucune correspondance sur cette page",
       "filteredDescription": "La recherche ne filtre que la page actuelle. Effacez-la, naviguez entre les pages ou utilisez le filtre de gravité côté serveur.",
       "filteredServerDescription": "Aucun journal ne correspond à ces filtres. Ajustez le filtre de gravité pour élargir la recherche."
-    }
+    },
+    "exportFailed": "Impossible d'exporter le journal d'audit",
+    "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes."
   },
   "messageTester": {
     "title": "Testeur de messages",

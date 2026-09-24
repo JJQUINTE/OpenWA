@@ -628,7 +628,9 @@
       "filteredTitle": "Sin coincidencias en esta página",
       "filteredDescription": "La búsqueda filtra solo la página actual. Bórrala, navega entre páginas o usa el filtro de severidad para acotar en el servidor.",
       "filteredServerDescription": "Ningún registro coincide con estos filtros. Ajusta el filtro de severidad para ampliar la búsqueda."
-    }
+    },
+    "exportFailed": "No se pudo exportar el registro de auditoría",
+    "exportTruncated": "La exportación solo abarca las {{rows}} entradas más recientes. Restringe el filtro de severidad para exportar las más antiguas."
   },
   "messageTester": {
     "title": "Probador de mensajes",

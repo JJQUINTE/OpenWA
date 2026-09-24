@@ -673,7 +673,9 @@
       "filteredTitle": "本页无匹配项",
       "filteredDescription": "搜索仅过滤当前页。请清除搜索、翻页，或使用严重级别筛选在服务端收窄。",
       "filteredServerDescription": "没有符合这些筛选条件的日志。请调整严重级别筛选以扩大搜索范围。"
-    }
+    },
+    "exportFailed": "无法导出审计日志",
+    "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。"
   },
   "messageTester": {
     "title": "消息测试器",

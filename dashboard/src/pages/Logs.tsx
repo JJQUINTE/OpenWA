@@ -4,6 +4,7 @@ import { Download, Search, Filter, Loader2, FileText, AlertCircle } from 'lucide
 import type { AuditLog } from '../services/api';
 import { auditApi } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useToast } from '../hooks/useToast';
 import { useLogsQuery } from '../hooks/queries';
 import { PageHeader } from '../components/PageHeader';
 import { CustomSelect } from '../components/CustomSelect';
@@ -13,7 +14,8 @@ import { escapeCsvCell } from '../utils/csv';
 import './Logs.css';
 
 export function Logs() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const toast = useToast();
   useDocumentTitle(t('logs.title'));
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -88,12 +90,12 @@ export function Logs() {
 
   // Export the WHOLE audit history (honouring the active severity filter + search), not just the
   // current page — paginate through the API up to a safety cap so a huge table can't OOM the tab. On
-  // a fetch error, fall back to exporting the rows already on screen.
+  // a fetch error, report it and download nothing: the rows on screen would pass for the full export.
   const handleExportCsv = async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      const all = await fetchAllPages<AuditLog>((limit, offset) =>
+      const { items: all, truncated } = await fetchAllPages<AuditLog>((limit, offset) =>
         auditApi.list({ severity: severityParam, limit, offset }),
       );
       const q = searchQuery.toLowerCase();
@@ -101,8 +103,13 @@ export function Logs() {
         ? all.filter(l => l.action.toLowerCase().includes(q) || (l.errorMessage || '').toLowerCase().includes(q))
         : all;
       if (rows.length > 0) download(buildCsv(rows));
-    } catch {
-      if (filteredLogs.length > 0) download(buildCsv(filteredLogs)); // graceful fallback to the page
+      // The cap keeps the newest rows (the API orders newest first); older ones are missing. The count
+      // follows the UI language, not the browser's locale, so it reads right inside the sentence.
+      if (truncated) {
+        toast.warning(t('logs.exportTruncated', { rows: all.length.toLocaleString(i18n.resolvedLanguage) }));
+      }
+    } catch (err) {
+      toast.error(t('logs.exportFailed'), err instanceof Error ? err.message : undefined);
     } finally {
       setExporting(false);
     }

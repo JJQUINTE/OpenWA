@@ -673,7 +673,9 @@
       "filteredTitle": "No matches on this page",
       "filteredDescription": "The search filters the current page only. Clear it, page through, or use the severity filter to narrow server-side.",
       "filteredServerDescription": "No logs match these filters. Adjust the severity filter to widen the search."
-    }
+    },
+    "exportFailed": "Couldn't export the audit log",
+    "exportTruncated": "The export covers only the newest {{rows}} entries. Narrow the severity filter to export older ones."
   },
   "messageTester": {
     "title": "Message Tester",

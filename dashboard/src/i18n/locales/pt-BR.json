@@ -628,7 +628,9 @@
       "filteredTitle": "Nenhuma correspondência nesta página",
       "filteredDescription": "A busca filtra apenas a página atual. Limpe-a, navegue pelas páginas ou use o filtro de severidade no servidor.",
       "filteredServerDescription": "Nenhum log corresponde a estes filtros. Ajuste o filtro de severidade para ampliar a busca."
-    }
+    },
+    "exportFailed": "Não foi possível exportar o registro de auditoria",
+    "exportTruncated": "A exportação cobre apenas as {{rows}} entradas mais recentes. Restrinja o filtro de severidade para exportar as mais antigas."
   },
   "messageTester": {
     "title": "Testador de mensagens",

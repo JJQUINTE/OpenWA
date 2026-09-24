@@ -677,7 +677,9 @@
       "filteredTitle": "Nessuna corrispondenza in questa pagina",
       "filteredDescription": "La ricerca filtra solo la pagina corrente. Cancellala, sfoglia le pagine o usa il filtro severità lato server.",
       "filteredServerDescription": "Nessun log corrisponde a questi filtri. Modifica il filtro severità per ampliare la ricerca."
-    }
+    },
+    "exportFailed": "Impossibile esportare il log di controllo",
+    "exportTruncated": "L'esportazione copre solo le {{rows}} voci più recenti. Restringi il filtro severità per esportare quelle più vecchie."
   },
   "messageTester": {
     "title": "Messaggio di prova",
