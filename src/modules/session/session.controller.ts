@@ -536,9 +536,10 @@ export class SessionController {
     status: 200,
     description:
       'Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the ' +
-      "read receipt against the chat's last known message, so a chat it has seen no message in is " +
-      'reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from ' +
-      'the page and needs no local history.',
+      'read receipt against the newest message the chat received, so a chat it has received no ' +
+      "message in (one holding only the account's own sends included) is reported as declined " +
+      'rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no ' +
+      'local history.',
     type: SessionActionResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Session not ready' })

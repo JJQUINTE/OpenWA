@@ -237,8 +237,8 @@ curl -X POST "$BASE/api/sessions/8f3c2b1a-9d4e-4c7a-8b2f-1e6d5a4c3b2a/chats/read
   -d '{ "chatId": "1234567890@c.us", "messageIds": ["3EB0C767D26B8A3F1A2B"] }'
 ```
 
-`messageIds` is optional and holds up to 100 ids. Omit it and only the newest message the engine still
-holds in memory is acknowledged, which on Baileys leaves the earlier messages of a burst unread.
+`messageIds` is optional and holds up to 100 ids. Omit it and only the newest received message the engine
+still holds in memory is acknowledged, which on Baileys leaves the earlier messages of a burst unread.
 
 #### POST /api/sessions/:sessionId/chats/unread
 

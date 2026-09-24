@@ -181,6 +181,13 @@ export class BaileysSessionStore {
   private readonly contacts: LruMap<string, BaileysContact>;
   private readonly chats: LruMap<string, Chat>;
   private readonly lastMessages: LruMap<string, LastMessage>;
+  /**
+   * The newest message each chat RECEIVED, kept apart from the preview because a read receipt can
+   * only acknowledge a message the other side sent: Baileys drops an own key from the receipt, so
+   * answering with the preview after an API reply sent nothing while the route reported success.
+   * An evicted entry reads null, which the receipt path answers as "nothing known".
+   */
+  private readonly lastInbound: LruMap<string, { key: WAMessageKey; timestamp: number }>;
   private readonly lidToPn: LruMap<string, string>;
   /**
    * Per-chat disappearing-messages timer (seconds) learned from inbound messages (#473), the reliable
@@ -216,6 +223,7 @@ export class BaileysSessionStore {
     this.contacts = new LruMap(maxEntries, contact => Boolean(contact.name));
     this.chats = new LruMap(maxEntries);
     this.lastMessages = new LruMap(maxEntries);
+    this.lastInbound = new LruMap(maxEntries);
     this.lidToPn = new LruMap(maxEntries);
     // Double-keyed (raw + neutral JID per chat), so it needs two slots per chat to cover the same span.
     this.ephemeralByChat = new LruMap(maxEntries * 2);
@@ -338,6 +346,10 @@ export class BaileysSessionStore {
     this.recordEphemeralFromMessage(chatId, msg);
     const key = this.chatKey(chatId);
     const timestamp = this.toUnixSeconds(msg.messageTimestamp);
+    if (!msg.key.fromMe) {
+      const inbound = this.lastInbound.get(key);
+      if (!inbound || inbound.timestamp < timestamp) this.lastInbound.set(key, { key: msg.key, timestamp });
+    }
     const existing = this.lastMessages.get(key);
     if (existing && existing.timestamp >= timestamp) {
       return; // keep the newest
@@ -517,6 +529,11 @@ export class BaileysSessionStore {
     const jid = this.chatKey(chatId);
     const m = this.lastMessages.get(jid);
     return m ? { key: m.key, timestamp: m.timestamp, jid } : null;
+  }
+
+  /** The newest message the chat received (not one this account sent), or null when none is known. */
+  lastInboundMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
+    return this.lastInbound.get(this.chatKey(chatId)) ?? null;
   }
 
   /**

@@ -6045,6 +6045,40 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     ]);
   });
 
+  it.each([
+    ['@c.us', '628111@c.us'],
+    ['@s.whatsapp.net', '628111@s.whatsapp.net'],
+  ])('sendSeen after an API reply to %s acknowledges the received message', async (_l, chatId) => {
+    fakeSock.sendMessage.mockImplementation((jid: string) =>
+      Promise.resolve({
+        key: { id: 'OUT', remoteJid: jid, fromMe: true },
+        message: { extendedTextMessage: { text: 'reply' } },
+        messageTimestamp: 1700000100,
+      }),
+    );
+    const adapter = await readyWithMessage();
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net' }]);
+    await adapter.sendTextMessage(chatId, 'reply');
+    expect(await adapter.sendSeen(chatId)).toBe(true);
+    expect(fakeSock.readMessages).toHaveBeenCalledWith([
+      { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+    ]);
+    expect(await adapter.getChats()).toEqual([expect.objectContaining({ lastMessage: 'reply' })]);
+  });
+
+  it('sendSeen returns false when the only known message is an own send', async () => {
+    fakeSock.sendMessage.mockResolvedValue({
+      key: { id: 'OUT', remoteJid: '628111@s.whatsapp.net', fromMe: true },
+      messageTimestamp: 1700000100,
+    });
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    await adapter.sendTextMessage('628111@c.us', 'hello');
+    expect(await adapter.sendSeen('628111@c.us')).toBe(false);
+    expect(fakeSock.readMessages).not.toHaveBeenCalled();
+  });
+
   it('sendSeen returns false when no last message is known', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});

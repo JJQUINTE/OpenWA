@@ -32,7 +32,7 @@ function makeHost(overrides: Partial<Record<keyof BaileysContactsHost, unknown>>
     findContact: () => null,
     resolvePhone: () => null,
     listChats: () => [],
-    lastMessage: () => ({ key: { id: 'M1', remoteJid: '628123@s.whatsapp.net' }, timestamp: 1 }),
+    lastInboundMessage: () => ({ key: { id: 'M1', remoteJid: '628123@s.whatsapp.net' }, timestamp: 1 }),
     getStoredMessages: () => Promise.resolve([]),
     toEngineJid,
     ...overrides,
@@ -196,7 +196,10 @@ describe('sendSeen', () => {
     // The restart case: the in-memory store is empty, so the old code returned false under a 200
     // and no receipt was ever sent. A caller that persisted the IDs is not subject to that.
     const readMessages = jest.fn().mockResolvedValue(undefined);
-    const host = makeHost({ getSocket: () => ({ readMessages }) as unknown as WASocket, lastMessage: () => null });
+    const host = makeHost({
+      getSocket: () => ({ readMessages }) as unknown as WASocket,
+      lastInboundMessage: () => null,
+    });
     await expect(new BaileysContacts(host, 500).sendSeen('628123@c.us', ['M9'])).resolves.toBe(true);
     expect(readMessages).toHaveBeenCalledWith([{ remoteJid: '628123@s.whatsapp.net', id: 'M9', fromMe: false }]);
   });
@@ -219,14 +222,14 @@ describe('sendSeen', () => {
     expect(readMessages).not.toHaveBeenCalled();
   });
 
-  it('falls back to the cached last message when no list is supplied', async () => {
+  it('falls back to the newest received message when no list is supplied', async () => {
     const readMessages = jest.fn().mockResolvedValue(undefined);
     await expect(contacts({ readMessages }, 500).sendSeen('628123@c.us')).resolves.toBe(true);
     expect(readMessages).toHaveBeenCalledWith([{ id: 'M1', remoteJid: '628123@s.whatsapp.net' }]);
   });
 
-  it('still short-circuits when there is no last message to mark', async () => {
-    const host = makeHost({ getSocket: () => ({}) as unknown as WASocket, lastMessage: () => null });
+  it('still short-circuits when no received message is known', async () => {
+    const host = makeHost({ getSocket: () => ({}) as unknown as WASocket, lastInboundMessage: () => null });
     await expect(new BaileysContacts(host, 15).sendSeen('628123@c.us')).resolves.toBe(false);
   });
 });

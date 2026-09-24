@@ -1130,7 +1130,7 @@
         },
         "responses": {
           "200": {
-            "description": "Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the read receipt against the chat's last known message, so a chat it has seen no message in is reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no local history.",
+            "description": "Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the read receipt against the newest message the chat received, so a chat it has received no message in (one holding only the account's own sends included) is reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no local history.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10743,7 +10743,7 @@
             "example": "1234567890@c.us"
           },
           "messageIds": {
-            "description": "Specific message IDs to mark read. Baileys acknowledges individual messages, so without this only the newest message the engine still holds in memory gets a receipt — a burst leaves its earlier messages unread forever, and a restarted session has no message to acknowledge at all. Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.",
+            "description": "Specific message IDs to mark read. Baileys acknowledges individual messages, so without this only the newest received message the engine still holds in memory gets a receipt — a burst leaves its earlier messages unread forever, and a restarted session has no message to acknowledge at all. Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.",
             "maxItems": 100,
             "minItems": 1,
             "example": [

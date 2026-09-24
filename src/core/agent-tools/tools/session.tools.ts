@@ -104,7 +104,7 @@ export function sessionTools(session: SessionService): AnyToolDescriptor[] {
           .optional()
           .describe(
             'Specific message IDs to acknowledge. Baileys acknowledges individual messages, so without ' +
-              'this only the newest message still held in memory gets a receipt.',
+              'this only the newest received message still held in memory gets a receipt.',
           ),
       }),
       handler: input =>

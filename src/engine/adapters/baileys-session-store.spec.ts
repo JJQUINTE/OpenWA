@@ -654,6 +654,20 @@ describe('BaileysSessionStore', () => {
       expect(s.lastMessage('628111@c.us')?.jid).toBe(LID);
     });
 
+    it('tracks the newest received message apart from the preview, for a read receipt', () => {
+      store.upsertChats([{ id: PHONE }]);
+      expect(store.lastInboundMessage('628111@c.us')).toBeNull();
+      store.recordMessage(msg(PHONE, 'IN', 100));
+      store.recordMessage(msg('628111@c.us', 'OUT', 200, true));
+      expect(store.lastMessage('628111@c.us')?.key.id).toBe('OUT');
+      expect(store.lastInboundMessage('628111@c.us')).toEqual({
+        key: { remoteJid: PHONE, fromMe: false, id: 'IN' },
+        timestamp: 100,
+      });
+      store.recordMessage(msg(PHONE, 'IN_OLDER', 50));
+      expect(store.lastInboundMessage(PHONE)?.key.id).toBe('IN');
+    });
+
     it('keeps one entry when a chat with no record yet is addressed in both dialects', () => {
       store.recordMessage(msg('628111@c.us', 'OUT', 100, true));
       store.recordKeyLidMappings({ remoteJid: LID, remoteJidAlt: PHONE });
