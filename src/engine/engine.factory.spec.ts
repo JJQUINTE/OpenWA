@@ -328,20 +328,21 @@ describe('EngineFactory', () => {
       expect(fs.existsSync(otherSession)).toBe(true);
     });
 
-    // A name is free text that passes the session-name rule, so it can be another session's id. The
-    // legacy dirs it names are then that other session's live id-keyed credentials.
-    it("leaves another session's auth dirs alone when the deleted session is named after its id", async () => {
+    // The shape of a name says nothing about whose login its directory holds: a session named after a
+    // tenant UUID owns it. Whether the name is another session's live id is the caller's to decide
+    // (SessionEngineControls.delete asks the table and withholds such a name).
+    it('removes the legacy directories of a UUID-shaped name as well', async () => {
       const { factory } = buildBothDirFactory('baileys');
-      const otherId = '0b5c3a52-6d1e-4c1a-9f0e-2a7b8c9d0e1f';
-      const otherWwjs = wwjsAuthDir(path.join(tmpRoot, 'sessions'), otherId);
-      const otherBaileys = baileysAuthDir(path.join(tmpRoot, 'baileys'), otherId);
-      fs.mkdirSync(otherWwjs, { recursive: true });
-      fs.mkdirSync(otherBaileys, { recursive: true });
+      const uuidName = '0b5c3a52-6d1e-4c1a-9f0e-2a7b8c9d0e1f';
+      const legacyWwjs = wwjsAuthDir(path.join(tmpRoot, 'sessions'), uuidName);
+      const legacyBaileys = baileysAuthDir(path.join(tmpRoot, 'baileys'), uuidName);
+      fs.mkdirSync(legacyWwjs, { recursive: true });
+      fs.mkdirSync(legacyBaileys, { recursive: true });
 
-      await factory.purgeSessionData(SESSION_ID, otherId);
+      await factory.purgeSessionData(SESSION_ID, uuidName);
 
-      expect(fs.existsSync(otherWwjs)).toBe(true);
-      expect(fs.existsSync(otherBaileys)).toBe(true);
+      expect(fs.existsSync(legacyWwjs)).toBe(false);
+      expect(fs.existsSync(legacyBaileys)).toBe(false);
     });
 
     it('refuses to purge an unsafe session key (no rm on a traversal path)', async () => {

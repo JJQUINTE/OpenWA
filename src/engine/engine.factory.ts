@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { isUUID } from 'class-validator';
 import { IWhatsAppEngine } from './interfaces/whatsapp-engine.interface';
 import { WhatsAppWebJsAdapter } from './adapters/whatsapp-web-js.adapter';
 import { PluginLoaderService, PluginType, IEnginePlugin, PluginManifest } from '../core/plugins';
@@ -182,9 +181,9 @@ export class EngineFactory implements OnModuleInit {
       { engine: 'whatsapp-web.js', dir: this.wwjsAuthDir(sessionId) },
       { engine: 'baileys', dir: this.baileysAuthDir(sessionId) },
     ];
-    // A UUID-shaped name is skipped: the name rule lets a session be named after another session's
-    // id, and the dirs that name points at are then that session's live id-keyed credentials.
-    if (legacyName !== undefined && isSafeSessionName(legacyName) && !isUUID(legacyName)) {
+    // The caller withholds a name that is another session's id: the dirs it points at are then that
+    // session's live id-keyed credentials, and only the caller can see the table.
+    if (legacyName !== undefined && isSafeSessionName(legacyName)) {
       const legacyDirs = [
         { engine: 'whatsapp-web.js', dir: this.wwjsAuthDir(legacyName) },
         { engine: 'baileys', dir: this.baileysAuthDir(legacyName) },

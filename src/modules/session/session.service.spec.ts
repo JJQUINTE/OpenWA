@@ -124,6 +124,7 @@ describe('SessionService', () => {
       save: jest.fn(),
       remove: jest.fn(),
       update: jest.fn(),
+      exists: jest.fn().mockResolvedValue(false),
     };
 
     messageRepository = {
@@ -349,6 +350,45 @@ describe('SessionService', () => {
       await service.delete('sess-uuid-1');
 
       expect(engineFactory.purgeSessionData).toHaveBeenCalledWith('sess-uuid-1', 'test-session');
+    });
+
+    // Name-keyed directories predate 0.23.5, and a session may well be named after a tenant UUID: its
+    // shape says nothing about whose login the directory holds. Only a live session id does.
+    it('delete() purges the legacy dirs of a UUID-shaped name that is no session id', async () => {
+      const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+      (repository.findOne as jest.Mock).mockResolvedValue(createMockSession({ id: 'sess-uuid-1', name: uuidName }));
+
+      await service.delete('sess-uuid-1');
+
+      expect(repository.exists).toHaveBeenCalledWith({ where: { id: uuidName } });
+      expect(engineFactory.purgeSessionData).toHaveBeenCalledWith('sess-uuid-1', uuidName);
+    });
+
+    // The name rule lets a session be named after another session's id, whatever that id looks like
+    // (an import accepts any safe key). The dirs that name points at are then the other session's
+    // live credentials, so the name is kept out of the purge.
+    it("delete() keeps the name out of the purge when it is another session's id", async () => {
+      (repository.findOne as jest.Mock).mockResolvedValue(
+        createMockSession({ id: 'sess-uuid-1', name: 'imported-bob' }),
+      );
+      (repository.exists as jest.Mock).mockResolvedValue(true);
+
+      await service.delete('sess-uuid-1');
+
+      expect(repository.exists).toHaveBeenCalledWith({ where: { id: 'imported-bob' } });
+      expect(engineFactory.purgeSessionData).toHaveBeenCalledTimes(1);
+      expect((engineFactory.purgeSessionData as jest.Mock).mock.calls[0]).toEqual(['sess-uuid-1', undefined]);
+    });
+
+    it('delete() still purges the id-keyed dirs, and resolves, when the name lookup fails', async () => {
+      (repository.findOne as jest.Mock).mockResolvedValue(
+        createMockSession({ id: 'sess-uuid-1', name: 'test-session' }),
+      );
+      (repository.exists as jest.Mock).mockRejectedValue(new Error('db gone'));
+
+      await expect(service.delete('sess-uuid-1')).resolves.toBeUndefined();
+
+      expect((engineFactory.purgeSessionData as jest.Mock).mock.calls[0]).toEqual(['sess-uuid-1', undefined]);
     });
 
     it('stop() escalates to forceDestroy when engine.disconnect() rejects — stop completes with a warning', async () => {

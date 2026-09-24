@@ -595,8 +595,12 @@ export class SessionEngineControls {
       // session's WhatsApp credentials stay on the volume. Best-effort inside the factory — never
       // fails an otherwise-successful delete. By this point both fences passed, so no old remover is
       // live against this session's directories. The name goes too: it is the key the directories
-      // carried before 0.23.5, and the boot migration keeps a legacy one it could not rename.
-      await this.engineFactory.purgeSessionData(session.id, session.name);
+      // carried before 0.23.5, and the boot migration keeps a legacy one it could not rename. Unless
+      // it is another session's id, whatever its shape (an import accepts any safe key): the dirs it
+      // names are then that session's live login, the same exact-id guard the migration keeps. A
+      // failed lookup withholds the name rather than fail a delete that has already committed.
+      const nameIsAnId = await this.sessionRepository.exists({ where: { id: session.name } }).catch(() => true);
+      await this.engineFactory.purgeSessionData(session.id, nameIsAnId ? undefined : session.name);
     } finally {
       // Always clear the teardown mark so a later recreate/start with this id isn't suppressed. This
       // stop mark was set after fence #1, so clearing it on a rejected 409 only undoes what THIS
