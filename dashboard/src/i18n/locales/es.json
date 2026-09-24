@@ -633,7 +633,8 @@
       "filteredServerDescription": "Ningún registro coincide con estos filtros. Ajusta el filtro de severidad para ampliar la búsqueda."
     },
     "exportFailed": "No se pudo exportar el registro de auditoría",
-    "exportTruncated": "La exportación solo abarca las {{rows}} entradas más recientes. Restringe el filtro de severidad para exportar las más antiguas."
+    "exportTruncated": "La exportación solo abarca las {{rows}} entradas más recientes. Restringe el filtro de severidad para exportar las más antiguas.",
+    "exportThrottled": "La exportación solo abarca las {{rows}} entradas más recientes porque la puerta de enlace está limitando las lecturas del registro de auditoría. Espera un minuto y vuelve a exportar."
   },
   "messageTester": {
     "title": "Probador de mensajes",

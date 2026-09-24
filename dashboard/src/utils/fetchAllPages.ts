@@ -39,12 +39,12 @@ async function retryThrottled<T>(fetchOnce: () => Promise<T>, delayMs: number): 
  * "last page" and silently truncates the result.
  *
  * `truncated` is set when the `maxItems` safety cap ended the walk while the server still had rows,
- * or when a page stayed throttled after rows were already in hand.
+ * or when a page stayed throttled after rows were already in hand; `throttled` tells the second apart.
  */
 export async function fetchAllPages<T>(
   fetchPage: (limit: number, offset: number) => Promise<Page<T>>,
   { pageSize = 200, maxItems = 10_000, retryDelayMs = 1000 }: FetchAllPagesOptions = {},
-): Promise<{ items: T[]; truncated: boolean }> {
+): Promise<{ items: T[]; truncated: boolean; throttled: boolean }> {
   const all: T[] = [];
   let offset = 0;
   for (;;) {
@@ -52,13 +52,15 @@ export async function fetchAllPages<T>(
     try {
       page = await retryThrottled(() => fetchPage(pageSize, offset), retryDelayMs);
     } catch (err) {
-      if (all.length > 0 && (err as { status?: number }).status === 429) return { items: all, truncated: true };
+      if (all.length > 0 && (err as { status?: number }).status === 429) {
+        return { items: all, truncated: true, throttled: true };
+      }
       throw err;
     }
     const { data, total } = page;
     all.push(...data);
     offset += data.length;
-    if (data.length === 0 || offset >= total) return { items: all, truncated: false };
-    if (all.length >= maxItems) return { items: all, truncated: true };
+    if (data.length === 0 || offset >= total) return { items: all, truncated: false, throttled: false };
+    if (all.length >= maxItems) return { items: all, truncated: true, throttled: false };
   }
 }

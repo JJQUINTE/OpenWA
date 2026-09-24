@@ -44,9 +44,10 @@ test('stops on an empty page even if total over-reports', async () => {
 
 test('honours the safety cap, and says the result stopped short', async () => {
   const { fetchPage } = fakeSource(10_000, 200);
-  const { items: rows, truncated } = await fetchAllPages(fetchPage, { pageSize: 200, maxItems: 500 });
+  const { items: rows, truncated, throttled } = await fetchAllPages(fetchPage, { pageSize: 200, maxItems: 500 });
   assert.equal(rows.length, 600); // stops at the first page that crosses the cap
   assert.equal(truncated, true);
+  assert.equal(throttled, false, 'the cap was reported as a throttle');
 });
 
 test('a walk that ends exactly at the cap is not truncated', async () => {
@@ -132,7 +133,11 @@ test('a page still throttled past the one-second tier ends the walk with the row
   // The per-minute or per-hour tier refused the route: keep what came in rather than wait and throw.
   const { fetchPage, calls } = fakeSource(6_000, 200);
   let attempts = 0;
-  const { items: rows, truncated } = await fetchAllPages(
+  const {
+    items: rows,
+    truncated,
+    throttled,
+  } = await fetchAllPages(
     async (limit, offset) => {
       attempts++;
       if (offset >= 1_000) throw httpError(429);
@@ -141,6 +146,7 @@ test('a page still throttled past the one-second tier ends the walk with the row
     { retryDelayMs: 0 },
   );
   assert.equal(truncated, true);
+  assert.equal(throttled, true, 'the throttle was reported as the row cap');
   assert.equal(rows.length, 1_000);
   assert.equal(attempts, calls.length + 3, 'the refused page was tried more than three times');
 });

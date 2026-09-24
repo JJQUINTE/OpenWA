@@ -682,7 +682,8 @@
       "filteredServerDescription": "Aucun journal ne correspond à ces filtres. Ajustez le filtre de gravité pour élargir la recherche."
     },
     "exportFailed": "Impossible d'exporter le journal d'audit",
-    "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes."
+    "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes.",
+    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export."
   },
   "messageTester": {
     "title": "Testeur de messages",

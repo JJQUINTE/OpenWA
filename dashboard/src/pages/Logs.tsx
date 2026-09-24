@@ -95,18 +95,22 @@ export function Logs() {
     if (exporting) return;
     setExporting(true);
     try {
-      const { items: all, truncated } = await fetchAllPages<AuditLog>((limit, offset) =>
-        auditApi.list({ severity: severityParam, limit, offset }),
-      );
+      const {
+        items: all,
+        truncated,
+        throttled,
+      } = await fetchAllPages<AuditLog>((limit, offset) => auditApi.list({ severity: severityParam, limit, offset }));
       const q = searchQuery.toLowerCase();
       const rows = q
         ? all.filter(l => l.action.toLowerCase().includes(q) || (l.errorMessage || '').toLowerCase().includes(q))
         : all;
       if (rows.length > 0) download(buildCsv(rows));
-      // The cap keeps the newest rows (the API orders newest first); older ones are missing. The count
-      // follows the UI language, not the browser's locale, so it reads right inside the sentence.
+      // Either stop keeps the newest rows (the API orders newest first); older ones are missing. A
+      // narrower filter gets past the cap, only waiting gets past the throttle. The count follows the UI
+      // language, not the browser's locale, so it reads right inside the sentence.
       if (truncated) {
-        toast.warning(t('logs.exportTruncated', { rows: all.length.toLocaleString(i18n.resolvedLanguage) }));
+        const rowCount = all.length.toLocaleString(i18n.resolvedLanguage);
+        toast.warning(t(throttled ? 'logs.exportThrottled' : 'logs.exportTruncated', { rows: rowCount }));
       }
     } catch (err) {
       toast.error(t('logs.exportFailed'), err instanceof Error ? err.message : undefined);

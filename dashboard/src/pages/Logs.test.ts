@@ -55,12 +55,18 @@ function jsonResponse(data: unknown): Response {
 let exportFailure: number | null = null;
 // When set, the export's page walk sees a table of this many rows, served 200 at a time.
 let exportTotal: number | null = null;
+// When set, every export page from this offset on is refused with a 429, as a tripped minute tier does.
+let exportThrottledFrom: number | null = null;
 
 function installFetchStub(): void {
   globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (exportFailure && url.includes('limit=200')) {
       return Promise.resolve(new Response(JSON.stringify({ message: 'boom' }), { status: exportFailure }));
+    }
+    const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset') ?? 0);
+    if (exportThrottledFrom !== null && url.includes('limit=200') && offset >= exportThrottledFrom) {
+      return Promise.resolve(new Response(JSON.stringify({ message: 'Too Many Requests' }), { status: 429 }));
     }
     if (exportTotal && url.includes('limit=200')) {
       return Promise.resolve(jsonResponse({ data: Array(200).fill(LOG_FAILED_SEND), total: exportTotal }));
@@ -161,6 +167,26 @@ test('an export that stops at the row cap says so, counted in the UI language', 
   } finally {
     exportTotal = null;
     Number.prototype.toLocaleString = realToLocaleString;
+    restore();
+  }
+});
+
+test('an export stopped by the throttle says to wait, not to narrow the filter', async () => {
+  const { screen, fireEvent } = rtl;
+  const { downloads, restore } = recordDownloads();
+  exportTotal = 60_000;
+  exportThrottledFrom = 400;
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    // The walk retries the refused page after one second and after two more before it stops.
+    await screen.findByText(/newest 400 entries because the gateway is rate-limiting/, {}, { timeout: 10_000 });
+    assert.equal(screen.queryByText(/Narrow the severity filter/), null, 'the throttle was reported as the row cap');
+    assert.equal(downloads.length, 1, 'the rows fetched before the throttle are still downloaded');
+  } finally {
+    exportTotal = null;
+    exportThrottledFrom = null;
     restore();
   }
 });

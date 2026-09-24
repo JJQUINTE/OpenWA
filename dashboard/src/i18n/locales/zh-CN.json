@@ -678,7 +678,8 @@
       "filteredServerDescription": "没有符合这些筛选条件的日志。请调整严重级别筛选以扩大搜索范围。"
     },
     "exportFailed": "无法导出审计日志",
-    "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。"
+    "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。",
+    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。"
   },
   "messageTester": {
     "title": "消息测试器",

@@ -678,7 +678,8 @@
       "filteredServerDescription": "沒有符合這些篩選條件的日誌。請調整嚴重程度篩選以擴大搜尋範圍。"
     },
     "exportFailed": "無法匯出審計記錄",
-    "exportTruncated": "匯出僅涵蓋最新的 {{rows}} 條記錄。請收窄嚴重程度篩選範圍以匯出較早的項目。"
+    "exportTruncated": "匯出僅涵蓋最新的 {{rows}} 條記錄。請收窄嚴重程度篩選範圍以匯出較早的項目。",
+    "exportThrottled": "閘道正在限制審計記錄的讀取頻率，匯出僅涵蓋最新的 {{rows}} 條記錄。請等待一分鐘後重新匯出。"
   },
   "messageTester": {
     "title": "訊息測試器",

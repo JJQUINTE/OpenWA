@@ -678,7 +678,8 @@
       "filteredServerDescription": "Bu filtrelerle eşleşen log yok. Aramayı genişletmek için önem filtresini ayarlayın."
     },
     "exportFailed": "Denetim kaydı dışa aktarılamadı",
-    "exportTruncated": "Dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Daha eski kayıtları dışa aktarmak için önem filtresini daraltın."
+    "exportTruncated": "Dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Daha eski kayıtları dışa aktarmak için önem filtresini daraltın.",
+    "exportThrottled": "Ağ geçidi denetim günlüğü okumalarını sınırladığı için dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Bir dakika bekleyip yeniden dışa aktarın."
   },
   "messageTester": {
     "title": "Mesaj Test Aracı",

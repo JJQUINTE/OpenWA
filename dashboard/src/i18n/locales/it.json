@@ -682,7 +682,8 @@
       "filteredServerDescription": "Nessun log corrisponde a questi filtri. Modifica il filtro severità per ampliare la ricerca."
     },
     "exportFailed": "Impossibile esportare il log di controllo",
-    "exportTruncated": "L'esportazione copre solo le {{rows}} voci più recenti. Restringi il filtro severità per esportare quelle più vecchie."
+    "exportTruncated": "L'esportazione copre solo le {{rows}} voci più recenti. Restringi il filtro severità per esportare quelle più vecchie.",
+    "exportThrottled": "L'esportazione copre solo le {{rows}} voci più recenti perché il gateway sta limitando le letture del registro di audit. Attendi un minuto ed esporta di nuovo."
   },
   "messageTester": {
     "title": "Messaggio di prova",

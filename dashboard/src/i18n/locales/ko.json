@@ -678,7 +678,8 @@
       "filteredServerDescription": "이 필터에 일치하는 로그가 없습니다. 검색 범위를 넓히려면 심각도 필터를 조정하세요."
     },
     "exportFailed": "감사 로그를 내보내지 못했습니다",
-    "exportTruncated": "내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 이전 항목을 내보내려면 심각도 필터를 좁히세요."
+    "exportTruncated": "내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 이전 항목을 내보내려면 심각도 필터를 좁히세요.",
+    "exportThrottled": "게이트웨이가 감사 로그 조회를 제한하고 있어 내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 1분 후 다시 내보내세요."
   },
   "messageTester": {
     "title": "메시지 테스터",

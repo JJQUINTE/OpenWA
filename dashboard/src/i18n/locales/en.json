@@ -678,7 +678,8 @@
       "filteredServerDescription": "No logs match these filters. Adjust the severity filter to widen the search."
     },
     "exportFailed": "Couldn't export the audit log",
-    "exportTruncated": "The export covers only the newest {{rows}} entries. Narrow the severity filter to export older ones."
+    "exportTruncated": "The export covers only the newest {{rows}} entries. Narrow the severity filter to export older ones.",
+    "exportThrottled": "The export covers only the newest {{rows}} entries because the gateway is rate-limiting audit log reads. Wait a minute and export again."
   },
   "messageTester": {
     "title": "Message Tester",
