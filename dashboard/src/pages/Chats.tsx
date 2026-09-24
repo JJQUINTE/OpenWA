@@ -863,6 +863,7 @@ export function Chats() {
           id: m.id,
           url: getMediaSrc(m.metadata?.media),
           alt: m.body || m.metadata?.media?.filename || '',
+          filename: m.metadata?.media?.filename,
           senderName: undefined,
           timestamp: formatChatTime(m.timestamp || Math.floor(new Date(m.createdAt).getTime() / 1000)),
         })),
