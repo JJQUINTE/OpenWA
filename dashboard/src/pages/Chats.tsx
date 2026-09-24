@@ -330,7 +330,8 @@ export function Chats() {
         const sorted = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setChats(sorted);
       } catch (err) {
-        if (stale()) return;
+        // A background refetch only refreshes summaries: keep the list it would have replaced.
+        if (stale() || background) return;
         showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {

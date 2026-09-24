@@ -998,6 +998,30 @@ test('a chat list refetch lands while a newer one is out, and an older answer ne
   assert.ok(!screen.queryByText('carol v2'), 'an older answer replaced the newer list');
 });
 
+test('a failed background refetch keeps the chat list and raises no error', async () => {
+  const { screen } = rtl;
+  renderChats();
+  await screen.findByText('Alice');
+
+  chatsResponder = () => Promise.resolve(jsonResponse({ message: 'gateway timeout' }, 504));
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  socket.receive('message', {
+    type: 'event',
+    timestamp: new Date(1_700_003_000_000).toISOString(),
+    payload: {
+      event: 'message.edited',
+      sessionId: SESSION.id,
+      data: { messageId: 'wamid.carol.1', chatId: CHAT_2.id, body: 'edited', timestamp: 1_700_003_000 },
+    },
+  });
+  await flush();
+  await flush();
+
+  assert.ok(screen.queryByText('Alice'), 'a failed background refetch emptied the chat list');
+  assert.ok(!screen.queryByText('Failed to load chats'), 'a failed background refetch raised an error toast');
+});
+
 test('every message for a chat the sidebar does not list refetches the list, and the chat appears', async () => {
   const { screen, waitFor } = rtl;
   renderChats();
