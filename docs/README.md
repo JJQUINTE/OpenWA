@@ -72,6 +72,7 @@
 | [Chat History Limits](./examples/chat-history-limits.md)                       | Understand local message history vs bounded live WhatsApp history        |
 | [Webhook Signature Verification](./examples/webhook-signature-verification.md) | Verify signed OpenWA webhook deliveries in Node.js and Python            |
 | [n8n Appointment Booking Workflow](./examples/n8n-appointment-booking.md)      | Build an appointment-booking flow with OpenWA and n8n                    |
+| [n8n to Discord Workflow](./examples/n8n/README.md)                            | Forward incoming WhatsApp messages to Discord with n8n's built-in nodes  |
 
 ## Quick Start
 

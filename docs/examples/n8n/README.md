@@ -11,9 +11,23 @@ This example demonstrates how to receive OpenWA webhooks using n8n and forward i
 ## Setup
 
 1. **Import the Workflow**: Open n8n, click the "Import from file" option, and select the [`workflow.json`](./workflow.json) file.
-2. **Environment Variable**: The workflow expects a Discord webhook URL. Define it as an environment variable in n8n (`DISCORD_WEBHOOK_URL`), or manually paste your webhook URL into the URL field of the HTTP Request node.
-3. **Get the Webhook URL**: Activate the workflow and copy the **Production URL** from the OpenWA Webhook node (e.g., `https://n8n.example.com/webhook/openwa-discord`).
-4. **Register in OpenWA**: Send a POST request to your OpenWA server to register the webhook URL, subscribing to the `message.received` event.
+2. **Set the Discord Webhook URL**: Open the Post to Discord node and replace the placeholder URL with your Discord webhook URL. Paste the URL itself rather than reading it from `$env`: n8n 2.0 and later block `$env` in expressions by default.
+3. **Protect the Webhook**: Open the OpenWA Webhook node, set **Authentication** to **Header Auth**, and create a Header Auth credential with **Name** `X-Webhook-Token` and a long random **Value**. Without it, anyone who learns the URL can post into your Discord channel.
+4. **Get the Webhook URL**: Publish the workflow (activate it on n8n 1.x) and copy the **Production URL** from the OpenWA Webhook node (e.g., `https://n8n.example.com/webhook/openwa-discord`).
+5. **Register in OpenWA**: Register the Production URL for the `message.received` event, with the same header and value:
+
+   ```bash
+   curl -X POST https://openwa.example.com/api/sessions/<sessionId>/webhooks \
+     -H "X-API-Key: <your API key>" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://n8n.example.com/webhook/openwa-discord",
+       "events": ["message.received"],
+       "headers": { "X-Webhook-Token": "<the same random value>" }
+     }'
+   ```
+
+   If n8n is only reachable at a private address (`localhost`, a Docker service name), add its host to `SSRF_ALLOWED_HOSTS` on the OpenWA server, or the registration is refused with `400`. The other webhook options, including a `secret` that signs every delivery, are in the [API Specification](../../06-api-specification.md) and [Webhook Signature Verification](../webhook-signature-verification.md).
 
 ### API Key Scope
 
@@ -21,7 +35,7 @@ The API key used to register the webhook in OpenWA needs the **`OPERATOR`** role
 
 ### Webhook Payload Expected
 
-This workflow expects the standard OpenWA webhook payload for the `message.received` event. 
+This workflow expects the standard OpenWA webhook payload for the `message.received` event.
 
 ```json
 {
@@ -41,4 +55,4 @@ This workflow expects the standard OpenWA webhook payload for the `message.recei
 }
 ```
 
-The workflow automatically extracts `{{ $json.body.data.from }}` and `{{ $json.body.data.body }}` to format the Discord message.
+The workflow posts `{{ $json.body.data.author || $json.body.data.from }}` as the sender and `{{ $json.body.data.body }}` as the message. In a group, `from` is the group and `author` is the member who sent the message; a direct message has no `author`, so `from` is used.
