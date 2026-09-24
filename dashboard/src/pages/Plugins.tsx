@@ -409,6 +409,11 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
   const [overrideCfg, setOverrideCfg] = useState<Record<string, unknown>>({});
   const [savingOverride, setSavingOverride] = useState(false);
   const overrideFormRef = useRef<HTMLFormElement>(null);
+  // The session selected now, read by a request that resolves after the operator may have switched.
+  const selSessionRef = useRef(selSession);
+  useEffect(() => {
+    selSessionRef.current = selSession;
+  }, [selSession]);
 
   // Seed the override form from the resolved slice (the session's override value where set, else base).
   // Keyed on selSession + plugin.id (NOT the plugin object): `configPlugin` is derived from the live
@@ -452,15 +457,17 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
   };
 
   const clearOverride = async () => {
-    if (!selSession) return;
+    const sid = selSession;
+    if (!sid) return;
     setSavingOverride(true);
     try {
-      const res = await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      const res = await pluginsApi.updateSessionConfig(plugin.id, sid, {});
       if (!res.success) throw new Error(res.message);
       // The seed effect does not re-run on the refetch, so reseed from Global here (the seed with an empty
       // override). Left as it was, the form keeps the cleared values and the next save pins them back.
+      // Skipped when the operator has since picked another session: the form now holds that one's values.
       const props = plugin.configSchema?.properties;
-      if (props) {
+      if (props && selSessionRef.current === sid) {
         setOverrideCfg(
           Object.fromEntries(
             Object.entries(props).map(([key, field]) => [key, plugin.config[key] ?? emptyForField(field)]),
