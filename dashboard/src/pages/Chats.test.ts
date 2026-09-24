@@ -323,6 +323,9 @@ function installFetchStub(): void {
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-audio`) {
       return Promise.resolve(jsonResponse({ messageId: 'wamid.out.audio', timestamp: 1_700_000_100 }));
     }
+    if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-document`) {
+      return Promise.resolve(jsonResponse({ messageId: 'wamid.out.document', timestamp: 1_700_000_100 }));
+    }
     if (method === 'GET' && path.startsWith('/api/search?')) {
       return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
     }
@@ -797,6 +800,33 @@ test('text typed with an audio attachment stays in the input instead of showing 
 
   assert.equal(input.value, 'not a caption', 'the text that was not sent was cleared');
   assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
+});
+
+test('the reply banner and the sent snippet name a media type in words, not as a raw token', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  const row = (await screen.findByText('Alice')).closest('.chat-item-card') as HTMLElement;
+  fireEvent.click(row);
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+
+  // Reply to the image row: the banner reads its localized type, not "[image]".
+  const image = thread.querySelector(`[data-wa-message-id="${OMITTED_MEDIA_MESSAGE.waMessageId}"]`) as HTMLElement;
+  fireEvent.click(image.querySelector('button[title="Reply"]') as HTMLElement);
+  await waitFor(() =>
+    assert.equal(container.querySelector('.replying-to-body')?.textContent ?? null, '[Image]', 'reply banner'),
+  );
+  fireEvent.click(container.querySelector('.btn-close-reply') as HTMLElement);
+
+  // A PDF goes out as a document, and the sidebar says so rather than "[application]".
+  await stageAttachment(container, 'contract.pdf');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() =>
+    assert.equal(row.querySelector('.chat-item-snippet')?.textContent ?? null, '[Document]', 'sidebar snippet'),
+  );
 });
 
 test('a staged attachment is dropped when a different chat is opened', async () => {
