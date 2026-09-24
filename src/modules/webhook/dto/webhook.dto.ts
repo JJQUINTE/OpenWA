@@ -186,7 +186,9 @@ export class CreateWebhookDto {
 
 export class UpdateWebhookDto {
   @ApiPropertyOptional({ description: 'Webhook URL' })
-  @IsOptional()
+  // Not @IsOptional: that also skips validation for null, which these NOT NULL columns cannot store
+  // (save() then failed with a 500). Only an omitted field means "leave unchanged".
+  @ValidateIf((_: UpdateWebhookDto, v: unknown) => v !== undefined)
   @IsUrl({ require_tld: false })
   url?: string;
 
@@ -197,7 +199,7 @@ export class UpdateWebhookDto {
     isArray: true,
     minItems: 1,
   })
-  @IsOptional()
+  @ValidateIf((_: UpdateWebhookDto, v: unknown) => v !== undefined)
   @IsArray()
   @ArrayMinSize(1)
   @IsIn([...WEBHOOK_EVENTS, '*'], { each: true })
@@ -231,7 +233,7 @@ export class UpdateWebhookDto {
     description: 'Custom headers. Replaces the stored map wholesale. Never returned by any webhook route.',
     example: { 'X-Custom-Header': 'value' },
   })
-  @IsOptional()
+  @ValidateIf((_: UpdateWebhookDto, v: unknown) => v !== undefined)
   @IsHeaderMap()
   headers?: Record<string, string>;
 
@@ -251,7 +253,7 @@ export class UpdateWebhookDto {
 
   @ApiPropertyOptional({ description: 'Enable/disable webhook' })
   @ToStrictBoolean()
-  @IsOptional()
+  @ValidateIf((_: UpdateWebhookDto, v: unknown) => v !== undefined)
   @IsBoolean()
   active?: boolean;
 
@@ -264,7 +266,7 @@ export class UpdateWebhookDto {
     maximum: 5,
   })
   @ToStrictNumber()
-  @IsOptional()
+  @ValidateIf((_: UpdateWebhookDto, v: unknown) => v !== undefined)
   @IsInt()
   @Min(0)
   @Max(5)
