@@ -48,6 +48,7 @@ function makeMessaging(stored: unknown = STORED): {
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage,
     putStoredMessage: () => undefined,
+    recordMessage: () => undefined,
     rememberOwnSend: () => undefined,
     recordLidMapping: () => undefined,
     getOnMessageCreate: () => undefined,

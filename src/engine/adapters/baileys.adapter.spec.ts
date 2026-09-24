@@ -4298,6 +4298,35 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(fakeStore.put).toHaveBeenCalledWith('db-uuid-1', outboundMatcher);
   });
 
+  it.each([
+    ['sendTextMessage', (a: BaileysAdapter) => a.sendTextMessage('628111@s.whatsapp.net', 'on its way')],
+    ['a content send', (a: BaileysAdapter) => a.replyToMessage('628111@s.whatsapp.net', 'TARGET', 'on its way')],
+  ])('an API send through %s becomes the chat preview and sort time', async (_label, send) => {
+    fakeStore.getMessage.mockResolvedValue(stored);
+    const adapter = await ready();
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net', name: 'Alice' }]);
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'IN_EARLIER' },
+          message: { conversation: 'where is my order?' },
+          messageTimestamp: 1700000050,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    fakeSock.sendMessage.mockResolvedValueOnce({
+      key: { id: 'OUT_LATER', remoteJid: '628111@s.whatsapp.net', fromMe: true },
+      message: { extendedTextMessage: { text: 'on its way' } },
+      messageTimestamp: 1700000100,
+    });
+    await send(adapter);
+    expect(await adapter.getChats()).toEqual([
+      expect.objectContaining({ id: '628111@c.us', timestamp: 1700000100, lastMessage: 'on its way' }),
+    ]);
+  });
+
   it('clears the store on logout', async () => {
     const adapter = await ready();
     await adapter.logout();

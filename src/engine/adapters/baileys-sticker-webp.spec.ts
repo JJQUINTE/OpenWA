@@ -59,6 +59,7 @@ function makeMessaging(): { messaging: BaileysMessaging; sock: { sendMessage: je
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage: () => Promise.resolve(undefined),
     putStoredMessage: () => undefined,
+    recordMessage: () => undefined,
     rememberOwnSend: () => undefined,
     recordLidMapping: () => undefined,
     getOnMessageCreate: () => undefined,

@@ -50,6 +50,8 @@ export interface BaileysMessagingHost {
   loadLib(): Promise<typeof BaileysLib>;
   /** Persist a just-sent message to the store; undefined when no store is configured. */
   putStoredMessage(msg: WAMessage): Promise<void> | undefined;
+  /** Make a just-sent message the chat's last-message preview and sort time (its echo is skipped). */
+  recordMessage(msg: WAMessage): void;
   /** Record the id of a message this session just sent, so its library echo is recognised as ours. */
   rememberOwnSend(id: string | null | undefined): void;
   /** Look up a previously-seen message from the store (the reply/forward/react/delete handle). */
@@ -231,6 +233,7 @@ export class BaileysMessaging {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
+      this.host.recordMessage(sent);
       // Parity with the wwjs engine's message_create → message.sent (see emitOwnSendEcho).
       void this.emitOwnSendEcho(sent);
     }
@@ -702,6 +705,7 @@ export class BaileysMessaging {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
+      this.host.recordMessage(sent);
       // wwjs fires `message_create` for its own API sends, which SessionService turns into `message.sent`.
       // Baileys' own socket-sends echo back only as a `type:'append'` upsert, which handleMessagesUpsert
       // skips by the id send() recorded, so that event never fired for API sends. Emit the outbound
