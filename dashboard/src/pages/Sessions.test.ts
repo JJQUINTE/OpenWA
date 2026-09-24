@@ -102,6 +102,7 @@ function resetFetchCalls(): void {
   startResult = null;
   stopFailure = null;
   qrGate = null;
+  listGate = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -132,6 +133,9 @@ let stopFailure: { status: number; message: string } | null = null;
 let startGate: Promise<void> | null = null;
 // When set, GET .../qr for that one session answers only once `until` settles.
 let qrGate: { sessionId: string; until: Promise<void> } | null = null;
+// When set, the next GET /api/sessions reads the rows as they are when it arrives but answers only once
+// this settles, so a test can land an older read after a newer one. Spent by that one read.
+let listGate: Promise<void> | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -162,6 +166,12 @@ function installFetchStub(): void {
           ? `gateway unavailable (${sessionListFailures})`
           : 'gateway unavailable';
         return Promise.resolve(jsonResponse({ message }, 503));
+      }
+      if (listGate) {
+        const until = listGate;
+        listGate = null;
+        const snapshot: unknown = JSON.parse(JSON.stringify(SESSIONS));
+        return until.then(() => jsonResponse(snapshot));
       }
       return Promise.resolve(jsonResponse(SESSIONS));
     }
@@ -1020,6 +1030,144 @@ test('a disconnected push keeps the QR modal when the re-read fails', async () =
     assert.ok(screen.queryByRole('dialog'), 'the QR modal closed on a re-read that failed');
   } finally {
     SESSIONS.pop();
+  }
+});
+
+// Two reads of the list can be in flight at once, one per status push, and nothing makes them answer
+// in the order they were sent. The older one must not put its snapshot back over the newer.
+test('a list read that answers after a newer one does not overwrite it', async () => {
+  const { screen, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-flap-1', name: 'flapping', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('flapping')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    // The ready push's read sees the row ready, then answers late.
+    let release: () => void = () => {};
+    listGate = new Promise<void>(resolve => (release = resolve));
+    Object.assign(row, { status: 'ready' });
+    const before = reads();
+    pushSessionStatus(row.id, 'ready');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    // The session drops straight away; this read answers first.
+    Object.assign(row, { status: 'disconnected', engineLoaded: false });
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 2));
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(within(card).queryByText('Disconnected'));
+
+    release();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(within(card).queryByText('Disconnected'), 'an older list read put the session back to ready');
+    assert.ok(
+      within(card).queryByRole('button', { name: 'Start' }),
+      'an older list read put the session back to ready',
+    );
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// A status push carries no fields but the status, and a push that starts no read of its own (qr_ready,
+// initializing, connecting) is newer than a read already in flight. That read must not undo it.
+test('a list read that started before a status push does not undo the pushed status', async () => {
+  const { screen, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-backoff-2', name: 'bouncing', status: 'ready', phone: '15550004444' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('bouncing')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    // The disconnect's read sees the row disconnected, then answers late.
+    let release: () => void = () => {};
+    listGate = new Promise<void>(resolve => (release = resolve));
+    Object.assign(row, { status: 'disconnected' });
+    const before = reads();
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    // The engine is already reconnecting when that answer arrives.
+    Object.assign(row, { status: 'initializing' });
+    pushSessionStatus(row.id, 'initializing');
+    await within(card).findByText('Starting...');
+
+    release();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(
+      within(card).queryByText('Starting...'),
+      'a read older than the push put the session back to disconnected',
+    );
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// The page's own writes (a created row, a stop's answer, a deleted row) are newer than any list read
+// already in flight, the same as a status push.
+test('a list read in flight does not undo a create, a stop or a delete', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const qrRow = { ...SESSION_QR };
+  const staleIndex = SESSIONS.indexOf(SESSION_STALE_ENGINE);
+  try {
+    renderSessions();
+    const qrCard = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    // Starts a read (the push's own) that snapshots the rows now and answers only on release.
+    const holdRead = async (): Promise<() => void> => {
+      let release: () => void = () => {};
+      listGate = new Promise<void>(resolve => (release = resolve));
+      const before = reads();
+      pushSessionStatus(SESSION_TIMELOCKED.id, 'action_required');
+      await waitFor(() => assert.equal(reads(), before + 1));
+      return release;
+    };
+
+    let release = await holdRead();
+    fireEvent.click(within(qrCard).getByRole('button', { name: 'Stop' }));
+    await within(qrCard).findByRole('button', { name: 'Start' });
+    Object.assign(SESSION_QR, { status: 'disconnected', engineLoaded: false });
+    release();
+    await settle();
+    assert.ok(
+      within(qrCard).queryByRole('button', { name: 'Start' }),
+      'a read older than the stop put the engine back',
+    );
+
+    release = await holdRead();
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g., marketing-bot'), { target: { value: 'late-bot' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await screen.findByText('late-bot');
+    SESSIONS.push({ ...SESSION_QR, id: 'sess-new-late-bot', name: 'late-bot', status: 'created' as Session['status'] });
+    release();
+    await settle();
+    assert.ok(screen.queryByText('late-bot'), 'a read older than the create dropped the new row');
+    SESSIONS.pop();
+
+    release = await holdRead();
+    const staleCard = screen.getByText('stale-engine').closest('.session-card') as HTMLElement;
+    fireEvent.click(within(staleCard).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => assert.ok(!screen.queryByText('stale-engine')));
+    SESSIONS.splice(staleIndex, 1);
+    release();
+    await settle();
+    assert.ok(!screen.queryByText('stale-engine'), 'a read older than the delete brought the row back');
+  } finally {
+    Object.assign(SESSION_QR, qrRow);
+    if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
   }
 });
 

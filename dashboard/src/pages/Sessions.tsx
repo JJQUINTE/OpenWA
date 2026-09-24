@@ -109,15 +109,44 @@ export function Sessions() {
   // Spends the one retry the recovery effect below is allowed per connect. Given back by a read that
   // actually succeeded, so a later independent failure on the same connection is retried too.
   const retriedThisConnect = useRef(false);
+  // List reads overlap (every status push that needs server fields starts one) and can answer out of
+  // order, and a read is a snapshot from before any row the page wrote while it was in flight. So a
+  // read is applied only if no newer read has been applied and no row was written since it started;
+  // `rowWrites` counts those writes. A read that loses to a write is sent again, unless a newer read
+  // is already on its way, so what it would have brought (a restriction, the rows after a socket gap)
+  // still arrives. A dropped read returns the newest rows the page holds, which is what its callers
+  // must decide on.
+  const listRequest = useRef(0);
+  const listApplied = useRef(0);
+  const rowWrites = useRef(0);
+
+  // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
+  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Kept
+  // in sync with every state update (fetch / create / delete / WS) via the effect below.
+  const sessionsRef = useRef<Session[]>([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     listReadFailed.current = false;
+    let request = 0;
     try {
       // Background refetches — a websocket push, a mutation reloading the list — would otherwise
       // replace the whole page with a spinner for the length of a round-trip, so a restriction
       // arriving on a live page reads as a full reload.
       if (!initialLoadDone.current) setLoading(true);
-      const data = await sessionApi.list();
+      let data: Session[];
+      for (;;) {
+        request = ++listRequest.current;
+        const writes = rowWrites.current;
+        data = await sessionApi.list();
+        if (request < listApplied.current) return sessionsRef.current;
+        if (rowWrites.current === writes) break;
+        if (request !== listRequest.current) return sessionsRef.current;
+      }
+      listApplied.current = request;
+      sessionsRef.current = data;
       setSessions(data);
       // The list is current again, so an error left by an earlier failed read (or a create, whose toast
       // already reported it) no longer describes the page, and the recovery retry is available again.
@@ -133,6 +162,8 @@ export function Sessions() {
       void invalidateSessionQueries(queryClient, queryKeys.sessions);
       return data;
     } catch (err) {
+      // A failure older than a read already applied says nothing about the list on screen.
+      if (request < listApplied.current) return sessionsRef.current;
       listReadFailed.current = true;
       setError(err instanceof Error ? err.message : t('sessions.create.errorDefault'));
       return [];
@@ -141,14 +172,6 @@ export function Sessions() {
       setLoading(false);
     }
   }, [t, queryClient]);
-
-  // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
-  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Kept
-  // in sync with every state update (fetch / create / delete / WS) via the effect below.
-  const sessionsRef = useRef<Session[]>([]);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
 
   const {
     qrData,
@@ -183,6 +206,7 @@ export function Sessions() {
     onCreated: newSession => {
       // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
       // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
+      rowWrites.current += 1;
       setSessions(current => [...current, newSession]);
       void invalidateSessionQueries(queryClient, queryKeys.sessions);
     },
@@ -198,6 +222,7 @@ export function Sessions() {
   // disconnected session's stale code.
   const applySessionResponse = useCallback(
     async (updated: Session) => {
+      rowWrites.current += 1;
       sessionsRef.current = replaceSession(sessionsRef.current, updated);
       setSessions(sessionsRef.current);
       setSelectedSession(current => (current?.id === updated.id ? updated : current));
@@ -230,6 +255,9 @@ export function Sessions() {
         // and the failed-refresh don't fire on every redundant envelope. Update the ref synchronously so
         // a duplicate arriving in the same tick (before the sync effect runs) is also caught.
         if (prev && prev.status === event.status) return;
+        // A push for a row the page does not hold yet changes nothing, so it must not void the read
+        // that is about to bring that row (the mount read, before any row is on screen).
+        if (prev) rowWrites.current += 1;
         // Drop `engineLoaded` alongside the status patch: it is server-owned live state the status
         // envelope does not carry, so keeping the previous value would pair a fresh status with a
         // stale engine answer and the card could offer Start to a running session (or Unlink to one
@@ -312,6 +340,7 @@ export function Sessions() {
     try {
       await sessionApi.delete(id);
       // Functional removal (no stale `sessions` capture), then invalidate the prefix.
+      rowWrites.current += 1;
       setSessions(current => current.filter(s => s.id !== id));
       await invalidateSessionQueries(queryClient, queryKeys.sessions);
       toast.success(
