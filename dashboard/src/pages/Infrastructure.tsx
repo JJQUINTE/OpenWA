@@ -42,7 +42,7 @@ export function Infrastructure() {
   useDocumentTitle(t('infrastructure.title'));
   const toast = useToast();
   const { data: infraStatus, isLoading: loading, isError: statusError } = useInfraStatusQuery();
-  const { data: savedConfig } = useInfraConfigQuery();
+  const { data: savedConfig, isLoading: configLoading } = useInfraConfigQuery();
   const { data: engines = [] } = useEnginesQuery();
   const { data: currentEngineData } = useCurrentEngineQuery();
   const currentEngine = currentEngineData?.engineType ?? '';
@@ -98,7 +98,7 @@ export function Infrastructure() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [infraStatus]);
 
-  if (loading) {
+  if (loading || configLoading) {
     return (
       <div className="infrastructure-page infra-loading">
         <Loader2 className="animate-spin" size={32} />
@@ -109,7 +109,9 @@ export function Infrastructure() {
   // If the live infrastructure status can't be loaded, do NOT render the editable form: it would seed
   // from component defaults (sqlite/local/built-in:false) and a Save could flip a running backend to
   // external+empty. Show an error + retry instead. (#488 review)
-  if (statusError || !infraStatus) {
+  // Likewise without the saved config: the database, storage and engine detail fields hydrate only
+  // from it, and a Save sends every one of them.
+  if (statusError || !infraStatus || !savedConfig) {
     return (
       <div className="infrastructure-page">
         <PageHeader title={t('infrastructure.title')} subtitle={t('infrastructure.subtitle')} />

@@ -81,7 +81,12 @@ const CURRENT_ENGINE = { engineType: 'whatsapp-web.js' };
 // Per-test fixture swaps for the three responses whose disagreement the engine-pin tests turn on
 // (running engine vs saved engine vs whether ENGINE_TYPE is pinned). Reset in afterEach so the
 // smoke tests above keep seeing the stock fixtures.
-let overrides: { status?: InfraStatus; saved?: SavedConfig; currentEngine?: { engineType: string } } = {};
+let overrides: {
+  status?: InfraStatus;
+  saved?: SavedConfig;
+  savedFails?: boolean;
+  currentEngine?: { engineType: string };
+} = {};
 
 // ENGINE_TYPE supplied by the container environment, so the dashboard cannot change it.
 const PINNED_STATUS: InfraStatus = { ...INFRA_STATUS, envPinned: ['ENGINE_TYPE'] };
@@ -142,8 +147,10 @@ function installFetchStub(): void {
 
     if (method === 'GET' && path === '/api/infra/status')
       return Promise.resolve(jsonResponse(overrides.status ?? INFRA_STATUS));
-    if (method === 'GET' && path === '/api/infra/config')
+    if (method === 'GET' && path === '/api/infra/config') {
+      if (overrides.savedFails) return Promise.resolve(jsonResponse({ message: 'boom' }, 500));
       return Promise.resolve(jsonResponse(overrides.saved ?? SAVED_CONFIG));
+    }
     if (method === 'GET' && path === '/api/infra/engines') return Promise.resolve(jsonResponse(ENGINES));
     if (method === 'GET' && path === '/api/infra/engines/current')
       return Promise.resolve(jsonResponse(overrides.currentEngine ?? CURRENT_ENGINE));
@@ -267,6 +274,19 @@ test('Infrastructure renders and the config form hydrates from /status and /conf
     assert.equal(fieldInput(container, 'Session Data Path').value, '/data/custom-sessions');
     assert.equal(fieldInput(container, 'Browser Arguments').value, '--headless=new --custom-flag');
   });
+});
+
+// The detail fields (username, database, schema, bucket, engine options) come only from /config.
+// Rendered without it, the form holds its built-in defaults, and a Save would write them over the
+// stored external database, S3 and engine settings.
+test('a failed /config read offers no Save, so defaults cannot overwrite the stored settings', async () => {
+  const { screen } = rtl;
+  resetFetchCalls();
+  overrides = { savedFails: true };
+  renderInfrastructure();
+
+  await screen.findByText("Couldn't load the current infrastructure status. Refresh to try again.");
+  assert.ok(!screen.queryByRole('button', { name: 'Save Configuration' }), 'Save offered without the saved config');
 });
 
 /**
