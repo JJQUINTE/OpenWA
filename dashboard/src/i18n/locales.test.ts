@@ -319,3 +319,23 @@ test('rtlLanguages only names shipped locales', () => {
   assert.ok(rtl.length > 0, 'rtlLanguages parsed as empty — the anchor or the pattern has drifted');
   for (const id of rtl) assert.ok(LOCALE_IDS.includes(id), `rtlLanguages names "${id}", which has no locale file`);
 });
+
+// The parity checker flags a value identical to English only from 20 characters up, so a short label
+// left in English passes it. These pin the ones that sit next to translated text on a translated screen.
+const NON_EN_LOCALES = LOCALE_IDS.filter(id => id !== 'en');
+
+test('the proxy modal Save button is translated in every locale', () => {
+  for (const lng of NON_EN_LOCALES) {
+    assert.notEqual(i18n.t('common.save', { lng }), 'Save', `${lng} common.save is still English`);
+  }
+});
+
+test('the session proxy button uses the same script as the modal title it opens', () => {
+  const latin = /[A-Za-z]/;
+  for (const lng of LOCALE_IDS) {
+    // Latin-script locales, and he, whose title writes "proxy" too, keep the Latin term.
+    if (latin.test(i18n.t('sessions.proxy.title', { lng }))) continue;
+    const label = i18n.t('sessions.actions.proxy', { lng });
+    assert.ok(!latin.test(label), `${lng} sessions.actions.proxy is "${label}", the modal title is translated`);
+  }
+});

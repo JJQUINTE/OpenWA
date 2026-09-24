@@ -12,7 +12,7 @@
     "cancel": "إلغاء",
     "delete": "حذف",
     "create": "إنشاء",
-    "save": "Save",
+    "save": "حفظ",
     "close": "إغلاق",
     "showApiKey": "إظهار مفتاح API",
     "hideApiKey": "إخفاء مفتاح API",
@@ -367,7 +367,7 @@
     },
     "actions": {
       "view": "عرض",
-      "proxy": "Proxy",
+      "proxy": "الوكيل",
       "start": "بدء",
       "stop": "إيقاف",
       "reconnect": "إعادة الاتصال",

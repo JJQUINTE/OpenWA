@@ -12,7 +12,7 @@
     "cancel": "取消",
     "delete": "刪除",
     "create": "建立",
-    "save": "Save",
+    "save": "儲存",
     "close": "關閉",
     "showApiKey": "顯示 API 金鑰",
     "hideApiKey": "隱藏 API 金鑰",
@@ -354,7 +354,7 @@
     },
     "actions": {
       "view": "查看",
-      "proxy": "Proxy",
+      "proxy": "代理",
       "start": "啟動",
       "stop": "停止",
       "reconnect": "重新連線",

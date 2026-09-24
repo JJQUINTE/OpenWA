@@ -12,7 +12,7 @@
     "cancel": "రద్దు చేయి",
     "delete": "తొలగించు",
     "create": "సృష్టించు",
-    "save": "Save",
+    "save": "సేవ్ చేయి",
     "close": "మూసివేయి",
     "showApiKey": "API కీని చూపు",
     "hideApiKey": "API కీని దాచు",
@@ -354,7 +354,7 @@
     },
     "actions": {
       "view": "చూడు",
-      "proxy": "Proxy",
+      "proxy": "ప్రాక్సీ",
       "start": "ప్రారంభించు",
       "stop": "ఆపివేయి",
       "reconnect": "మళ్లీ కనెక్ట్ చేయి",

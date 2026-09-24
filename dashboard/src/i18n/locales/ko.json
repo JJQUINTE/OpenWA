@@ -12,7 +12,7 @@
     "cancel": "취소",
     "delete": "삭제",
     "create": "생성",
-    "save": "Save",
+    "save": "저장",
     "close": "닫기",
     "showApiKey": "API 키 표시",
     "hideApiKey": "API 키 숨기기",
@@ -354,7 +354,7 @@
     },
     "actions": {
       "view": "보기",
-      "proxy": "Proxy",
+      "proxy": "프록시",
       "start": "시작",
       "stop": "중지",
       "reconnect": "재연결",
