@@ -150,7 +150,11 @@ describe('SessionService', () => {
       transaction: jest.fn().mockImplementation(async (cb: (manager: unknown) => Promise<unknown>) => {
         const manager = {
           save: jest.fn().mockImplementation((entity: unknown) => Promise.resolve(entity)),
-          remove: jest.fn().mockResolvedValue(undefined),
+          // As TypeORM does: a removed entity comes back with its primary key cleared.
+          remove: jest.fn().mockImplementation((entity: { id?: string }) => {
+            entity.id = undefined;
+            return Promise.resolve(entity);
+          }),
           delete: jest.fn().mockResolvedValue({ affected: 0 }),
         };
         return cb(manager);

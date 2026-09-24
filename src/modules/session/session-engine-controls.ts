@@ -599,8 +599,10 @@ export class SessionEngineControls {
       // it is another session's id, whatever its shape (an import accepts any safe key): the dirs it
       // names are then that session's live login, the same exact-id guard the migration keeps. A
       // failed lookup withholds the name rather than fail a delete that has already committed.
+      // Keyed by `id`, not `session.id`: TypeORM clears a removed entity's primary key, so session.id
+      // is undefined here and the purge would refuse it as an unsafe key and remove nothing.
       const nameIsAnId = await this.sessionRepository.exists({ where: { id: session.name } }).catch(() => true);
-      await this.engineFactory.purgeSessionData(session.id, nameIsAnId ? undefined : session.name);
+      await this.engineFactory.purgeSessionData(id, nameIsAnId ? undefined : session.name);
     } finally {
       // Always clear the teardown mark so a later recreate/start with this id isn't suppressed. This
       // stop mark was set after fence #1, so clearing it on a rejected 409 only undoes what THIS
