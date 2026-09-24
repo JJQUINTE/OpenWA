@@ -65,7 +65,8 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     disconnect: jest.fn(),
     join: jest.fn(),
     leave: jest.fn(),
-    rooms: new Set<string>(),
+    // Socket.IO puts every socket in a room named after its own id.
+    rooms: new Set<string>(['sock-1']),
   });
   // Subscription rooms joined by the socket; the QR-denied role room is not a subscription.
   const sessionRoomJoins = (s: MockSocket): string[] =>
@@ -265,6 +266,18 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     // Re-subscribing a room the socket already holds adds nothing, so it is still granted.
     const again = (await gateway.handleMessage(asSocket(sock), subscribeMsg('s1', ['*']))) as WSSubscribedResponse;
     expect(again.type).toBe('subscribed');
+  });
+
+  it('counts only subscription rooms toward the cap, not the own-id or role rooms', async () => {
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: null });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    sock.rooms.add(QR_DENIED_ROOM);
+    for (let i = 0; i < 4095; i++) sock.rooms.add(buildRoomName(`s${i}`, '*'));
+
+    const res = (await gateway.handleMessage(asSocket(sock), subscribeMsg('sess-1', ['*']))) as WSSubscribedResponse;
+    expect(res.type).toBe('subscribed');
+    expect(sessionRoomJoins(sock)).toEqual([buildRoomName('sess-1', '*')]);
   });
 
   it('pushes a command reply on the message event, not only through the ack callback', async () => {

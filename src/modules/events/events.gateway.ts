@@ -92,7 +92,7 @@ const QR_ALLOWED_ROLES: ReadonlySet<string> = new Set([ApiKeyRole.OPERATOR, ApiK
 /**
  * Subscription rooms live until the socket disconnects, so their names and count are bounded: a session
  * id is a uuid (any id the engines accept is isSafeSessionName), and one socket holds at most this many
- * rooms, far above every event of every session a client would follow.
+ * subscription rooms, far above every event of every session a client would follow.
  */
 const MAX_SUBSCRIBE_SESSION_ID_LENGTH = 128;
 const MAX_ROOMS_PER_SOCKET = 4096;
@@ -571,8 +571,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       );
     }
 
+    // Only subscription rooms count: the socket also sits in its own id room and may hold a role room.
+    const held = [...client.rooms].filter(room => room.startsWith('session:')).length;
     const newRooms = validEvents.filter(event => !client.rooms.has(buildRoomName(sessionId, event))).length;
-    if (client.rooms.size + newRooms > MAX_ROOMS_PER_SOCKET) {
+    if (held + newRooms > MAX_ROOMS_PER_SOCKET) {
       return this.createError(
         'TOO_MANY_SUBSCRIPTIONS',
         `A connection may hold at most ${MAX_ROOMS_PER_SOCKET} subscriptions; unsubscribe first`,
