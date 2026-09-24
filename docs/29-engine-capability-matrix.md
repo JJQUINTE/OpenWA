@@ -926,10 +926,13 @@ adapter boundary — none silently stubs.
   `400` on Baileys. ffmpeg is deliberately not wired in on the Baileys side: the binary ships only
   in the Docker image, so depending on it would make the same request succeed or fail depending on
   how the gateway was installed.
-- **`deleteStatus` (baileys).** Marked ✅ (no throw), but the `sendMessage(status@broadcast,
-{delete})` revoke shape is _empirically unverified_ — only posting was live-spiked. May fall back
-  to 501 if WA rejects the shape. On wwjs it calls `revokeStatusMessage(statusId)` (own status
-  only).
+- **`deleteStatus` (baileys).** Baileys sends a status stanza, the revoke included, to exactly its
+  `statusJidList`, so the revoke is addressed to the recipients the adapter remembered when it posted
+  the status. It keeps them in memory for 24 hours, so a status this session did not post in the last
+  24 hours (one posted from the phone or from another node, or posted before a restart) is refused
+  with `403` (`EngineRefusedError`) instead of a revoke that reaches nobody while the status stays up.
+  The `sendMessage(status@broadcast, {delete})` revoke shape is _empirically unverified_: only posting
+  was live-spiked. On wwjs it calls `revokeStatusMessage(statusId)` (own status only).
 - **`getContactStatus` / `getContactStatuses` (wwjs).** `Status.type` is the `text|image|video`
   union — audio/other story types collapse to `text`.
 - **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** All
