@@ -155,7 +155,7 @@ function restoreValue(
             const unbound = restoreValue(item, undefined, itemField);
             if (stableStringify(unbound) !== stableStringify(restoreValue(item, group[0], itemField))) {
               throw new BadRequestException(
-                'This change to a list of masked secrets cannot be matched to the stored values; re-enter the remaining secret values, or make the change in two saves',
+                'This change to a list of masked secrets cannot be matched to the stored values; re-enter the remaining secret values',
               );
             }
             return unbound;
