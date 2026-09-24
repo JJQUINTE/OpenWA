@@ -66,7 +66,10 @@
 > the first two come from what this node's engines recorded, `active` counts only this node's engines,
 > and `memoryUsage` is this process's. `engineLoaded` is the exception, since it also counts a live
 > claim by another node. With routing on, `GET /api/sessions/:sessionId` is forwarded to the owner, so
-> its answer is the owner's.
+> its answer is the owner's; `start`, `stop`, `logout` and `force-kill` are forwarded the same way, so a
+> `true` means they can act. Without `NODE_URL` nothing is forwarded, so a node that does not hold the
+> session still reports `true` but cannot act on it: `start` and `stop` answer `409` there, and `logout`
+> and `force-kill` answer `400`.
 >
 > **A failed forward says whether the owner could have acted.** When the owner cannot be
 > reached at all (connection refused, unresolvable or unusable `NODE_URL`), the answer is
