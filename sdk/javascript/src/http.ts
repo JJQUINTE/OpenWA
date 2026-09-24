@@ -147,8 +147,11 @@ async function send<T>(
   headers['Content-Type'] = 'application/json';
   headers['X-API-Key'] = config.apiKey;
 
+  // Called without a receiver: a platform fetch passed in as `fetch: globalThis.fetch` throws
+  // "Illegal invocation" in browsers and Workers when invoked as a method of `config`.
+  const doFetch = config.fetch;
   try {
-    const res = await config.fetch(url, {
+    const res = await doFetch(url, {
       method: options.method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

@@ -333,4 +333,17 @@ describe('OpenWAClient', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('calls an injected platform fetch without the client config as receiver', async () => {
+    // `fetch: window.fetch` or `fetch: globalThis.fetch` hands over the unbound platform function.
+    const receivers: unknown[] = [];
+    const strictFetch = function (this: unknown) {
+      receivers.push(this);
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    } as unknown as FetchLike;
+    const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', fetch: strictFetch });
+    await expect(c.sessions.list()).resolves.toEqual([]);
+    expect(receivers).toEqual([undefined]);
+  });
 });
