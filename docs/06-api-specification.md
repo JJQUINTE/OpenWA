@@ -512,7 +512,7 @@ Get session statistics for multi-session monitoring.
 }
 ```
 
-`byStatus` is keyed by lowercase status values. `memoryUsage` values are megabytes (`Math.round(bytes / 1024 / 1024)`). `active` = count of running engines. A scoped key sees only its `allowedSessions` stats.
+`byStatus` is keyed by lowercase status values. `memoryUsage` values are megabytes (`Math.round(bytes / 1024 / 1024)`). `active` = count of running engines on the node that answered; in a multi-node deployment it is that node's count, not the cluster's (see docs/13). A scoped key sees only its `allowedSessions` stats.
 
 **Errors:** `401` missing/invalid `X-API-Key`
 
@@ -3572,7 +3572,7 @@ Validated against `ProductQueryDto` via the global ValidationPipe; any unknown q
 }
 ```
 
-`price` and `priceFormatted` are absent for a product WhatsApp lists without a price.
+`price` and `priceFormatted` are absent for a product WhatsApp lists without a price, and `currency` is absent for one listed without a currency (a price with no currency is formatted as a bare number).
 
 **Baileys engine only.** whatsapp-web.js answers `501` (its readiness guard runs first, so a session that exists but is not `READY` gets `409` instead). Baileys pages the products with a cursor; query validation still runs first, so a bad `page`/`limit` is a `400`.
 
@@ -3608,7 +3608,7 @@ Get a specific catalog product by id.
 }
 ```
 
-`price` and `priceFormatted` are absent for a product without a price, as in the list above.
+`price`, `priceFormatted` and `currency` are absent under the same conditions as in the list above.
 
 **Baileys engine only.** whatsapp-web.js answers `501` (readiness-guarded as above). Baileys resolves the product from the session catalog; an id no product carries answers `200` with an empty body.
 
@@ -5060,6 +5060,8 @@ When the data database cannot be read the database-derived series (`openwa_sessi
 claiming every session had dropped. `openwa_stats_available` is what tells the two cases apart,
 so alert on it rather than reading a missing series as zero. `docs/10` lists every series.
 
+**Errors:** `401` METRICS_TOKEN is set but the bearer is missing or wrong · `404` the endpoint is disabled (METRICS_TOKEN unset) · `429` 10 failed token attempts from one client within a minute; only failures count, and the block lifts as the window slides
+
 ```
 # HELP openwa_up 1 if the OpenWA process is running
 # TYPE openwa_up gauge
@@ -5860,7 +5862,7 @@ List the remote plugin catalog annotated with this instance's install state. (De
     "type": "extension",
     "description": "Auto-translate group messages",
     "author": "openwa-plugins",
-    "download": "https://github.com/openwa-plugins/group-translate/releases/download/v1.2.0/group-translate.zip",
+    "download": "https://github.com/openwa-plugins/group-translate/releases/download/v1.2.0/group-translate.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "installed": true,
     "installedVersion": "1.1.0",
     "updateAvailable": true
@@ -5869,6 +5871,8 @@ List the remote plugin catalog annotated with this instance's install state. (De
 ```
 
 Returns `[]` when no `plugins.catalogUrl` is configured.
+
+The dashboard installs and updates an entry by passing its `download` URL to `POST /api/plugins/install-url` or `POST /api/plugins/:id/update`, so the pin rule of those routes applies: under `NODE_ENV=production` (unless `PLUGIN_INSTALL_REQUIRE_PIN=false`) an entry whose `download` has no `#sha256=` pin cannot be installed. Every entry in the default catalog carries one.
 
 **Errors:** `400` catalog fetch failed / not a JSON array · `401` · `403`
 
