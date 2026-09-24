@@ -1171,6 +1171,30 @@ test('a list read in flight does not undo a create, a stop or a delete', async (
   }
 });
 
+// The detail modal shows the row as it is now, not as it was when View was clicked.
+test('an open detail modal follows its session status and phone', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-viewed-1', name: 'viewed', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('viewed')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'View' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Not connected');
+
+    Object.assign(row, { status: 'ready', phone: '15550005555' });
+    pushSessionStatus(row.id, 'ready');
+
+    await waitFor(() => within(dialog).getByText('15550005555'));
+    assert.ok(within(dialog).queryByText('Connected'), 'the detail modal kept the status it was opened with');
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
 test('a restricted session shows the restriction on its card, even while it is ready', async () => {
   const { screen, within } = rtl;
   resetFetchCalls();

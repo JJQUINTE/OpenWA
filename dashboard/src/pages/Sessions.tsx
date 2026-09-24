@@ -79,7 +79,10 @@ export function Sessions() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  // Only the id: the detail modal renders the row as it is in `sessions` now, so a status push or a
+  // list read shows there too, and a row that is gone closes it.
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSession = selectedSessionId ? (sessions.find(s => s.id === selectedSessionId) ?? null) : null;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [killConfirmId, setKillConfirmId] = useState<string | null>(null);
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
@@ -225,7 +228,6 @@ export function Sessions() {
       rowWrites.current += 1;
       sessionsRef.current = replaceSession(sessionsRef.current, updated);
       setSessions(sessionsRef.current);
-      setSelectedSession(current => (current?.id === updated.id ? updated : current));
       dismissQrForSession(updated.id);
       await reconcileSessionCache(queryClient, queryKeys.sessions, updated);
     },
@@ -419,7 +421,6 @@ export function Sessions() {
 
   // Load the config when the detail modal opens and drop it when it closes, so a value fetched for
   // one session can never render against another.
-  const selectedSessionId = selectedSession?.id ?? null;
   useEffect(() => {
     setSessionConfig(null);
     if (!selectedSessionId) return;
@@ -901,11 +902,11 @@ export function Sessions() {
       {selectedSession && (
         <Modal
           open
-          onClose={() => setSelectedSession(null)}
+          onClose={() => setSelectedSessionId(null)}
           title={t('sessions.details.title')}
           closeLabel={t('common.close')}
           footer={
-            <button className="btn-secondary" onClick={() => setSelectedSession(null)}>
+            <button className="btn-secondary" onClick={() => setSelectedSessionId(null)}>
               {t('common.close')}
             </button>
           }
@@ -1224,7 +1225,7 @@ export function Sessions() {
               )}
 
               <div className="card-actions">
-                <button className="btn-action" onClick={() => setSelectedSession(session)}>
+                <button className="btn-action" onClick={() => setSelectedSessionId(session.id)}>
                   <Eye size={16} />
                   {t('sessions.actions.view')}
                 </button>
