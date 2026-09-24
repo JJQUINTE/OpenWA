@@ -38,8 +38,8 @@ test('enum tags name message types and chat kinds in words', () => {
   );
   assert.ok(types.includes('Voice message'), `message type tags: ${types.join(', ')}`);
   assert.ok(types.includes('Hidden message'), `message type tags: ${types.join(', ')}`);
-  // The unclassified bucket is not "any message"; it reads like the unknown chat kind.
-  assert.ok(types.includes('Unknown'), `message type tags: ${types.join(', ')}`);
+  // The unclassified bucket is not "any message" (the reply banner's wording for it).
+  assert.ok(types.includes('Unknown type'), `message type tags: ${types.join(', ')}`);
   assert.ok(!types.includes('Message'), `message type tags: ${types.join(', ')}`);
   assert.deepEqual(kinds, ['Individual', 'Group', 'Channel', 'Status', 'Broadcast', 'Unknown']);
 });

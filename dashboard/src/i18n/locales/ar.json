@@ -119,7 +119,8 @@
       "order": "طلب",
       "product": "منتج",
       "masked": "رسالة مخفية",
-      "unknown": "رسالة"
+      "unknown": "رسالة",
+      "unknownType": "نوع غير معروف"
     },
     "you": "أنت",
     "youPrefix": "أنت: ",

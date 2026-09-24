@@ -115,7 +115,8 @@
       "order": "Sipariş",
       "product": "Ürün",
       "masked": "Gizlenen mesaj",
-      "unknown": "Mesaj"
+      "unknown": "Mesaj",
+      "unknownType": "Bilinmeyen tür"
     },
     "you": "Siz",
     "youPrefix": "Siz: ",

@@ -115,7 +115,8 @@
       "order": "訂單",
       "product": "商品",
       "masked": "已隱藏的訊息",
-      "unknown": "訊息"
+      "unknown": "訊息",
+      "unknownType": "未知類型"
     },
     "you": "你",
     "youPrefix": "你：",

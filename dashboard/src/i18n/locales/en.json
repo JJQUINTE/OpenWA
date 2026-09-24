@@ -115,7 +115,8 @@
       "order": "Order",
       "product": "Product",
       "masked": "Hidden message",
-      "unknown": "Message"
+      "unknown": "Message",
+      "unknownType": "Unknown type"
     },
     "you": "You",
     "youPrefix": "You: ",

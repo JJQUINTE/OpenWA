@@ -115,7 +115,8 @@
       "order": "주문",
       "product": "상품",
       "masked": "가려진 메시지",
-      "unknown": "메시지"
+      "unknown": "메시지",
+      "unknownType": "알 수 없는 유형"
     },
     "you": "나",
     "youPrefix": "나: ",

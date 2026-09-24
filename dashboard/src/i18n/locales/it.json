@@ -116,7 +116,8 @@
       "order": "Ordine",
       "product": "Prodotto",
       "masked": "Messaggio nascosto",
-      "unknown": "Messaggio"
+      "unknown": "Messaggio",
+      "unknownType": "Tipo sconosciuto"
     },
     "you": "Tu",
     "youPrefix": "Tu: ",

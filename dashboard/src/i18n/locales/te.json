@@ -115,7 +115,8 @@
       "order": "ఆర్డర్",
       "product": "ఉత్పత్తి",
       "masked": "దాచిన సందేశం",
-      "unknown": "సందేశం"
+      "unknown": "సందేశం",
+      "unknownType": "తెలియని రకం"
     },
     "you": "మీరు",
     "youPrefix": "మీరు: ",

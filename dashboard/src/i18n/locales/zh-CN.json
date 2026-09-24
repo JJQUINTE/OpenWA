@@ -115,7 +115,8 @@
       "order": "订单",
       "product": "商品",
       "masked": "已隐藏的消息",
-      "unknown": "消息"
+      "unknown": "消息",
+      "unknownType": "未知类型"
     },
     "you": "你",
     "youPrefix": "你：",

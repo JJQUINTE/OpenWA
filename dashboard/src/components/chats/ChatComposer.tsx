@@ -74,6 +74,8 @@ function ChatComposer({
 
   const [sending, setSending] = useState<boolean>(false);
   // "[Image]" for a non-text message; an unexpected type still reads as itself rather than a raw key.
+  // An `unknown` one quotes as "[Message]" on purpose: here it is a message, not a type category
+  // (the chart and the webhook filter name it through messageTypeLabelKey instead).
   const typeLabel = (type: string) => `[${t(`chats.messageType.${type}`, { defaultValue: type })}]`;
   // Audio carries no caption on either engine, so text typed next to it is never sent with it.
   const attachmentIsAudio = attachment?.mimetype.startsWith('audio/') ?? false;

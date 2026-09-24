@@ -115,7 +115,8 @@
       "order": "ऑर्डर",
       "product": "उत्पाद",
       "masked": "छिपा हुआ संदेश",
-      "unknown": "संदेश"
+      "unknown": "संदेश",
+      "unknownType": "अज्ञात प्रकार"
     },
     "you": "आप",
     "youPrefix": "आप: ",

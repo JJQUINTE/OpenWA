@@ -19,6 +19,7 @@ import { BarChart3 } from 'lucide-react';
 import { useStatsMessagesQuery } from '../hooks/queries';
 import type { StatsPeriod } from '../services/api';
 import { formatTick } from '../utils/chartTicks';
+import { messageTypeLabelKey } from '../utils/enumLabels';
 import './DashboardCharts.css';
 
 const PERIODS: StatsPeriod[] = ['24h', '7d', '30d'];
@@ -68,12 +69,9 @@ export function DashboardCharts() {
   if (isError && forbidden) return null;
 
   const timeSeries = (data?.timeSeries ?? []).map(p => ({ ...p, label: formatTick(p.timestamp, period) }));
-  // `name` keys the slice color; `label` is what the legend and tooltip show. The `unknown` bucket
-  // reads "Unknown", not the chat bubble's generic "Message" placeholder.
-  const typeLabel = (name: string) =>
-    t(name === 'unknown' ? 'chats.kind.unknown' : `chats.messageType.${name}`, { defaultValue: name });
+  // `name` keys the slice color; `label` is what the legend and tooltip show.
   const byType = Object.entries(data?.byType ?? {})
-    .map(([name, value]) => ({ name, label: typeLabel(name), value }))
+    .map(([name, value]) => ({ name, label: t(messageTypeLabelKey(name), { defaultValue: name }), value }))
     .sort((a, b) => b.value - a.value);
   const topChats = (data?.topChats ?? [])
     .slice(0, 8)

@@ -9,6 +9,7 @@ import {
   type WebhookFilterCondition,
   type WebhookFilterOperator,
 } from '../services/api';
+import { messageTypeLabelKey } from '../utils/enumLabels';
 import './FilterBuilder.css';
 
 type FieldKind = 'id' | 'idArray' | 'text' | 'enum' | 'boolean';
@@ -18,8 +19,8 @@ interface FieldDescriptor {
   kind: FieldKind;
   operators: WebhookFilterOperator[];
   enumValues?: readonly string[];
-  /** i18n namespace that names each enum value; the value itself is what the filter sends. */
-  enumLabels?: string;
+  /** i18n key that names an enum value; the value itself is what the filter sends. */
+  enumLabel?: (value: string) => string;
 }
 
 // Mirrors the backend message-family field registry (src/modules/webhook/filters/filter-types.ts).
@@ -33,10 +34,16 @@ const MESSAGE_FIELDS: FieldDescriptor[] = [
     kind: 'enum',
     operators: ['is', 'isNot'],
     enumValues: MESSAGE_TYPES,
-    enumLabels: 'chats.messageType',
+    enumLabel: messageTypeLabelKey,
   },
   { field: 'isGroup', kind: 'boolean', operators: ['is'] },
-  { field: 'kind', kind: 'enum', operators: ['is', 'isNot'], enumValues: CHAT_KINDS, enumLabels: 'chats.kind' },
+  {
+    field: 'kind',
+    kind: 'enum',
+    operators: ['is', 'isNot'],
+    enumValues: CHAT_KINDS,
+    enumLabel: kind => `chats.kind.${kind}`,
+  },
   { field: 'fromMe', kind: 'boolean', operators: ['is'] },
   { field: 'hasMedia', kind: 'boolean', operators: ['is'] },
   { field: 'mentions', kind: 'idArray', operators: ['is', 'isNot'] },
@@ -239,11 +246,7 @@ export function FilterBuilder({ filters, onChange, chats }: FilterBuilderProps) 
                           });
                         }}
                       >
-                        {/* An `unknown` type reads "Unknown" like the unknown chat kind, not the chat
-                            bubble's generic "Message" placeholder. */}
-                        {t(option === 'unknown' ? 'chats.kind.unknown' : `${def.enumLabels}.${option}`, {
-                          defaultValue: option,
-                        })}
+                        {def.enumLabel ? t(def.enumLabel(option), { defaultValue: option }) : option}
                       </button>
                     );
                   })}

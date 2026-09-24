@@ -117,7 +117,8 @@
       "order": "הזמנה",
       "product": "מוצר",
       "masked": "הודעה מוסתרת",
-      "unknown": "הודעה"
+      "unknown": "הודעה",
+      "unknownType": "סוג לא ידוע"
     },
     "you": "אתה",
     "youPrefix": "אתה: ",
