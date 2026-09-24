@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } fr
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
-import { applyIncomingToChatList } from '../utils/chatList';
+import { applyIncomingToChatList, promoteChatWithSnippet } from '../utils/chatList';
 import { filterChats, filterChannels, groupStatusesByContact } from '../utils/chatFilters';
 import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare } from 'lucide-react';
 import { useProfilePicture } from '../hooks/useProfilePicture';
@@ -342,6 +342,14 @@ export function Chats() {
     },
     [showLoadError],
   );
+
+  // A send resolves after the await, possibly once another session's list is on screen. That list can
+  // hold a chat with the same id (a group or contact both accounts share), so the promote only applies
+  // to the session the send started in.
+  const promoteSentChat = useCallback((sessionId: string, chatId: string, snippet: string, sentAt: number) => {
+    if (sessionId !== chatsSessionRef.current) return;
+    setChats(prev => promoteChatWithSnippet(prev, chatId, snippet, sentAt));
+  }, []);
 
   useEffect(() => {
     if (selectedSessionId) {
@@ -1026,7 +1034,7 @@ export function Chats() {
                   replyingTo={replyingTo}
                   setReplyingTo={setReplyingTo}
                   onMessageAppended={onMessageAppended}
-                  setChats={setChats}
+                  onSent={promoteSentChat}
                   messageInput={messageInput}
                   setMessageInput={setMessageInput}
                   attachment={attachment}

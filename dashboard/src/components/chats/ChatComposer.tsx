@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, Paperclip, Send, Smile, X } from 'lucide-react';
 import { messageApi, type Chat, type MessageType } from '../../services/api';
 import { type ChatMessageView } from '../../utils/chatMessages';
-import { promoteChatWithSnippet } from '../../utils/chatList';
 import { buildMediaSendPayload, buildOptimisticMetadata, quotedIdOf } from '../../utils/composerSend';
 import { messagesQueryKey, useChatMessagesActions, upsertCachedMessage } from '../../hooks/useChatMessages';
 import { useRole } from '../../hooks/useRole';
@@ -39,7 +38,8 @@ interface ChatComposerProps {
   replyingTo: ChatMessageView | null;
   setReplyingTo: Dispatch<SetStateAction<ChatMessageView | null>>;
   onMessageAppended: (direction: ScrollDirection) => void;
-  setChats: Dispatch<SetStateAction<Chat[]>>;
+  /** Moves the chat to the top of the sidebar, if `sessionId` is still the session on screen. */
+  onSent: (sessionId: string, chatId: string, snippet: string, sentAt: number) => void;
   messageInput: string;
   setMessageInput: Dispatch<SetStateAction<string>>;
   attachment: StagedAttachment | null;
@@ -58,7 +58,7 @@ function ChatComposer({
   replyingTo,
   setReplyingTo,
   onMessageAppended,
-  setChats,
+  onSent,
   messageInput,
   setMessageInput,
   attachment,
@@ -285,7 +285,7 @@ function ChatComposer({
       // Named by the type the bubble uses, not the MIME major type: a PDF is a document, not "application".
       const snippet = currentAttachment ? typeLabel(messageTypeFromMime(currentAttachment.mimetype)) : textToSend;
       const sentAt = Math.floor(Date.now() / 1000);
-      setChats(prevChats => promoteChatWithSnippet(prevChats, activeChat.id, snippet, sentAt));
+      onSent(selectedSessionId, activeChat.id, snippet, sentAt);
     } catch (err) {
       showErrorToast(t('chats.errors.send'), err instanceof Error ? err.message : undefined);
       updateMessage(selectedSessionId, activeChat.id, tempId, { status: 'failed' });

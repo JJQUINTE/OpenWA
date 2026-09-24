@@ -978,6 +978,42 @@ test('a staged reply is dropped when another session is opened', async () => {
   }
 });
 
+test("a send that resolves after a session switch does not promote the other session's chat", async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  twoSessions = true;
+  const releaseSend = holdSend();
+  // Session 2 lists a chat with Alice's id too (a contact both accounts share), below Carol.
+  chatsResponder = sessionId =>
+    Promise.resolve(
+      jsonResponse(sessionId === SESSION.id ? [CHAT, CHAT_2] : [CHAT_2, { ...CHAT, lastMessage: 'alice on two' }]),
+    );
+  try {
+    resetFetchCalls();
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+    fireEvent.change(screen.getByPlaceholderText('Type a message...'), { target: { value: 'from session one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => assert.ok(findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-text`)));
+
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await screen.findByText('alice on two');
+    releaseSend();
+    await flush();
+    await flush();
+
+    const rows = [...container.querySelectorAll('.chat-item-card')];
+    assert.equal(rows[0]?.textContent?.includes('Carol'), true, "the other session's Alice row was moved to the top");
+    const alice = rows.find(row => row.textContent?.includes('Alice'));
+    assert.equal(alice?.querySelector('.chat-item-snippet')?.textContent ?? null, 'alice on two');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test('a chat list that answers after the user switched sessions does not replace the new one', async () => {
   const { screen, fireEvent, waitFor } = rtl;
   twoSessions = true;
