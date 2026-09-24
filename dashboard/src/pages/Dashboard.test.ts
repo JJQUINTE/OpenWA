@@ -13,6 +13,7 @@ let webhooksStatus = 403;
 let webhookList: unknown[] = [];
 let sessionList: unknown[] = [];
 let stopStatus = 200;
+let sessionsStatus = 200;
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -31,7 +32,11 @@ function installFetchStub(): void {
   globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, '');
-    if (path === '/api/sessions') return Promise.resolve(jsonResponse(sessionList));
+    if (path === '/api/sessions') {
+      return Promise.resolve(
+        sessionsStatus === 200 ? jsonResponse(sessionList) : jsonResponse({ message: 'Bad Gateway' }, sessionsStatus),
+      );
+    }
     if (path === `/api/sessions/${READY_SESSION.id}/stop`) {
       return Promise.resolve(
         stopStatus === 200
@@ -81,6 +86,7 @@ afterEach(() => {
   webhookList = [];
   sessionList = [];
   stopStatus = 200;
+  sessionsStatus = 200;
   window.localStorage.setItem('openwa_user_role', 'viewer');
 });
 
@@ -158,4 +164,23 @@ test('a failed stop is reported, not swallowed', async () => {
   await rtl.waitFor(() =>
     assert.ok(!rtl.screen.queryByRole('button', { name: 'Disconnect' }), 'the session list was not re-read'),
   );
+});
+
+test('a failed background refetch of the sessions keeps the cached page', async () => {
+  webhooksStatus = 200;
+  sessionList = [READY_SESSION];
+  renderDashboard();
+  await rtl.screen.findByText('Main');
+
+  sessionsStatus = 502;
+  await rtl.act(() => queryClient!.refetchQueries({ queryKey: ['sessions'] }));
+  await rtl.waitFor(() => assert.equal(queryClient!.getQueryState(['sessions'])?.status, 'error'));
+  assert.ok(rtl.screen.queryByText('Main'), 'a failed refetch replaced the cached sessions with an error');
+});
+
+test('a failed first read of the sessions still shows the error', async () => {
+  webhooksStatus = 200;
+  sessionsStatus = 502;
+  renderDashboard();
+  await rtl.screen.findByText(/Bad Gateway/);
 });
