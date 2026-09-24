@@ -1347,9 +1347,17 @@ Remember OpenWA is **single-port**: the Dashboard, REST API, and Socket.IO all s
 **Q: How to backup sessions automatically?**
 
 ```bash
-# Add to crontab, for example: 0 */6 * * * cd /path/to/openwa && ./scripts/backup.sh
-BACKUP_DIR=/backups/openwa ./scripts/backup.sh
+# Production compose, whose data is the openwa-data volume: back up inside the container, then copy
+# the archive off the volume. In crontab, for example every six hours:
+# 0 */6 * * * docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh && docker cp openwa-api:/app/data/backups/. /backups/openwa/
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. /backups/openwa/
+
+# Bare metal or docker-compose.dev.yml, whose data is ./data in the checkout:
+# 0 */6 * * * cd /path/to/openwa && BACKUP_DIR=/backups/openwa ./scripts/backup.sh
 ```
+
+The archives stay in `/app/data/backups` on the volume as well, so prune them there too.
 
 The shipped script also covers `main.sqlite`, the selected data store, whatsapp-web.js state,
 `BAILEYS_AUTH_DIR` (default `./data/baileys`), media, plugin packages/state, and generated secrets. Apply

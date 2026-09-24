@@ -349,8 +349,11 @@ docker stats --no-stream
 # 2. Notify users (via webhook or external system)
 # Send maintenance notification
 
-# 3. Create backup
-./scripts/backup.sh
+# 3. Create a backup in the running container, where the data is mounted, and copy it off the
+#    volume (see Runbook: Database Backup). A host run of ./scripts/backup.sh archives ./data in the
+#    checkout, which only a bare-metal install or docker-compose.dev.yml reads
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. ./backups/
 
 # Verify backup (backup.sh writes $BACKUP_DIR/openwa-backup-<timestamp>.tar.gz,
 # BACKUP_DIR defaults to ./backups — it creates no dated subdirectories)
@@ -425,7 +428,8 @@ curl -H "X-API-Key: $API_KEY" \
 # 2. Create a backup in the running container, where the data is mounted, then copy it to
 #    $BACKUP_DIR as openwa-backup-<timestamp>.tar.gz, where the Rollback block reads it. Both compose
 #    files name the container openwa-api. Running ./scripts/backup.sh on the host instead archives
-#    ./data in the checkout, which the production compose never reads (see Runbook: Database Backup)
+#    ./data in the checkout, which the production compose never reads (see Runbook: Database Backup).
+#    An image older than 0.19.0 has no scripts/backup.sh: see 14 - Known Upgrade Hazards
 export BACKUP_DIR="/backups/openwa"
 mkdir -p "$BACKUP_DIR"
 docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
@@ -507,7 +511,8 @@ curl -H "X-API-Key: $API_KEY" \
 # 1. Stop services
 docker compose down
 
-# 2. Restore from the pre-upgrade backup (both DBs + sessions). The archive upgrade step 2 produced is
+# 2. Restore from the pre-upgrade backup (main.sqlite, a SQLite data store and the auth state). The
+#    archive upgrade step 2 produced is
 #    "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz". The databases in place still hold the failed
 #    upgrade's data, so the restore refuses to touch them without --force. That state is not lost: it
 #    is kept in "$BACKUP_DIR/data.pre-restore-<ts>", the path the script prints. It runs in the image
@@ -517,6 +522,11 @@ docker compose down
 docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
   -v "$BACKUP_DIR:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups -e HOME=/tmp \
   openwa-api /backups/openwa-backup-<timestamp>.tar.gz --force
+
+# On a PostgreSQL data store, step 2 leaves the upgraded database in place. Load the pre-upgrade dump
+# into an empty database: replayed over the upgraded tables, its CREATE statements fail and its rows
+# mix with theirs
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | psql "$DATABASE_URL"
 
 # 3. Check out the previous release and rebuild the image
 git checkout v<old-version>
@@ -670,7 +680,8 @@ docker compose down
 #    refuses to overwrite them)
 ./scripts/restore.sh ./backups/openwa-backup-<timestamp>.tar.gz
 
-# 3. (Postgres only) the archive contains database.sql — import it manually:
+# 3. (Postgres only) the archive contains database.sql — import it manually into an empty
+#    database (its CREATE statements fail against tables that already exist):
 #    psql "$DATABASE_URL" < ./data/database.sql
 
 # 4. Start the app and CONFIRM an existing API key still authenticates
