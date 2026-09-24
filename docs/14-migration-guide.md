@@ -218,13 +218,20 @@ curl -s 'http://localhost:2785/api/infra/storage/export' \
 # The archive is auto-removed after STORAGE_EXPORT_TTL_MS (default 1h), so re-import it before then.
 # It is written under data/ so it survives the restart in Step 4 and stays import-able.
 
-# Step 3: Change storage configuration
-# From: STORAGE_TYPE=local
-# To:   STORAGE_TYPE=s3
-#       MINIO_BUILTIN=true  # or false for external S3
+# Step 3: Change the storage configuration
+# Dashboard: Infrastructure > Amazon S3 + "Use Built-in MinIO Container"; save, then
+#   restart from the dashboard, which starts the container itself (skip Step 4).
+# Or in the .env next to docker-compose.yml (compose does not forward MINIO_BUILTIN, so
+#   name the endpoint and set real keys):
+#   STORAGE_TYPE=s3
+#   S3_ENDPOINT=http://minio:9000
+#   S3_ACCESS_KEY_ID=<user>
+#   S3_SECRET_ACCESS_KEY=<strong password>
+# For external S3, set STORAGE_TYPE=s3, S3_BUCKET, S3_REGION and that store's keys instead
+#   (S3_ENDPOINT only for an S3-compatible store), and drop --profile minio in Step 4.
 
-# Step 4: Restart with new configuration
-docker compose up -d
+# Step 4: Restart with the new configuration (.env route)
+docker compose --profile minio up -d
 
 # Step 5: Import files to new storage
 curl -X POST 'http://localhost:2785/api/infra/storage/import' \
