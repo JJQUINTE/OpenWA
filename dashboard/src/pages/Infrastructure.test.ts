@@ -289,6 +289,15 @@ test('a failed /config read offers no Save, so defaults cannot overwrite the sto
   assert.ok(!screen.queryByRole('button', { name: 'Save Configuration' }), 'Save offered without the saved config');
 });
 
+test('the storage badge names local storage in the active language', async () => {
+  const { screen } = rtl;
+  resetFetchCalls();
+  renderInfrastructure();
+
+  const card = (await screen.findByText('Storage Configuration')).closest('.infra-card') as HTMLElement;
+  assert.equal(card.querySelector('.card-header .status-indicator')?.textContent, '● Local Filesystem');
+});
+
 /**
  * Every toggle is a bare checkbox inside a `<label class="toggle-switch">` whose only other child is
  * the decorative slider span, so the wrapping label contributes no text: a screen reader announced

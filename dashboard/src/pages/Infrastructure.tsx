@@ -658,7 +658,7 @@ export function Infrastructure() {
                     ? s3Unreachable
                       ? t('infrastructure.storage.s3Unreachable')
                       : 'S3'
-                    : 'Local'}
+                    : t('infrastructure.storage.local')}
                 </span>
               );
             })()}
