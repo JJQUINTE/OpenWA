@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { DockerService, MANAGED_DOCKER_PROFILES } from './docker.service';
 
@@ -80,8 +81,8 @@ const labelsToMap = (list: string[]): Record<string, string> =>
  * Runs createService against a fake daemon and returns the exact ContainerCreateOptions the
  * profile's spec produces — parity is asserted on what would actually be sent to the daemon.
  */
-async function capture(profile: string): Promise<CapturedConfig> {
-  const service = new DockerService();
+async function capture(profile: string, Service: typeof DockerService = DockerService): Promise<CapturedConfig> {
+  const service = new Service();
   jest.spyOn(service, 'getContainerByService').mockResolvedValue(null);
   let captured: CapturedConfig | undefined;
   const fakeDocker = {
@@ -409,6 +410,38 @@ describe('DockerService managed specs ↔ docker-compose.yml parity', () => {
     process.env.S3_SECRET_ACCESS_KEY = 'canonical-secret';
     cfg = await capture('minio');
     expect(cfg.Env).toEqual(['MINIO_ROOT_USER=canonical-user', 'MINIO_ROOT_PASSWORD=canonical-secret']);
+  });
+
+  it('minio: provisions the credentials the next boot reads, not the ones this process booted with', async () => {
+    // External keys saved from the dashboard reached process.env from data/.env.generated at boot; a
+    // switch to built-in storage has since rewritten that file with minioadmin, and the restart that
+    // creates the container runs in this old process. Fresh modules: the precedence snapshot is global.
+    const dir = mkdtempSync(join(tmpdir(), 'openwa-minio-'));
+    mkdirSync(join(dir, 'data'));
+    writeFileSync(
+      join(dir, 'data', '.env.generated'),
+      'S3_ACCESS_KEY_ID=minioadmin\nS3_SECRET_ACCESS_KEY=minioadmin\n',
+    );
+    const cwd = jest.spyOn(process, 'cwd').mockReturnValue(dir);
+    try {
+      let FreshDockerService: typeof DockerService = DockerService;
+      jest.isolateModules(() => {
+        // require() (not dynamic import()): the relative specifier trips TS2835 under nodenext.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const precedence = require('../../config/env-precedence') as typeof import('../../config/env-precedence');
+        precedence.recordOsEnvKeys({});
+        precedence.recordPinnedEnvKeys({});
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        FreshDockerService = (require('./docker.service') as typeof import('./docker.service')).DockerService;
+      });
+      process.env.S3_ACCESS_KEY_ID = 'AKIAEXTERNAL';
+      process.env.S3_SECRET_ACCESS_KEY = 'external-secret';
+      const cfg = await capture('minio', FreshDockerService);
+      expect(cfg.Env).toEqual(['MINIO_ROOT_USER=minioadmin', 'MINIO_ROOT_PASSWORD=minioadmin']);
+    } finally {
+      cwd.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('minio: publishes the same localhost-only ports as compose', async () => {
