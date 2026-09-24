@@ -212,8 +212,9 @@ function ChatComposer({
     setSending(true);
 
     const tempId = `temp_${Date.now()}`;
-    // The body the gateway stores for each type: image and video keep only the caption, a document its
-    // caption or else its filename, and audio its filename (the thread hides a body equal to it).
+    // Mirrors the body the gateway stores: image and video keep only the caption, and a document its caption
+    // or else its filename. Audio stores none; its filename stands in here because the thread hides a body
+    // equal to it.
     const tempMessage: ChatMessageView = {
       id: tempId,
       chatId: activeChat.id,
