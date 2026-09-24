@@ -943,11 +943,13 @@ adapter boundary — none silently stubs.
   was live-spiked. On wwjs it calls `revokeStatusMessage(statusId)` (own status only).
 - **`getContactStatus` / `getContactStatuses` (wwjs).** `Status.type` is the `text|image|video`
   union — audio/other story types collapse to `text`.
-- **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** All
-  five need the chat's last known message: `chatModify` carries it for the first three and for the
-  unread mark, and the read receipt is `readMessages([key])`. A chat the session has seen no message
-  in resolves `false` rather than throwing, so `POST chats/read` answers `{"success": false}` for a
-  chat whatsapp-web.js marks read from the page-side chat object without needing any local history.
+- **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** The
+  four `chatModify` actions (archive, clear, delete, unread) need the chat's last known message, which
+  the patch carries. `sendSeen` without message ids is `readMessages([key])` for the newest _received_
+  (not `fromMe`) message, since Baileys drops own keys from a receipt. A chat with no such message
+  resolves `false` rather than throwing, so a chat the session has seen no message in, or one holding
+  only this account's own sends, answers `POST chats/read` with `{"success": false}`, where
+  whatsapp-web.js marks it read from the page-side chat object without needing any local history.
 - **`setProfileName` / `setProfilePicture` / `deleteProfilePicture` refusals (baileys).**
   whatsapp-web.js reads a page-side verdict for all three (`setDisplayName` and `setProfilePicture`
   resolve `false`, `deleteProfilePicture` resolves an explicit `false`) and raises a `403`. The
