@@ -324,7 +324,9 @@ docker compose up -d
 
 > **Note:** This is an illustrative standalone script, not a shipped one — there is no
 > `scripts/migrate-sqlite-to-postgres.ts` in the repo. Save it locally before running it, and prefer
-> the export/import API above, which always covers the full table set.
+> the export/import API above, which always covers the full table set. The script copies only the
+> tables named in its `migrationOrder`, which mirrors `EXPORT_TABLES` in
+> `src/modules/infra/export-tables.ts` as of this release; a table added later is skipped silently.
 >
 > It uses the standalone `sqlite3` npm package, which is no longer part of
 > OpenWA's dependencies (the app itself uses `better-sqlite3`). Install it ad hoc before running:
@@ -379,10 +381,12 @@ async function migrateSqliteToPostgres(config: MigrationConfig): Promise<Migrati
     'templates',
     'baileys_stored_messages',
     'lid_mappings',
+    'chat_states',
     'plugin_instances',
     'conversation_mappings',
     'ingress_events',
     'webhook_delivery_failures',
+    'webhook_outbox_events',
     'integration_delivery_failures',
     'status_updates',
     // ON DELETE CASCADE FK to sessions, so it must follow them.
