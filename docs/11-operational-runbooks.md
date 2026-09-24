@@ -584,7 +584,9 @@ User-managed files outside that list (for example the project-level `.env`) must
 #                                                     or a pg_dump when DATABASE_TYPE=postgres)
 #   - sessions/     — whatsapp-web.js state (SESSION_DATA_PATH)
 #   - baileys/      — Baileys credentials (BAILEYS_AUTH_DIR)
-#   - media/        — local media                    (skipped automatically when STORAGE_TYPE=s3)
+#   - media/        — local media                    (STORAGE_LOCAL_PATH, archived whenever present; with
+#                                                     STORAGE_TYPE=s3 it holds only files the app could not
+#                                                     write to the bucket, so back up the bucket separately)
 #   - plugin-packages/ — installed plugin code from PLUGINS_DIR
 #   - plugin-state/    — registry + ctx.storage state under OPENWA_DATA_DIR
 #   - .env.generated / .api-key — generated configuration and bootstrap secret

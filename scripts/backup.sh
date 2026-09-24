@@ -7,7 +7,10 @@
 #   - data store    — openwa.sqlite (SQLite) OR a pg_dump (when DATABASE_TYPE=postgres)
 #   - sessions/     — whatsapp-web.js LocalAuth session data
 #   - baileys/      — Baileys engine authentication state
-#   - media/        — locally-stored media (skipped automatically when using S3)
+#   - media/        — the local media dir (STORAGE_LOCAL_PATH), archived whenever it exists. Under
+#                     STORAGE_TYPE=s3 it holds only media the app could not write to the bucket
+#                     (unreachable, or no credentials); the bucket's contents are not archived and
+#                     need a backup of their own
 #   - plugin-packages/ — installed plugin packages from PLUGINS_DIR
 #   - plugin-state/    — registry and persisted ctx.storage state under OPENWA_DATA_DIR
 #   - .env.generated and .api-key — dashboard config and plaintext bootstrap admin key
