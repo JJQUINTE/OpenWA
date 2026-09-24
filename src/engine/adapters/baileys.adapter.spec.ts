@@ -6345,7 +6345,7 @@ describe('BaileysAdapter status posting', () => {
     });
     expect(fakeSock.sendMessage).toHaveBeenCalledWith(
       'status@broadcast',
-      { text: 'hello' },
+      { text: 'hello', linkPreview: null },
       {
         statusJidList: ['628111@s.whatsapp.net', '628222@lid'],
         backgroundColor: '#25D366',
