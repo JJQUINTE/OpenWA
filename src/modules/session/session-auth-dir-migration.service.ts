@@ -62,12 +62,7 @@ export class SessionAuthDirMigration implements OnModuleInit {
       );
     }
 
-    // The name rule lets a session be named after another session's id, and the "legacy" directory
-    // that name points at is then that session's live id-keyed login: moving it would hand the
-    // account to this row. Only the exact ids are held back, whatever their shape: a UUID-shaped name
-    // that is no session's id is an ordinary name, and on an upgrade its directory is its own login.
     const ids = new Set(rows.map(row => row.id));
-    const movable = sessions.filter(row => !ids.has(row.name));
 
     const sessionDataPath = this.configService.get<string>('engine.sessionDataPath') ?? './data/sessions';
     const authDir = this.configService.get<string>('engine.baileys.authDir') ?? './data/baileys';
@@ -75,10 +70,10 @@ export class SessionAuthDirMigration implements OnModuleInit {
     // still has a live auth directory there, and leaving it name-keyed would strand it (the same
     // reason EngineFactory.purgeSessionData removes both).
     const found = [
-      ...this.migrateBase('whatsapp-web.js', movable, path.resolve(sessionDataPath), key =>
+      ...this.migrateBase('whatsapp-web.js', sessions, ids, path.resolve(sessionDataPath), key =>
         wwjsAuthDir(sessionDataPath, key),
       ),
-      ...this.migrateBase('baileys', movable, authDir, key => baileysAuthDir(authDir, key)),
+      ...this.migrateBase('baileys', sessions, ids, authDir, key => baileysAuthDir(authDir, key)),
     ];
     this.warnOnCaseCollisions(sessions, new Set(found));
   }
@@ -89,7 +84,13 @@ export class SessionAuthDirMigration implements OnModuleInit {
    * adapters use, so the per-engine shape (`session-<key>` for whatsapp-web.js, a bare `<key>` for
    * baileys) is not spelled out a second time here.
    */
-  private migrateBase(engine: string, sessions: Session[], base: string, dirFor: (key: string) => string): string[] {
+  private migrateBase(
+    engine: string,
+    sessions: Session[],
+    ids: Set<string>,
+    base: string,
+    dirFor: (key: string) => string,
+  ): string[] {
     let entries: Set<string>;
     try {
       entries = readAuthDirEntries(base);
@@ -108,10 +109,33 @@ export class SessionAuthDirMigration implements OnModuleInit {
       return [];
     }
 
-    const found: string[] = [];
+    // The name rule lets a session be named after another session's id, and the "legacy" directory
+    // that name points at is then, once this base is id-keyed, that session's live login: moving it
+    // would hand the account to this row, so the row is held back. Only exact ids count, whatever
+    // their shape: a UUID-shaped name that is no session's id is an ordinary name.
+    //
+    // While the id owner's own legacy directory is still here and the misnamed row has no id-keyed
+    // one, the base is still name-keyed and that directory is the misnamed row's own login. It moves
+    // first, so the owner's rename onto its id then finds the target free. A stale owner directory
+    // left beside its id-keyed login (a rollback, then a re-upgrade) reads the same by name alone,
+    // which is why that case is warned about.
+    const entry = (key: string): string => path.basename(dirFor(key));
+    const owners = new Map(sessions.map(row => [row.id, row]));
+    const idNamed = new Set<Session>();
+    const rest: Session[] = [];
     for (const session of sessions) {
-      const legacy = path.basename(dirFor(session.name));
-      const target = path.basename(dirFor(session.id));
+      if (!ids.has(session.name)) {
+        rest.push(session);
+        continue;
+      }
+      const owner = owners.get(session.name);
+      if (owner && entries.has(entry(owner.name)) && !entries.has(entry(session.id))) idNamed.add(session);
+    }
+
+    const found: string[] = [];
+    for (const session of [...idNamed, ...rest]) {
+      const legacy = entry(session.name);
+      const target = entry(session.id);
       if (legacy === target || !entries.has(legacy)) continue;
       found.push(session.name);
       if (entries.has(target)) {
@@ -134,6 +158,14 @@ export class SessionAuthDirMigration implements OnModuleInit {
           legacy,
           target,
         });
+        if (idNamed.has(session)) {
+          this.logger.warn(
+            `Session "${session.name}" is named after the id of session "${owners.get(session.name)?.name}". Its ${engine} ` +
+              'auth directory was inferred from the name-keyed layout and moved onto its own id; confirm ' +
+              'each of the two sessions links the WhatsApp account you expect.',
+            { sessionId: session.id, action: 'auth_dir_migration_id_named', engine, legacy, target },
+          );
+        }
       } catch (error) {
         this.logger.warn(`Could not move the ${engine} auth directory of session "${session.name}"`, {
           sessionId: session.id,
