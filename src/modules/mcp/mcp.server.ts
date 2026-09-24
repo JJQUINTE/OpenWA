@@ -15,6 +15,7 @@ import { handleToolError, jsonToolResult, smartToolResult } from './tool-result'
 import type { KeyRateLimiter } from './mcp-rate-limit';
 import { limiterKeyForIp, resolveClientIp } from '../../common/utils/ip';
 import { resolveBodyLimit } from '../../config/bootstrap-security';
+import { bearerToken } from '../../common/security/bearer-token';
 
 const logger = new Logger('McpServer');
 
@@ -36,11 +37,7 @@ function extractApiKey(extra: ToolExtra): string | undefined {
     return Array.isArray(xApiKey) ? xApiKey[0] : xApiKey;
   }
   const auth = headers['authorization'];
-  const authStr = Array.isArray(auth) ? auth[0] : auth;
-  if (authStr?.toLowerCase().startsWith('bearer ')) {
-    return authStr.slice(7).trim();
-  }
-  return undefined;
+  return bearerToken(Array.isArray(auth) ? auth[0] : auth);
 }
 
 /**

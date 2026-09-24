@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/entities/audit-log.entity';
 import { SlidingWindowLimiter } from '../events/ws-rate-limit';
 import { limiterKeyForIp, resolveClientIp } from '../../common/utils/ip';
+import { bearerToken } from '../../common/security/bearer-token';
 
 interface DependencyStatus {
   status: 'up' | 'down';
@@ -77,9 +78,7 @@ export class HealthController {
    */
   private async hasValidApiKey(req: Request): Promise<boolean> {
     const xApiKey = req.headers['x-api-key'];
-    const authHeader = req.headers['authorization'];
-    const rawKey =
-      (typeof xApiKey === 'string' && xApiKey) || (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined);
+    const rawKey = (typeof xApiKey === 'string' && xApiKey) || bearerToken(req.headers['authorization']);
     if (!rawKey) return false;
     try {
       const clientIp = resolveClientIp(req, this.configService.get<string[]>('security.trustedProxies') ?? []);

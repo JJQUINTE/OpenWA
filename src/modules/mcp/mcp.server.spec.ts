@@ -396,6 +396,26 @@ describe('mountMcpServer (raw-Express request-handling path)', () => {
     );
   });
 
+  // One parser for every surface that reads Authorization, so a header the REST guard accepts is
+  // accepted here too and one it refuses is refused here too.
+  it.each([
+    ['bearer good-key', 'good-key'],
+    ['Bearer\tgood-key', 'good-key'],
+    ['Bearer good-key extra', undefined],
+  ])('reads the Authorization header %j like the REST guard', async (header, expected) => {
+    const h = mount();
+    h.authService.validateApiKey.mockResolvedValue({ id: 'k1' });
+    await post(h, { jsonrpc: '2.0', id: 1 }, { authorization: header });
+
+    await toolCallback()(
+      { sessionId: 's1', to: '123', text: 'hi' },
+      { requestInfo: { headers: { authorization: header } } },
+    );
+
+    if (expected === undefined) expect(h.authService.validateApiKey).not.toHaveBeenCalled();
+    else expect(h.authService.validateApiKey).toHaveBeenCalledWith(expected, undefined, 's1');
+  });
+
   it('fails closed on a session-scoped tool call without sessionId (guard fires before the auth lookup)', async () => {
     const h = mount();
     await post(h, { jsonrpc: '2.0', id: 1 }, { authorization: 'Bearer good-key' });
