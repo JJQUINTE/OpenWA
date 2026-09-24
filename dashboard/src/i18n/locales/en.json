@@ -1038,7 +1038,8 @@
         "title": "Instance created",
         "hint": "Copy the secret now — it is shown only once.",
         "secret": "Signing secret",
-        "ingressUrls": "Ingress URL(s)"
+        "ingressUrls": "Ingress URL(s)",
+        "verifyToken": "Verify token"
       },
       "regenerate": {
         "title": "Regenerate secret",

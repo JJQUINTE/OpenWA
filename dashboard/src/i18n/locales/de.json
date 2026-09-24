@@ -1039,7 +1039,8 @@
         "title": "Instanz erstellt",
         "hint": "Kopiere das Geheimnis jetzt — es wird nur einmal angezeigt.",
         "secret": "Signaturgeheimnis",
-        "ingressUrls": "Ingress-URL(s)"
+        "ingressUrls": "Ingress-URL(s)",
+        "verifyToken": "Verifizierungstoken"
       },
       "regenerate": {
         "title": "Geheimnis neu erstellen",

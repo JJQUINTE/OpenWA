@@ -1039,7 +1039,8 @@
         "title": "实例已创建",
         "hint": "请立即复制密钥——它只会显示一次。",
         "secret": "签名密钥",
-        "ingressUrls": "接入 URL"
+        "ingressUrls": "接入 URL",
+        "verifyToken": "验证令牌"
       },
       "regenerate": {
         "title": "重新生成密钥",

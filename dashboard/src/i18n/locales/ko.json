@@ -1039,7 +1039,8 @@
         "title": "인스턴스 생성 완료",
         "hint": "지금 시크릿을 복사해 두세요 — 한 번만 표시됩니다.",
         "secret": "서명 시크릿",
-        "ingressUrls": "인그레스 URL"
+        "ingressUrls": "인그레스 URL",
+        "verifyToken": "인증 토큰"
       },
       "regenerate": {
         "title": "시크릿 재생성",

@@ -304,6 +304,18 @@ export function PluginInstances({ pluginId }: { pluginId: string }) {
               {copied === 'secret' ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
+          {/* Revealed only here; later reads mask it, so an auto-generated token is lost if not shown. */}
+          {minted.verifyToken && (
+            <>
+              <label>{t('plugins.instances.created.verifyToken')}</label>
+              <div className="pi-secret">
+                <code>{minted.verifyToken}</code>
+                <button className="btn-primary" onClick={() => void copy(minted.verifyToken!, 'verifyToken')}>
+                  {copied === 'verifyToken' ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+            </>
+          )}
           <label>{t('plugins.instances.created.ingressUrls')}</label>
           {minted.ingressUrls.map(u => (
             <div key={u.route} className="pi-secret">

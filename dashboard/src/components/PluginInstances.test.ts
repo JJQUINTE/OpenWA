@@ -26,6 +26,15 @@ const BOUND = {
   ingressUrls: [],
 };
 
+// The create response is the one place the plaintext secret and an auto-generated verify token appear.
+const MINTED = {
+  ...BOUND,
+  instanceId: 'acct2',
+  sessionScope: null,
+  secret: 'plain-signing-secret-0123',
+  verifyToken: 'auto-verify-token-4567',
+};
+
 const calls: { method: string; path: string; body?: unknown }[] = [];
 
 function installFetchStub(): void {
@@ -36,6 +45,7 @@ function installFetchStub(): void {
     calls.push({ method, path, body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined });
     if (method === 'GET' && path === BASE) return Promise.resolve(jsonResponse([BOUND]));
     if (method === 'PATCH' && path === `${BASE}/acct1`) return Promise.resolve(jsonResponse(BOUND));
+    if (method === 'POST' && path === BASE) return Promise.resolve(jsonResponse(MINTED, 201));
     return Promise.resolve(jsonResponse({ message: `unstubbed ${method} ${path}` }, 404));
   }) as typeof fetch;
 }
@@ -89,4 +99,18 @@ test('clearing a bound session scope saves the instance for all sessions', async
     assert.ok(patch, 'expected a PATCH');
     assert.equal((patch.body as { sessionScope?: unknown }).sessionScope, null);
   });
+});
+
+test('the created view shows an auto-generated verify token with a copy button', async () => {
+  const { screen, fireEvent, within } = rtl;
+  renderInstances();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Create instance' }));
+  fireEvent.change(screen.getByLabelText('Instance ID'), { target: { value: 'acct2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+  const dialog = await screen.findByRole('dialog', { name: 'Instance created' });
+  const token = within(dialog).getByText('auto-verify-token-4567');
+  assert.ok(token.closest('.pi-secret')?.querySelector('button'), 'no copy button next to the verify token');
+  within(dialog).getByText('Verify token');
 });

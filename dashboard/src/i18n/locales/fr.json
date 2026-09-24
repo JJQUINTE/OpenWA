@@ -1043,7 +1043,8 @@
         "title": "Instance créée",
         "hint": "Copiez le secret maintenant — il ne sera affiché qu'une seule fois.",
         "secret": "Secret de signature",
-        "ingressUrls": "URL(s) d'entrée"
+        "ingressUrls": "URL(s) d'entrée",
+        "verifyToken": "Jeton de vérification"
       },
       "regenerate": {
         "title": "Régénérer le secret",

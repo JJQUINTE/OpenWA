@@ -1043,7 +1043,8 @@
         "title": "Istanza creata",
         "hint": "Copia subito il segreto — viene mostrato solo una volta.",
         "secret": "Segreto di firma",
-        "ingressUrls": "URL di ingresso"
+        "ingressUrls": "URL di ingresso",
+        "verifyToken": "Token di verifica"
       },
       "regenerate": {
         "title": "Rigenera segreto",

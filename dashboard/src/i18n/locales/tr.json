@@ -1039,7 +1039,8 @@
         "title": "Örnek oluşturuldu",
         "hint": "Gizli anahtarı şimdi kopyalayın — yalnızca bir kez gösterilir.",
         "secret": "İmzalama gizli anahtarı",
-        "ingressUrls": "Giriş URL'leri"
+        "ingressUrls": "Giriş URL'leri",
+        "verifyToken": "Doğrulama belirteci"
       },
       "regenerate": {
         "title": "Gizli anahtarı yeniden oluştur",

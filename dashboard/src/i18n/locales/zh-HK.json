@@ -1039,7 +1039,8 @@
         "title": "執行個體已建立",
         "hint": "請立即複製密鑰——只會顯示一次。",
         "secret": "簽署密鑰",
-        "ingressUrls": "連入 URL"
+        "ingressUrls": "連入 URL",
+        "verifyToken": "驗證權杖"
       },
       "regenerate": {
         "title": "重新產生密鑰",
