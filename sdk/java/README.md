@@ -30,14 +30,19 @@ implementation 'com.rmyndharis:openwa:0.5.0'
 
 ```java
 import com.rmyndharis.openwa.OpenWAClient;
+import com.rmyndharis.openwa.model.CreateSessionRequest;
 import com.rmyndharis.openwa.model.MessageResponse;
 import com.rmyndharis.openwa.model.SendTextRequest;
+import com.rmyndharis.openwa.model.SessionResponse;
 
 OpenWAClient client = new OpenWAClient("http://localhost:2785", "owa_k1_…");
 
-client.sessions.start("my-session");
+// Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+// afterwards, find its id with client.sessions.list(ListSessionsQuery.builder().name("my-session").build()).
+SessionResponse session = client.sessions.create(CreateSessionRequest.builder().name("my-session").build());
+client.sessions.start(session.id());
 
-MessageResponse result = client.messages.sendText("my-session",
+MessageResponse result = client.messages.sendText(session.id(),
     SendTextRequest.builder()
         .chatId("628123456789@c.us")
         .text("Hello from the OpenWA Java SDK!")
@@ -83,7 +88,7 @@ import com.rmyndharis.openwa.errors.OpenWAConflictError;
 import com.rmyndharis.openwa.errors.OpenWANotFoundError;
 
 try {
-    client.messages.sendText("my-session", body);
+    client.messages.sendText(sessionId, body);
 } catch (OpenWAConflictError e) {
     // 409 — engine not ready
 } catch (OpenWANotFoundError e) {

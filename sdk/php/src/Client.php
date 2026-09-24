@@ -39,8 +39,10 @@ use OpenWA\Resources\WebhooksResource;
  *     'apiKey'  => 'owa_k1_…',
  * ]);
  *
- * $client->sessions->start('my-session');
- * $result = $client->messages->sendText('my-session', [
+ * // Sessions are addressed by the UUID that create() returns, not by name.
+ * $session = $client->sessions->create(['name' => 'my-session']);
+ * $client->sessions->start($session['id']);
+ * $result = $client->messages->sendText($session['id'], [
  *     'chatId' => '628123456789@c.us',
  *     'text'   => 'Hello from the OpenWA PHP SDK!',
  * ]);

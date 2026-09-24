@@ -13,8 +13,10 @@
  *   apiKey: 'owa_k1_…',
  * });
  *
- * await client.sessions.start('my-session');
- * await client.messages.sendText('my-session', {
+ * // Sessions are addressed by the UUID that create() returns, not by name.
+ * const session = await client.sessions.create({ name: 'my-session' });
+ * await client.sessions.start(session.id);
+ * await client.messages.sendText(session.id, {
  *   chatId: '628123456789@c.us',
  *   text: 'Hello from the OpenWA SDK!',
  * });
