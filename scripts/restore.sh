@@ -24,6 +24,9 @@
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   OPENWA_RESTORE_SNAPSHOT_DIR
+#                     where the data-dir safety snapshot goes (default: next to the data dir);
+#                     needed when that parent is read-only, as in the shipped container
 #
 # Stop the OpenWA app before restoring. A snapshot of the current data dir is taken
 # first so a bad restore can be undone.
@@ -273,10 +276,14 @@ if [ "$FORCE" -ne 1 ]; then
   fi
 fi
 
-# Safety snapshot of whatever is there now.
+# Safety snapshot of whatever is there now, next to the data dir unless OPENWA_RESTORE_SNAPSHOT_DIR
+# names another directory. The shipped compose file and Helm chart mount the data dir as a volume
+# under a read-only root, where that sibling cannot be written.
 if [ -d "$DATA_DIR" ] && [ -n "$(ls -A "$DATA_DIR" 2>/dev/null || true)" ]; then
-  SAFETY="${DATA_DIR%/}.pre-restore-$RESTORE_TIMESTAMP"
+  SAFETY_DIR="${OPENWA_RESTORE_SNAPSHOT_DIR:-$(dirname "$DATA_DIR")}"
+  SAFETY="${SAFETY_DIR%/}/$(basename "$DATA_DIR").pre-restore-$RESTORE_TIMESTAMP"
   log "Snapshotting current data dir -> $SAFETY"
+  mkdir -p "$SAFETY_DIR"
   cp -pR "$DATA_DIR" "$SAFETY"
 fi
 

@@ -15,6 +15,8 @@
 #   (i) the data-store half of that guard refuses on its own
 #   (j) a probe that fails or prints no usable count leaves the target counted as live
 #   (k) an operator's sqlite3 rc file changes neither answer of the guard (skipped without sqlite3)
+#   (l) an unwritable BACKUP_DIR fails before anything is staged (skipped as root)
+#   (m) OPENWA_RESTORE_SNAPSHOT_DIR takes the data-dir snapshot off a read-only parent (skipped as root)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -24,7 +26,7 @@ set -euo pipefail
 # would aim a case at a real install, and restore replaces the state directories wholesale, so every
 # case starts from none of them and sets exactly the paths it uses.
 unset OPENWA_DATA_DIR BACKUP_DIR DATABASE_TYPE MAIN_DATABASE_NAME DATABASE_NAME SESSION_DATA_PATH \
-  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR
+  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR OPENWA_RESTORE_SNAPSHOT_DIR
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP="$REPO_ROOT/scripts/backup.sh"
@@ -498,6 +500,35 @@ if [ "$(id -u)" -ne 0 ]; then
   pass "(l) unwritable BACKUP_DIR -> non-zero exit before staging, clear message"
 else
   echo "SKIP: (l) running as root, which ignores the permission bits this case relies on"
+fi
+
+echo ""
+echo "==> (m) OPENWA_RESTORE_SNAPSHOT_DIR takes the data-dir snapshot off a read-only parent"
+# The shipped compose file and Helm chart mount the data dir as a volume under a read-only root, so
+# the snapshot's default place next to it cannot be written and the restore stopped there.
+if [ "$(id -u)" -ne 0 ]; then
+  M="$WORK/m"
+  mkdir -p "$M/root/data" "$M/snapshots"
+  printf 'mike-before\n' >"$M/root/data/.api-key"
+  chmod a-w "$M/root"
+  set +e
+  OUT_M="$(cd "$M" && MAIN_DATABASE_NAME="$M/root/data/main.sqlite" DATABASE_NAME="$M/root/data/openwa.sqlite" \
+    OPENWA_DATA_DIR="$M/root/data" OPENWA_RESTORE_SNAPSHOT_DIR="$M/snapshots" "$RESTORE" "$ARCHIVE_H" 2>&1)"
+  RC_M=$?
+  set -e
+  chmod u+w "$M/root"
+  if [ "$RC_M" -ne 0 ]; then
+    fail "(m) restore failed with a writable OPENWA_RESTORE_SNAPSHOT_DIR: $OUT_M"
+  fi
+  if [ "$(cat "$M"/snapshots/data.pre-restore-*/.api-key 2>/dev/null || true)" != "mike-before" ]; then
+    fail "(m) the data-dir snapshot is not under OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  if [ "$(db_fingerprint "$M/root/data/main.sqlite")" != "hotel-archive-main" ]; then
+    fail "(m) the restore did not put the archived main DB in place"
+  fi
+  pass "(m) data-dir snapshot written under OPENWA_RESTORE_SNAPSHOT_DIR, restore completes"
+else
+  echo "SKIP: (m) running as root, which ignores the permission bits this case relies on"
 fi
 
 echo ""
