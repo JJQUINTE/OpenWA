@@ -140,7 +140,9 @@
       "group": "Groupe",
       "channel": "Chaîne",
       "status": "Statut",
-      "broadcast": "Diffusion"
+      "broadcast": "Diffusion",
+      "individual": "Individuel",
+      "unknown": "Inconnu"
     },
     "tab": {
       "chats": "Discussions",

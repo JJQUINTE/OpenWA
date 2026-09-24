@@ -140,7 +140,9 @@
       "group": "Grupo",
       "channel": "Canal",
       "status": "Estado",
-      "broadcast": "Difusión"
+      "broadcast": "Difusión",
+      "individual": "Individual",
+      "unknown": "Desconocido"
     },
     "tab": {
       "chats": "Chats",

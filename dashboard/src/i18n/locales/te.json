@@ -139,7 +139,9 @@
       "group": "సమూహం",
       "channel": "ఛానెల్",
       "status": "స్థితి",
-      "broadcast": "ప్రసారం"
+      "broadcast": "ప్రసారం",
+      "individual": "వ్యక్తిగత",
+      "unknown": "తెలియనిది"
     },
     "tab": {
       "chats": "చాట్‌లు",

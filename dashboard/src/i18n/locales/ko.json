@@ -139,7 +139,9 @@
       "group": "그룹",
       "channel": "채널",
       "status": "상태",
-      "broadcast": "브로드캐스트"
+      "broadcast": "브로드캐스트",
+      "individual": "개인",
+      "unknown": "알 수 없음"
     },
     "tab": {
       "chats": "채팅",

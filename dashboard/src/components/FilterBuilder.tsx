@@ -18,6 +18,8 @@ interface FieldDescriptor {
   kind: FieldKind;
   operators: WebhookFilterOperator[];
   enumValues?: readonly string[];
+  /** i18n namespace that names each enum value; the value itself is what the filter sends. */
+  enumLabels?: string;
 }
 
 // Mirrors the backend message-family field registry (src/modules/webhook/filters/filter-types.ts).
@@ -26,9 +28,15 @@ const MESSAGE_FIELDS: FieldDescriptor[] = [
   { field: 'recipient', kind: 'id', operators: ['is', 'isNot'] },
   { field: 'chatId', kind: 'id', operators: ['is', 'isNot'] },
   { field: 'body', kind: 'text', operators: ['contains', 'equals'] },
-  { field: 'type', kind: 'enum', operators: ['is', 'isNot'], enumValues: MESSAGE_TYPES },
+  {
+    field: 'type',
+    kind: 'enum',
+    operators: ['is', 'isNot'],
+    enumValues: MESSAGE_TYPES,
+    enumLabels: 'chats.messageType',
+  },
   { field: 'isGroup', kind: 'boolean', operators: ['is'] },
-  { field: 'kind', kind: 'enum', operators: ['is', 'isNot'], enumValues: CHAT_KINDS },
+  { field: 'kind', kind: 'enum', operators: ['is', 'isNot'], enumValues: CHAT_KINDS, enumLabels: 'chats.kind' },
   { field: 'fromMe', kind: 'boolean', operators: ['is'] },
   { field: 'hasMedia', kind: 'boolean', operators: ['is'] },
   { field: 'mentions', kind: 'idArray', operators: ['is', 'isNot'] },
@@ -231,7 +239,7 @@ export function FilterBuilder({ filters, onChange, chats }: FilterBuilderProps) 
                           });
                         }}
                       >
-                        {option}
+                        {t(`${def.enumLabels}.${option}`, { defaultValue: option })}
                       </button>
                     );
                   })}

@@ -141,7 +141,9 @@
       "group": "קבוצה",
       "channel": "ערוץ",
       "status": "סטטוס",
-      "broadcast": "שידור"
+      "broadcast": "שידור",
+      "individual": "פרטי",
+      "unknown": "לא ידוע"
     },
     "tab": {
       "chats": "שיחות",

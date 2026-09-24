@@ -139,7 +139,9 @@
       "group": "Grup",
       "channel": "Kanal",
       "status": "Durum",
-      "broadcast": "Toplu Mesaj Listesi"
+      "broadcast": "Toplu Mesaj Listesi",
+      "individual": "Bireysel",
+      "unknown": "Bilinmiyor"
     },
     "tab": {
       "chats": "Sohbetler",

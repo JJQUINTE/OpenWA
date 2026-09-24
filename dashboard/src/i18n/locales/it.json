@@ -140,7 +140,9 @@
       "group": "Gruppo",
       "channel": "Canale",
       "status": "Stato",
-      "broadcast": "Trasmissione"
+      "broadcast": "Trasmissione",
+      "individual": "Individuale",
+      "unknown": "Sconosciuto"
     },
     "tab": {
       "chats": "Chat",

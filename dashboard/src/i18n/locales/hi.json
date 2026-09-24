@@ -139,7 +139,9 @@
       "group": "समूह",
       "channel": "चैनल",
       "status": "स्टेटस",
-      "broadcast": "प्रसारण"
+      "broadcast": "प्रसारण",
+      "individual": "व्यक्तिगत",
+      "unknown": "अज्ञात"
     },
     "tab": {
       "chats": "चैट्स",

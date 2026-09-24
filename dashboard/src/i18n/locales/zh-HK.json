@@ -139,7 +139,9 @@
       "group": "群組",
       "channel": "頻道",
       "status": "狀態",
-      "broadcast": "廣播"
+      "broadcast": "廣播",
+      "individual": "個人",
+      "unknown": "未知"
     },
     "tab": {
       "chats": "聊天",

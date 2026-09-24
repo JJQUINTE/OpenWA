@@ -139,7 +139,9 @@
       "group": "群组",
       "channel": "频道",
       "status": "状态",
-      "broadcast": "广播"
+      "broadcast": "广播",
+      "individual": "个人",
+      "unknown": "未知"
     },
     "tab": {
       "chats": "聊天",

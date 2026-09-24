@@ -143,7 +143,9 @@
       "group": "مجموعة",
       "channel": "قناة",
       "status": "الحالة",
-      "broadcast": "بث"
+      "broadcast": "بث",
+      "individual": "فردي",
+      "unknown": "غير معروف"
     },
     "tab": {
       "chats": "المحادثات",
