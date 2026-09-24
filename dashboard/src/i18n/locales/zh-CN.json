@@ -294,7 +294,8 @@
       "successTitle": "会话已创建",
       "successDesc": "会话 \"{{name}}\" 已成功创建",
       "errorTitle": "创建失败",
-      "errorDefault": "创建会话失败"
+      "errorDefault": "创建会话失败",
+      "tooShort": "名称至少需要 3 个字符。"
     },
     "delete": {
       "title": "确认删除",

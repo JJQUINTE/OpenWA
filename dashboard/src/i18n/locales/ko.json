@@ -294,7 +294,8 @@
       "successTitle": "세션 생성 완료",
       "successDesc": "\"{{name}}\" 세션이 생성되었습니다",
       "errorTitle": "생성 실패",
-      "errorDefault": "세션을 생성하지 못했습니다"
+      "errorDefault": "세션을 생성하지 못했습니다",
+      "tooShort": "이름은 3자 이상이어야 합니다."
     },
     "delete": {
       "title": "삭제 확인",

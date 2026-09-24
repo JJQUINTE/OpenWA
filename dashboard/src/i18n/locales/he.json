@@ -301,7 +301,8 @@
       "successTitle": "ה-Session נוצר",
       "successDesc": "Session \"{{name}}\" נוצר בהצלחה",
       "errorTitle": "היצירה נכשלה",
-      "errorDefault": "יצירת ה-Session נכשלה"
+      "errorDefault": "יצירת ה-Session נכשלה",
+      "tooShort": "השם חייב להכיל לפחות 3 תווים."
     },
     "delete": {
       "title": "אישור מחיקה",

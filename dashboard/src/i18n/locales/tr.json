@@ -294,7 +294,8 @@
       "successTitle": "Oturum Oluşturuldu",
       "successDesc": "\"{{name}}\" oturumu başarıyla oluşturuldu",
       "errorTitle": "Oluşturma Başarısız",
-      "errorDefault": "Oturum oluşturulamadı"
+      "errorDefault": "Oturum oluşturulamadı",
+      "tooShort": "Ad en az 3 karakter olmalıdır."
     },
     "delete": {
       "title": "Silmeyi Onayla",

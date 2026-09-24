@@ -294,7 +294,8 @@
       "successTitle": "Sitzung erstellt",
       "successDesc": "Sitzung „{{name}}“ wurde erfolgreich erstellt",
       "errorTitle": "Erstellung fehlgeschlagen",
-      "errorDefault": "Sitzung konnte nicht erstellt werden"
+      "errorDefault": "Sitzung konnte nicht erstellt werden",
+      "tooShort": "Der Name muss mindestens 3 Zeichen lang sein."
     },
     "delete": {
       "title": "Löschen bestätigen",

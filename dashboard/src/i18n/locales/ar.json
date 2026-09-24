@@ -307,7 +307,8 @@
       "successTitle": "تم إنشاء الجلسة",
       "successDesc": "تم إنشاء الجلسة \"{{name}}\" بنجاح",
       "errorTitle": "فشل الإنشاء",
-      "errorDefault": "فشل إنشاء الجلسة"
+      "errorDefault": "فشل إنشاء الجلسة",
+      "tooShort": "يجب أن يتكون الاسم من 3 أحرف على الأقل."
     },
     "delete": {
       "title": "تأكيد الحذف",

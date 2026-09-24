@@ -294,7 +294,8 @@
       "successTitle": "工作階段已建立",
       "successDesc": "工作階段 \"{{name}}\" 已成功建立",
       "errorTitle": "建立失敗",
-      "errorDefault": "建立工作階段失敗"
+      "errorDefault": "建立工作階段失敗",
+      "tooShort": "名稱至少需要 3 個字元。"
     },
     "delete": {
       "title": "確認刪除",

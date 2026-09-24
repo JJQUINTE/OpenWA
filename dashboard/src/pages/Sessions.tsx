@@ -685,6 +685,7 @@ export function Sessions() {
             <Trans i18nKey="sessions.create.hint" components={{ code: <code /> }} />
           </p>
           {nameIssues.includes('format') && <p className="input-error">{t('sessions.create.invalidChars')}</p>}
+          {nameIssues.includes('too-short') && <p className="input-error">{t('sessions.create.tooShort')}</p>}
           {nameIssues.includes('too-long') && (
             <p className="input-error">{t('sessions.create.tooLong', { length: newSessionName.length })}</p>
           )}

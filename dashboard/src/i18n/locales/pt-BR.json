@@ -297,7 +297,8 @@
       "successTitle": "Sessão criada",
       "successDesc": "Sessão \"{{name}}\" criada com sucesso",
       "errorTitle": "Erro ao criar",
-      "errorDefault": "Não foi possível criar a sessão"
+      "errorDefault": "Não foi possível criar a sessão",
+      "tooShort": "O nome deve ter pelo menos 3 caracteres."
     },
     "delete": {
       "title": "Confirmar exclusão",
