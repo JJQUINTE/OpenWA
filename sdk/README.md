@@ -241,7 +241,7 @@ testing, retry, tracing, or metrics. See [`go/README.md`](go/README.md).
   the extension point for retry or observability middleware. The Go client is
   the exception: it ships an opt-in policy (`WithRetry(DefaultRetryPolicy())`)
   that retries idempotent requests on network errors and `429`/`5xx`, retries a
-  `POST` only on `429`/`503` (never after a network error), honors
+  `POST`/`PATCH` only on `429`/`503` (never after a network error), honors
   `Retry-After`, and rewinds request bodies —
   still off unless you ask for it.
 - **Redirects are never followed.** A `3xx` surfaces to the caller rather than

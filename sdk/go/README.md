@@ -113,10 +113,10 @@ reached the owner node answers 502 or 504.
 
 Off by default. Opt in with a policy. Idempotent requests (GET, HEAD, OPTIONS,
 PUT, DELETE) are retried on network errors and on the policy's statuses (default
-429/500/502/503/504). A POST, which covers every send endpoint, is never retried
-after a network error and is retried only on 429 or 503 (when the policy lists
-them): a 500/502/504 can arrive after the message was already sent, so replaying
-it could send it twice. Backoff is exponential, `Retry-After` is honored, and
+429/500/502/503/504). A POST or PATCH (every send endpoint is a POST) is never
+retried after a network error and is retried only on 429 or 503 (when the policy
+lists them): a 500/502/504 can arrive after the message was already sent, so
+replaying it could send it twice. Backoff is exponential, `Retry-After` is honored, and
 request bodies are safely rewound on each attempt.
 
 ```go
