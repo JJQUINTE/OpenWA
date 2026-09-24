@@ -819,7 +819,16 @@ test('the reply banner and the sent snippet name a media type in words, not as a
   await waitFor(() =>
     assert.equal(container.querySelector('.replying-to-body')?.textContent ?? null, '[Image]', 'reply banner'),
   );
-  fireEvent.click(container.querySelector('.btn-close-reply') as HTMLElement);
+
+  // Sending the reply: the optimistic bubble's quote box names the type the same way.
+  fireEvent.change(screen.getByPlaceholderText('Type a message...'), { target: { value: 'nice shot' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await within(thread).findByText('nice shot');
+  assert.equal(
+    thread.querySelector('.message-quote-box .quote-body')?.textContent ?? null,
+    '[Image]',
+    'optimistic quote box',
+  );
 
   // A PDF goes out as a document, and the sidebar says so rather than "[application]".
   await stageAttachment(container, 'contract.pdf');

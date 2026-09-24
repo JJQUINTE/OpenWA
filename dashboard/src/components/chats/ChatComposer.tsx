@@ -217,7 +217,7 @@ function ChatComposer({
       direction: 'outgoing',
       status: 'pending',
       createdAt: new Date().toISOString(),
-      metadata: buildOptimisticMetadata(attachment, replyingTo),
+      metadata: buildOptimisticMetadata(attachment, replyingTo, typeLabel),
     };
 
     appendMessage(selectedSessionId, activeChat.id, tempMessage);
