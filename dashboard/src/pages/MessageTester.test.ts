@@ -316,7 +316,7 @@ test('a session that stops being ready is replaced by what the selector shows', 
   status.s1 = 'disconnected';
   await client.invalidateQueries({ queryKey: ['sessions'] });
   await rtl.waitFor(() => assert.equal(select.value, ''));
-  assert.equal(sendButton().disabled, true);
+  await rtl.waitFor(() => assert.equal(sendButton().disabled, true));
 });
 
 test('a recipients file over the cap is refused without being read', async () => {
