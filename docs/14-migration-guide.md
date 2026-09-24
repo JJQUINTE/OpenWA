@@ -734,8 +734,14 @@ set -e
 # carry the flag up to the `--profile postgres` commands in 14.3: postgres exists only in the
 # production compose file.
 
-# 1. Backup: both databases + session auth + media + plugin state
-./scripts/backup.sh
+# 1. Backup: both databases + session auth + media + plugin state. Take it in the running container,
+#    where the data is mounted, and copy the archive to ./backups, as 11 - Runbook: Database Backup
+#    does. A host run of ./scripts/backup.sh archives ./data in the checkout, which the production
+#    compose never reads. docker exec and docker cp name the container, openwa-api under both compose
+#    files, so these lines keep that name and take no -f flag.
+mkdir -p ./backups
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. ./backups/
 
 # 2. Stop the current version
 docker compose down
