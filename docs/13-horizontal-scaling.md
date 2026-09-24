@@ -380,10 +380,11 @@ spec:
       # OS-level containment is the second half of the plugin sandbox boundary (see docs/23-plugin-
       # sandboxing.md). Without it a worker_thread plugin that abuses Node built-ins (fs, net) runs with
       # the same privileges as the API and can read host files / open raw sockets outside the capability
-      # model. The shipped Docker image already runs read-only + non-root + cap_drop:ALL; the manifest
-      # below mirrors that so a k8s deploy is not silently weaker.
+      # model. The shipped compose file runs the image read-only + cap_drop:ALL, and the node process
+      # runs as the non-root openwa user; the manifest below mirrors that so a k8s deploy is not
+      # silently weaker. Do NOT add runAsNonRoot: the entrypoint starts as root to chown /app/data,
+      # then drops to openwa via gosu (same as charts/openwa/values.yaml).
       securityContext:
-        runAsNonRoot: true
         fsGroup: 1000
       containers:
         - name: openwa
@@ -414,6 +415,8 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ['ALL']
+              # Only for the root entrypoint's chown and the gosu privilege drop.
+              add: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID']
           resources:
             requests:
               memory: '512Mi'

@@ -1129,18 +1129,21 @@ npm run migration:run:main
 
 **Solutions:**
 
+The entrypoint starts as root, re-owns `/app/data` to the `openwa` user on every start, and then
+drops privileges with `gosu`. Keep that path intact:
+
+- Do not set `user:` on `openwa-api` (or `--user` on `docker run`). The entrypoint then cannot
+  `chown` or drop privileges, exits, and the container restarts in a loop.
+- Keep the `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETGID` and `SETUID` entries under `cap_add` in
+  `docker-compose.yml`; the `chown` and the `gosu` drop need them.
+- A `chown` of the host directory is not a fix: the entrypoint re-owns `/app/data` at the next start.
+- If the error persists on a bind mount, the host filesystem is refusing the `chown` (NFS with
+  `root_squash`, some rootless or SMB setups) or SELinux is denying access (add `:z` to the mount).
+  Use the named volume from the shipped `docker-compose.yml` instead.
+
 ```bash
-# Check current permissions
-ls -la ./data/
-
-# Fix ownership (use your user ID)
-sudo chown -R $(id -u):$(id -g) ./data/
-
-# Or use Docker's user mapping
-# docker-compose.yml
-services:
-  openwa-api:
-    user: "1000:1000"  # Your UID:GID
+# Look for the failing chown in the startup output
+docker compose logs openwa-api | head -20
 ```
 
 ### Issue: Container Networking
