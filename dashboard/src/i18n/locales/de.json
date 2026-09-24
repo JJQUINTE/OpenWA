@@ -1063,7 +1063,8 @@
         "invalidId": "Die Instanz-ID darf nur Buchstaben, Zahlen, Bindestriche oder Unterstriche enthalten (max. 64).",
         "invalidJson": "Die Konfiguration muss gültiges JSON enthalten.",
         "invalidSecret": "Das Geheimnis muss mindestens 16 Zeichen lang sein. Alternativ leer lassen, um es automatisch zu erstellen.",
-        "duplicateId": "Eine Instanz mit dieser ID existiert bereits."
+        "duplicateId": "Eine Instanz mit dieser ID existiert bereits.",
+        "scopeNotClearable": "Ein Sitzungsbereich kann hier nicht geleert werden. Um alle Sitzungen zu bedienen, lösche diese Instanz und erstelle sie ohne Bereich neu."
       },
       "toasts": {
         "created": "Instanz erstellt",

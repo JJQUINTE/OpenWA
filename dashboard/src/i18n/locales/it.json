@@ -1067,7 +1067,8 @@
         "invalidId": "L'ID istanza deve contenere lettere, numeri, trattini o underscore (max 64).",
         "invalidJson": "La configurazione deve essere un JSON valido.",
         "invalidSecret": "Il segreto deve contenere almeno 16 caratteri, oppure lascia vuoto per generarlo automaticamente.",
-        "duplicateId": "Esiste già un'istanza con questo ID."
+        "duplicateId": "Esiste già un'istanza con questo ID.",
+        "scopeNotClearable": "L'ambito della sessione non può essere svuotato qui. Per servire tutte le sessioni, elimina questa istanza e ricreala senza ambito."
       },
       "toasts": {
         "created": "Istanza creata",

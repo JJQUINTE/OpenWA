@@ -9,7 +9,7 @@ import {
   useUpdateInstanceMutation,
   useDeleteInstanceMutation,
 } from '../hooks/queries';
-import { isValidInstanceId, isValidInstanceSecret, parseInstanceConfig } from '../utils/instanceForm';
+import { isValidInstanceId, isValidInstanceSecret, parseEditScope, parseInstanceConfig } from '../utils/instanceForm';
 import { copyToClipboard } from '../utils/clipboard';
 import { Modal } from './Modal';
 import { useToast } from '../hooks/useToast';
@@ -108,12 +108,17 @@ export function PluginInstances({ pluginId }: { pluginId: string }) {
       setEditError(t('plugins.instances.errors.invalidJson'));
       return;
     }
+    const scope = parseEditScope(editing.sessionScope, editForm.sessionScope);
+    if (!scope.ok) {
+      setEditError(t('plugins.instances.errors.scopeNotClearable'));
+      return;
+    }
     try {
       await updateM.mutateAsync({
         instanceId: editing.instanceId,
         // Blank → omit (leave scope unchanged); mirrors create. Sending '' would corrupt an
         // all-sessions (null) instance into a literal empty scope the backend never clears.
-        body: { sessionScope: editForm.sessionScope.trim() || undefined, config: parsed.value ?? {} },
+        body: { sessionScope: scope.value, config: parsed.value ?? {} },
       });
       setEditing(null);
       toast.success(t('plugins.instances.toasts.updated'), editing.instanceId);

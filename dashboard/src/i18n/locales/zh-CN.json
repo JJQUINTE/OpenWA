@@ -1063,7 +1063,8 @@
         "invalidId": "实例 ID 只能包含字母、数字、连字符或下划线（最多 64 个字符）。",
         "invalidJson": "配置必须是有效的 JSON。",
         "invalidSecret": "密钥至少 16 个字符，或留空以自动生成。",
-        "duplicateId": "已存在具有该 ID 的实例。"
+        "duplicateId": "已存在具有该 ID 的实例。",
+        "scopeNotClearable": "此处无法清除会话范围。如需服务所有会话，请删除此实例并在不设置范围的情况下重新创建。"
       },
       "toasts": {
         "created": "实例已创建",

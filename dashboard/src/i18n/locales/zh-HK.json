@@ -1063,7 +1063,8 @@
         "invalidId": "執行個體 ID 只能包含字母、數字、連字號或底線（最多 64 個字元）。",
         "invalidJson": "設定必須是有效的 JSON。",
         "invalidSecret": "密鑰至少 16 個字元，或留空以自動產生。",
-        "duplicateId": "已存在使用該 ID 的執行個體。"
+        "duplicateId": "已存在使用該 ID 的執行個體。",
+        "scopeNotClearable": "此處無法清除工作階段範圍。如需服務所有工作階段，請刪除此執行個體並在不設定範圍的情況下重新建立。"
       },
       "toasts": {
         "created": "執行個體已建立",

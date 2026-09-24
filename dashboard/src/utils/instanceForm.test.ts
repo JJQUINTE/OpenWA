@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isValidInstanceId, isValidInstanceSecret, parseInstanceConfig } from './instanceForm.ts';
+import { isValidInstanceId, isValidInstanceSecret, parseEditScope, parseInstanceConfig } from './instanceForm.ts';
 
 test('isValidInstanceId accepts the backend charset, rejects the rest', () => {
   assert.equal(isValidInstanceId('acme-support_1'), true);
@@ -24,4 +24,15 @@ test('parseInstanceConfig: blank → undefined, object → parsed, invalid → n
   assert.deepEqual(parseInstanceConfig('{"a":1}'), { ok: true, value: { a: 1 } });
   assert.equal(parseInstanceConfig('nope').ok, false);
   assert.equal(parseInstanceConfig('[1,2]').ok, false); // array is not a config object
+});
+
+test('parseEditScope: a bound scope cannot be blanked, since the API would keep it', () => {
+  assert.deepEqual(parseEditScope('sess-a', ' sess-b '), { ok: true, value: 'sess-b' });
+  assert.deepEqual(parseEditScope('sess-a', 'sess-a'), { ok: true, value: 'sess-a' });
+  assert.deepEqual(parseEditScope(null, 'sess-b'), { ok: true, value: 'sess-b' });
+  // Blank on an all-sessions instance: omit, nothing changes.
+  assert.deepEqual(parseEditScope(null, '  '), { ok: true, value: undefined });
+  assert.deepEqual(parseEditScope('*', ''), { ok: true, value: undefined });
+  // Blank on a bound instance: an omitted field leaves the binding in place, so refuse it.
+  assert.equal(parseEditScope('sess-a', '').ok, false);
 });

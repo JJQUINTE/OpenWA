@@ -1067,7 +1067,8 @@
         "invalidId": "O ID da instância deve conter letras, números, hífens ou sublinhados (máx. 64).",
         "invalidJson": "A configuração deve ser um JSON válido.",
         "invalidSecret": "O segredo deve ter pelo menos 16 caracteres, ou deixe em branco para gerar automaticamente.",
-        "duplicateId": "Já existe uma instância com esse ID."
+        "duplicateId": "Já existe uma instância com esse ID.",
+        "scopeNotClearable": "O escopo de sessão não pode ser limpo aqui. Para atender todas as sessões, exclua esta instância e crie-a novamente sem escopo."
       },
       "toasts": {
         "created": "Instância criada",

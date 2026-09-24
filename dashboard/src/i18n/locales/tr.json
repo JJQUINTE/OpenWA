@@ -1063,7 +1063,8 @@
         "invalidId": "Örnek kimliği harf, sayı, tire veya alt çizgi içermelidir (maks 64).",
         "invalidJson": "Yapılandırma geçerli bir JSON olmalıdır.",
         "invalidSecret": "Gizli anahtar en az 16 karakter olmalıdır veya otomatik oluşturulması için boş bırakılmalıdır.",
-        "duplicateId": "Bu kimliğe sahip bir örnek zaten var."
+        "duplicateId": "Bu kimliğe sahip bir örnek zaten var.",
+        "scopeNotClearable": "Oturum kapsamı burada temizlenemez. Tüm oturumlara hizmet vermek için bu örneği silip kapsam olmadan yeniden oluşturun."
       },
       "toasts": {
         "created": "Örnek oluşturuldu",
