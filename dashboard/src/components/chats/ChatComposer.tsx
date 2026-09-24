@@ -268,11 +268,15 @@ function ChatComposer({
       // echo's row via mergeOrAppend instead of just dropping it — the echo may carry no media
       // payload (a Baileys API send echoes only a marker), so dropping the placeholder would erase
       // the attachment's base64 and leave a bare "📎 Media" bubble until the next refetch.
+      //
+      // An engine that cannot read the sent id back answers '', which as a key would fold every such
+      // send into one bubble. The row keeps a unique local id instead, without the temp_ prefix: the
+      // gateway did store it, so it counts toward the next page's offset like any other DB row.
       const sendKey = messagesQueryKey(selectedSessionId, activeChat.id);
       const reconciled: ChatMessageView = {
         ...tempMessage,
-        id: result.messageId,
-        waMessageId: result.messageId,
+        id: result.messageId || tempId.replace(/^temp_/, 'sent_'),
+        waMessageId: result.messageId || undefined,
         status: 'sent',
       };
       upsertCachedMessage(queryClient, sendKey, reconciled, { dropId: tempId });

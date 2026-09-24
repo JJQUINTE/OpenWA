@@ -158,6 +158,9 @@ let sendGate: Promise<void> | null = null;
 // Hold Alice's first page open, so a test can write to the thread before it has any data.
 let firstPageGate: Promise<void> | null = null;
 
+// The id a text send answers with. whatsapp-web.js answers '' when it cannot read the sent id back.
+let sendTextId = 'wamid.out.1';
+
 function holdSend(): () => void {
   let release!: () => void;
   sendGate = new Promise<void>(resolve => {
@@ -317,7 +320,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ success: true }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-text`) {
-      const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
+      const send = () => jsonResponse({ messageId: sendTextId, timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-audio`) {
@@ -383,6 +386,7 @@ afterEach(() => {
   olderPageGate = null;
   sendGate = null;
   firstPageGate = null;
+  sendTextId = 'wamid.out.1';
   olderPageFails = false;
   chatsResponder = null;
 });
@@ -800,6 +804,31 @@ test('text typed with an audio attachment stays in the input instead of showing 
 
   assert.equal(input.value, 'not a caption', 'the text that was not sent was cleared');
   assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
+});
+
+test('sends answered with no message id each keep their own bubble', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  sendTextId = '';
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+
+  const input = screen.getByPlaceholderText('Type a message...') as HTMLInputElement;
+  const sendPath = `/api/sessions/${SESSION.id}/messages/send-text`;
+  for (const [index, text] of ['first id-less', 'second id-less'].entries()) {
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => assert.equal(countFetchCalls('POST', sendPath), index + 1));
+    await flush();
+    await flush();
+  }
+
+  assert.ok(within(thread).queryByText('first id-less'), 'the earlier id-less send vanished from the thread');
+  assert.ok(within(thread).queryByText('second id-less'), 'the later id-less send is missing');
 });
 
 test('a caption sent with a document shows in its bubble', async () => {
