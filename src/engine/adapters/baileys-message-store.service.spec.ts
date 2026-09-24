@@ -1,3 +1,4 @@
+import type { WAMessage } from '@whiskeysockets/baileys';
 import { DataSource, Repository } from 'typeorm';
 import { BaileysStoredMessage } from './baileys-stored-message.entity';
 import { BaileysMessageStoreService } from './baileys-message-store.service';
@@ -55,6 +56,25 @@ describe('BaileysMessageStoreService', () => {
       // including identity — the test named the codec without exercising it.
       mediaKey: Buffer.from([0x01, 0x02, 0x03, 0xff]),
     }) as unknown as Parameters<BaileysMessageStoreService['put']>[1];
+
+  /** Hold the next upsert until released: the database round trip a reader can land inside. */
+  const holdNextUpsert = (): { release: () => void; fail: (err: Error) => void } => {
+    let release!: () => void;
+    let fail!: (err: Error) => void;
+    const gate = new Promise<void>((resolve, reject) => {
+      release = resolve;
+      fail = reject;
+    });
+    const real = repo.upsert.bind(repo);
+    jest.spyOn(repo, 'upsert').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
+      await gate;
+      return real(...args);
+    });
+    return { release, fail };
+  };
+  const ticks = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
+  };
 
   it('round-trips a WAMessage through BufferJSON', async () => {
     await seedSession('s1');
@@ -215,25 +235,6 @@ describe('BaileysMessageStoreService', () => {
   });
 
   describe('a read issued while the write is in flight', () => {
-    /** Hold the next upsert until released: the database round trip a reader can land inside. */
-    const holdNextUpsert = (): { release: () => void; fail: (err: Error) => void } => {
-      let release!: () => void;
-      let fail!: (err: Error) => void;
-      const gate = new Promise<void>((resolve, reject) => {
-        release = resolve;
-        fail = reject;
-      });
-      const real = repo.upsert.bind(repo);
-      jest.spyOn(repo, 'upsert').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
-        await gate;
-        return real(...args);
-      });
-      return { release, fail };
-    };
-    const ticks = async (): Promise<void> => {
-      for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
-    };
-
     beforeEach(() => seedSession('s1'));
 
     it('getMessage waits for the write', async () => {
@@ -266,6 +267,16 @@ describe('BaileysMessageStoreService', () => {
       expect(await read).toBeNull();
     });
 
+    it('a write that throws before it starts rejects put and releases the read', async () => {
+      jest.spyOn(service as unknown as { write: () => Promise<void> }, 'write').mockImplementationOnce(() => {
+        throw new Error('no library');
+      });
+      const write = service.put('s1', msg('M1'));
+      const read = service.getMessage('s1', 'M1');
+      await expect(write).rejects.toThrow('no library');
+      expect(await read).toBeNull();
+    }, 1_000);
+
     it('a read waits for the latest write of an id, not an earlier failed one', async () => {
       const first = holdNextUpsert();
       const firstWrite = service.put('s1', msg('M1'));
@@ -282,6 +293,86 @@ describe('BaileysMessageStoreService', () => {
     });
   });
 
+  describe('update', () => {
+    it('rewrites the stored message in place and keeps its eviction age', async () => {
+      await seedSession('s1');
+      await service.put('s1', msg('M1'));
+      const before = await repo.findOneByOrFail({ sessionId: 's1', waMessageId: 'M1' });
+
+      await service.update('s1', 'M1', stored => ({ ...stored, message: { conversation: 'edited' } }));
+
+      expect((await service.getMessage('s1', 'M1'))?.message?.conversation).toBe('edited');
+      const after = await repo.findOneByOrFail({ sessionId: 's1', waMessageId: 'M1' });
+      // An edit is not a new message: refreshing createdAt would push it to the back of the eviction queue.
+      expect(after.createdAt).toEqual(before.createdAt);
+      expect(await repo.count({ where: { sessionId: 's1' } })).toBe(1);
+    });
+
+    it('keeps the binary fields through the rewrite', async () => {
+      await seedSession('s1');
+      await service.put('s1', msg('M1'));
+      await service.update('s1', 'M1', stored => ({ ...stored, message: null }));
+      const got = await service.getMessage('s1', 'M1');
+      expect(got?.message).toBeNull();
+      expect(Buffer.isBuffer((got as unknown as { mediaKey: unknown }).mediaKey)).toBe(true);
+    });
+
+    it('leaves an id the store does not hold absent, and a row the change declines untouched', async () => {
+      await seedSession('s1');
+      await service.put('s1', msg('M1'));
+      const change = jest.fn(() => null);
+
+      await service.update('s1', 'NOPE', change);
+      await service.update('s1', 'M1', change);
+
+      expect(change).toHaveBeenCalledTimes(1); // only for the row that exists
+      expect(await service.getMessage('s1', 'NOPE')).toBeNull();
+      expect((await service.getMessage('s1', 'M1'))?.message?.conversation).toBe('M1');
+    });
+
+    it('applies after a put of the same id that has not finished yet', async () => {
+      await seedSession('s1');
+      // The change is asked for while the original's write is still in flight (its first await is
+      // the library import), which is how the inbound path and a delete for everyone meet.
+      await Promise.all([
+        service.put('s1', msg('M1')),
+        Promise.resolve().then(() => service.update('s1', 'M1', stored => ({ ...stored, message: null }))),
+      ]);
+      expect((await service.getMessage('s1', 'M1'))?.message).toBeNull();
+    });
+
+    it('a read issued while an update is in flight sees the change', async () => {
+      await seedSession('s1');
+      await service.put('s1', msg('M1'));
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => (release = resolve));
+      const real = repo.update.bind(repo);
+      jest.spyOn(repo, 'update').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
+        await gate;
+        return real(...args);
+      });
+
+      const change = service.update('s1', 'M1', stored => ({ ...stored, message: { conversation: 'edited' } }));
+      const read = service.getMessage('s1', 'M1');
+      for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
+      release();
+      await change;
+
+      expect((await read)?.message?.conversation).toBe('edited');
+    });
+
+    it('an update asked for before the put of the same id settles instead of waiting on it', async () => {
+      await seedSession('s1');
+      const change = jest.fn((stored: WAMessage) => ({ ...stored, message: null }));
+
+      await Promise.all([service.update('s1', 'M1', change), service.put('s1', msg('M1'))]);
+
+      // Queued first, the update found nothing to change; the put that followed it still landed.
+      expect(change).not.toHaveBeenCalled();
+      expect((await service.getMessage('s1', 'M1'))?.message?.conversation).toBe('M1');
+    });
+  });
+
   it('clearSession removes only that session', async () => {
     await seedSession('s1');
     await seedSession('s2');
@@ -290,5 +381,23 @@ describe('BaileysMessageStoreService', () => {
     await service.clearSession('s1');
     expect(await service.getMessage('s1', 'M1')).toBeNull();
     expect(await service.getMessage('s2', 'M2')).not.toBeNull();
+  });
+
+  it('clearSession waits for a write of that session still in flight, so it cannot recreate the row', async () => {
+    await seedSession('s1');
+    await seedSession('s2');
+    await service.put('s2', msg('M2'));
+    const held = holdNextUpsert();
+    const write = service.put('s1', msg('M1'));
+    await ticks();
+
+    const clearing = service.clearSession('s1');
+    await ticks();
+    held.release();
+    await clearing;
+    await write;
+
+    expect(await repo.count({ where: { sessionId: 's1' } })).toBe(0);
+    expect(await repo.count({ where: { sessionId: 's2' } })).toBe(1);
   });
 });

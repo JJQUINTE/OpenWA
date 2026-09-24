@@ -47,6 +47,8 @@ function makeMessaging(stored: unknown = STORED): {
     toUnixSeconds: () => 1,
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage,
+    wasDeletedForEveryone: () => false,
+    markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
     rememberOwnSend: () => undefined,
     recordLidMapping: () => undefined,
@@ -130,6 +132,17 @@ describe('BaileysMessaging — a quote rides along with every content kind', () 
     ).rejects.toBeInstanceOf(MessageNotFoundError);
     // Reporting success on a message that went out without its quote is the defect; failing after
     // the send would not fix it.
+    expect(sock.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('refuses a message deleted for everyone instead of quoting what was deleted', async () => {
+    // The store keeps a deleted message with `message: null`. Baileys copies the quoted message into
+    // the reply's contextInfo, so quoting the pre-delete copy would send the deleted content again.
+    const { messaging, sock } = makeMessaging({ ...STORED, message: null });
+
+    await expect(
+      messaging.sendTextMessage(CHAT, 'hi', undefined, { quotedMessageId: 'QUOTED-1' }),
+    ).rejects.toBeInstanceOf(MessageNotFoundError);
     expect(sock.sendMessage).not.toHaveBeenCalled();
   });
 });

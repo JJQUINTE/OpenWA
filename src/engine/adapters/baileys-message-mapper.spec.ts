@@ -14,6 +14,7 @@ import {
   isBaileysCatalogShare,
   mapBaileysMessageType,
   mapBaileysStatus,
+  setBaileysText,
 } from './baileys-message-mapper';
 
 describe('mapBaileysMessageType (baileys content-type -> neutral MessageType)', () => {
@@ -185,6 +186,29 @@ describe('extractBaileysBody (inbound text/caption + interactive shapes)', () =>
 
   it('extracts a list-row title the user selected', () => {
     expect(extractBaileysBody({ listResponseMessage: { title: 'Express shipping' } })).toBe('Express shipping');
+  });
+});
+
+describe('setBaileysText (an edit written back where extractBaileysBody reads it)', () => {
+  it.each([
+    ['a plain text', { conversation: 'before' }],
+    ['an extended text', { extendedTextMessage: { text: 'before', matchedText: 'https://example.com' } }],
+    ['a photo caption', { imageMessage: { caption: 'before', url: 'https://mmg.example/x' } }],
+    ['a video caption', { videoMessage: { caption: 'before' } }],
+    ['a document caption', { documentMessage: { caption: 'before', fileName: 'a.pdf' } }],
+  ])('rewrites %s and keeps the rest of the content', (_kind, content) => {
+    const copy = structuredClone(content);
+    expect(setBaileysText(copy, 'after')).toBe(true);
+    expect(extractBaileysBody(copy)).toBe('after');
+    // Only the text slot moved: the same object with the new text is what remains.
+    expect(setBaileysText(copy, 'before')).toBe(true);
+    expect(copy).toEqual(content);
+  });
+
+  it('changes nothing on content with no text slot', () => {
+    const content = { locationMessage: { degreesLatitude: 1 } } as Record<string, unknown>;
+    expect(setBaileysText(content, 'after')).toBe(false);
+    expect(content).toEqual({ locationMessage: { degreesLatitude: 1 } });
   });
 });
 

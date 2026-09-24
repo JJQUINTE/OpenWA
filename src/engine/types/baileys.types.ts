@@ -20,6 +20,11 @@ export interface BaileysMessageStore {
    * result, so the caller cannot assume the order or the length matches its input.
    */
   getMessages(sessionId: string, messageIds: string[]): Promise<WAMessage[]>;
+  /**
+   * Rewrite a stored message in place, for an edit or a delete for everyone. `change` returns the
+   * replacement, or null to leave it untouched; an id the store does not hold stays absent.
+   */
+  update(sessionId: string, messageId: string, change: (stored: WAMessage) => WAMessage | null): Promise<void>;
   /** Remove all stored messages for a session (called on logout). */
   clearSession(sessionId: string): Promise<void>;
 }
