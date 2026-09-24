@@ -16,7 +16,7 @@ import {
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
 import { toEngineParticipants } from './baileys-groups';
-import { mapBaileysGroup } from './baileys-group-mapper';
+import { findSelfParticipant } from './baileys-group-mapper';
 import { buildVCard } from './vcard';
 import { resolveBaileysButtonClick } from './baileys-message-mapper';
 import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
@@ -539,8 +539,9 @@ export class BaileysMessaging {
     this.assertStoredInChat(target, chatId, messageId);
     // Only the sender, or a group admin, can delete a message for everyone. WhatsApp ignores any other
     // revoke, yet the send resolves, so it would report a deletion that never happened. WhatsApp Web
-    // deletes such a message for the account alone instead, and so does this.
-    if (forEveryone && (target.key.fromMe === true || (await this.selfIsGroupAdmin(target.key.remoteJid)))) {
+    // deletes such a message for the account alone instead, and so does this. A group whose member
+    // list shows no row for the account proves nothing either way, so the revoke still goes out there.
+    if (forEveryone && (target.key.fromMe === true || (await this.selfIsGroupAdmin(target.key.remoteJid)) !== false)) {
       await this.send(await this.toDeliverableJid(chatId), { delete: target.key });
       return;
     }
@@ -561,15 +562,19 @@ export class BaileysMessaging {
     );
   }
 
-  /** Whether the account is an admin of this chat; false for anything that is not a group. */
-  private async selfIsGroupAdmin(jid: string | null | undefined): Promise<boolean> {
+  /**
+   * Whether the account is an admin of this chat: false for anything that is not a group, and
+   * undefined when no participant row can be identified as the account.
+   */
+  private async selfIsGroupAdmin(jid: string | null | undefined): Promise<boolean | undefined> {
     if (!jid?.endsWith('@g.us')) return false;
     const metadata = await withQueryDeadline(
       this.sock().groupMetadata(jid),
       this.queryBudgetMs,
       'WhatsApp did not answer the group metadata query in time',
     );
-    return mapBaileysGroup(metadata, this.host.normalizedSelfJid(), id => this.host.toNeutralJid(id)).isAdmin === true;
+    const self = findSelfParticipant(metadata, this.host.normalizedSelfJid(), id => this.host.toNeutralJid(id));
+    return self === undefined ? undefined : self.admin === 'admin' || self.admin === 'superadmin';
   }
 
   async editMessage(chatId: string, messageId: string, body: string, mentions?: string[]): Promise<MessageResult> {

@@ -4020,6 +4020,17 @@ describe('BaileysAdapter store-backed ops', () => {
         GROUP,
       );
     });
+
+    it('revokes it when no participant can be identified as the account', async () => {
+      // No own lid on the creds and no phone twin on any row: nothing shows the account is not an
+      // admin, so the revoke goes out as it always did rather than quietly becoming a local delete.
+      fakeStore.getMessage.mockResolvedValue(lidMemberMessage);
+      withLidAddressedSelfRole(null);
+      const adapter = await ready();
+      await adapter.deleteMessage(GROUP, 'TARGET', true);
+      expect(fakeSock.sendMessage).toHaveBeenCalledWith(GROUP, { delete: lidMemberMessage.key });
+      expect(fakeSock.chatModify).not.toHaveBeenCalled();
+    });
   });
 
   it('media sends honor the chat disappearing timer via the funnel (#473)', async () => {
