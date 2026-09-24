@@ -29,6 +29,7 @@ import {
   byMessageId,
   getMediaSrc,
   liveMessageMetadata,
+  stripMentionDelimiters,
   type ChatMessageView,
   type MessageMedia,
 } from '../utils/chatMessages';
@@ -1032,7 +1033,7 @@ export function Chats() {
                     (channelMessages.data ?? []).map(m => (
                       <div key={m.id} className="message-bubble incoming">
                         {m.hasMedia && m.mediaUrl && <img className="channel-media" src={m.mediaUrl} alt="" />}
-                        {m.body && <MessageBody text={m.body} className="message-text" />}
+                        {m.body && <MessageBody text={stripMentionDelimiters(m.body)} className="message-text" />}
                         <span className="message-time">{formatChatTime(m.timestamp)}</span>
                       </div>
                     ))
@@ -1078,7 +1079,9 @@ export function Chats() {
                           type={item.type === 'video' ? 'video' : item.type === 'voice' ? 'audio' : 'image'}
                         />
                       )}
-                      {item.caption && <MessageBody text={item.caption} className="message-text" />}
+                      {item.caption && (
+                        <MessageBody text={stripMentionDelimiters(item.caption)} className="message-text" />
+                      )}
                       <span className="message-time">
                         {formatChatTime(Math.floor(new Date(item.timestamp).getTime() / 1000))}
                       </span>

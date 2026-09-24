@@ -138,6 +138,13 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
 
 const MENTION_DELIMITERS = new RegExp(`[${MENTION_OPEN}${MENTION_CLOSE}]`, 'g');
 
+/**
+ * Drop any span delimiter already present in raw message text. Only resolveMentions may place one:
+ * parseMessageBody reads every MENTION_OPEN...MENTION_CLOSE pair as a mention, so a body that
+ * carries them itself would lose its formatting and links inside the pair.
+ */
+export const stripMentionDelimiters = (text: string): string => text.replace(MENTION_DELIMITERS, '');
+
 // Characters that render as nothing yet survive `.trim()`: format controls (zero-width space, soft
 // hyphen, word joiner, bidi marks), combining marks, the Hangul fillers and the blank braille
 // pattern. A push name made only of these would render as a bare "@".
@@ -175,7 +182,8 @@ const CODE_SEGMENT = /(```[\s\S]*?```|`[^`]*`)/;
  * so a URL or an inline-code span with the same digits is left untouched (this runs on the raw
  * body, before parseMessageBody splits out code spans).
  */
-export function resolveMentions(text: string, names: Map<string, string>): string {
+export function resolveMentions(raw: string, names: Map<string, string>): string {
+  const text = stripMentionDelimiters(raw);
   if (names.size === 0 || !text.includes('@')) return text;
   return text
     .split(CODE_SEGMENT)

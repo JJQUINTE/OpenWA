@@ -26,8 +26,9 @@ const FORMATS: Record<string, 'bold' | 'italic' | 'strike'> = {
 
 const BOUNDARY_CHAR = /^[\s.,;:!?()[\]{}'"<>]$/;
 
-// Private-use-area delimiters resolveMentions wraps a resolved name in. WhatsApp message text is
-// never PUA, so these can't collide with real content the way a printable marker could.
+// Private-use-area delimiters resolveMentions wraps a resolved name in. Raw text is stripped of
+// both before it gets here (chatMessages.ts#stripMentionDelimiters), so a pair in the input is
+// always one resolveMentions placed.
 export const MENTION_OPEN = '';
 export const MENTION_CLOSE = '';
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildMentionNameMap,
   resolveMentions,
+  stripMentionDelimiters,
   mapEngineHistoryMessage,
   mergeChatMessages,
   mergeReactionSnapshot,
@@ -617,4 +618,12 @@ test('resolveMentions does not fire after "_" or "(" inside a URL, only when the
   }
   assert.equal(resolveMentions('hi _(@6281234567)_', names), `hi _(${wrap('@Ann')})_`);
   assert.equal(resolveMentions('`x`*@6281234567*', names), `\`x\`*${wrap('@Ann')}*`);
+});
+
+test('a span delimiter already in a raw body is dropped, so it can never parse as a mention', () => {
+  const raw = `see ${MENTION_OPEN}*not bold* https://x.example${MENTION_CLOSE} end`;
+  assert.equal(stripMentionDelimiters(raw), 'see *not bold* https://x.example end');
+  assert.equal(resolveMentions(raw, new Map()), 'see *not bold* https://x.example end');
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'Ann' })]);
+  assert.equal(resolveMentions(`${MENTION_OPEN} *hi* @6281112345`, names), ` *hi* ${wrap('@Ann')}`);
 });
