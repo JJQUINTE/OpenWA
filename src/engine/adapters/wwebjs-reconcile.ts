@@ -66,8 +66,10 @@ export class WwebjsReadyReconcile {
         // different animal from a stuck-after-QR session: the link and the credentials are fine,
         // only this browser instance is broken. Wiping the only copy of the credentials would trade
         // a restart-fixable fault for a forced re-pair — fail loudly and keep the auth instead.
+        // A reload attempt counts as proof of CONNECTED: it only follows a CONNECTED probe, and the
+        // page it reboots can report OPENING on every probe until the deadline.
         const bridgeDead =
-          this.lastProbeStateConnected &&
+          (this.lastProbeStateConnected || this.readyReconcileReloadAttempted) &&
           (this.host.getClient() as Client & { eventsAttached?: boolean })?.eventsAttached === false;
         if (bridgeDead) {
           this.host.logger.error(

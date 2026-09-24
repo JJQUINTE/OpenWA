@@ -1996,6 +1996,37 @@ describe('WhatsAppWebJsAdapter ready reconciliation (#251/#273)', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  // The reload only follows a probe that saw CONNECTED, but the page it reboots reports OPENING
+  // while its socket comes back. That reading is caused by the reload, not by broken credentials.
+  it('keeps the credentials when the page the bridge reload rebooted is not yet connected at the deadline', async () => {
+    jest.useFakeTimers();
+
+    const adapter = newAdapter();
+    const getState = jest.fn().mockResolvedValue(WAState.CONNECTED);
+    const reload = jest.fn().mockImplementation(() => {
+      getState.mockResolvedValue(WAState.OPENING);
+      return Promise.resolve(undefined);
+    });
+    const { client, onReady, onStateChanged } = attachFakeClient(adapter, {
+      eventsAttached: false,
+      getState,
+      pupPage: { evaluate: jest.fn().mockResolvedValue(true), reload },
+    });
+    const onError = jest.fn();
+    (adapter as unknown as { callbacks: unknown }).callbacks = { onReady, onStateChanged, onError };
+    // The deadline's non-bridge branch: it deletes the LocalAuth profile and forces a re-pair.
+    const recoverFromStuckAuth = jest.fn().mockResolvedValue(undefined);
+    (adapter as unknown as { recoverFromStuckAuth: unknown }).recoverFromStuckAuth = recoverFromStuckAuth;
+
+    client.emit('authenticated');
+    await jest.advanceTimersByTimeAsync(91_000);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(recoverFromStuckAuth).not.toHaveBeenCalled();
+    expect(adapter.getStatus()).toBe(EngineStatus.FAILED);
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('event bridge'));
+  });
+
   it('ignores a premature ready emitted before the bridge attached, then promotes on the real one', () => {
     jest.useFakeTimers();
 
