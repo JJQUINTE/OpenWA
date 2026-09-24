@@ -910,10 +910,15 @@ adapter boundary — none silently stubs.
   `sendAudioMessage`, `sendDocumentMessage` and `sendStickerMessage` are ✅ on wwjs for chats and
   groups, but a `<id>@newsletter` recipient throws `ChannelMediaNotSupportedError` (a
   `NotImplementedException` → HTTP 501) at `ensureNotChannelRecipient`
-  (`wwebjs-messaging.ts:425` for the media funnel, `:492` for stickers). whatsapp-web.js calls
+  (`wwebjs-messaging.ts:446` for the media funnel, `:515` for stickers). whatsapp-web.js calls
   `msg.avParams()`, removed in a recent WA Web build (upstream wwebjs#201823, unresolved).
-  Text→channel is unaffected, and Baileys has no such restriction, so these five rows answer `501`
-  without a per-row ❌ in 29.4.
+  Unquoted text→channel is unaffected, and Baileys has no such restriction, so these five rows answer
+  `501` without a per-row ❌ in 29.4. A few other sends answer `501` on wwjs by recipient, because
+  whatsapp-web.js drops them without touching the page (`Client.js` `sendMessage` returns `null`): a
+  reply (any send carrying a quoted message), a location or a contact card to a channel,
+  `status@broadcast` or a broadcast list, and a poll or a sticker to `status@broadcast` or a
+  broadcast list. `ensureSendable` (`wwebjs-messaging.ts:206`) refuses them before the library is
+  called, so nothing is sent. The Baileys adapter refuses none of them.
 - **`sendStickerMessage` — what each engine converts.** Both engines guarantee the payload really is
   WebP, but they reach it differently and they do not accept the same inputs. whatsapp-web.js passes
   `sendMediaAsSticker: true`, and `Util.formatToWebpSticker` converts `image/*` **and** `video/*`

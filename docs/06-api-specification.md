@@ -1699,6 +1699,10 @@ One upstream gap remains on whatsapp-web.js and cannot be switched off from here
 message resolves but the page decides it is not replyable, the message is sent without the quote and
 the call still succeeds.
 
+On whatsapp-web.js a quoted send to a channel, `status@broadcast` or a broadcast list answers `501`
+and nothing is sent: the library drops a reply to those recipients without sending it, so the
+gateway refuses it before the call. The Baileys engine does not refuse it.
+
 Quoting a message from a **different chat** is not validated on these `send-*` routes on either
 engine; the id is passed through as given. `POST /messages/reply` is stricter: both engines refuse a
 quoted id that does not belong to the target chat, with `404`.
@@ -1963,7 +1967,7 @@ Send a sticker (by URL or base64; typically webp). Reuses `SendMediaMessageDto`.
 { "messageId": "true_628123456789@c.us_3EB0ABCD", "timestamp": 1719312000 }
 ```
 
-**Errors:** `400` media validation failure / a `url` that answers non-2xx, times out or cannot be reached / session not active / unknown body field · `401` missing/invalid API key · `403` key role below OPERATOR · `413` base64 or downloaded media over the media cap (see §6.3) · `500` engine error · `409` conflict or engine not ready (retryable) · `501` not supported on the active engine · `503` a `url` fetch through the session's egress proxy failed before any response, the proxy or the target at fault (retryable)
+**Errors:** `400` media validation failure / a `url` that answers non-2xx, times out or cannot be reached / session not active / unknown body field · `401` missing/invalid API key · `403` key role below OPERATOR · `413` base64 or downloaded media over the media cap (see §6.3) · `500` engine error · `409` conflict or engine not ready (retryable) · `501` not supported on the active engine, or (whatsapp-web.js) a sticker to a channel, `status@broadcast` or a broadcast list · `503` a `url` fetch through the session's egress proxy failed before any response, the proxy or the target at fault (retryable)
 
 #### POST /api/sessions/:sessionId/messages/send-poll
 
