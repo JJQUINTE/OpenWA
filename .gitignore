@@ -51,6 +51,9 @@ media/
 uploads/
 .wwebjs_auth/
 .wwebjs_cache/
+# scripts/backup.sh archives and restore.sh safety snapshots: copies of the same state
+/backups/
+*.pre-restore-*
 
 # Database
 *.db
