@@ -3710,17 +3710,16 @@ Get a single channel/newsletter by its id.
   "description": "Release notes and tips",
   "inviteCode": "ABC123xyz",
   "subscriberCount": 1042,
-  "picture": "https://example.com/ch.jpg",
   "verified": true,
   "createdAt": 1717200000
 }
 ```
 
-> **`picture` and `createdAt` are Baileys-only, and the lookup reaches further there.** The
-> whatsapp-web.js engine exposes no per-id channel lookup, so the adapter scans the subscribed-channel
-> list: a channel the account does not follow answers `404` even though it exists, and those two
-> fields are always absent from the payload. The Baileys engine resolves any channel by id and fills
-> both.
+> **`createdAt` is Baileys-only, and the lookup reaches further there.** The whatsapp-web.js engine
+> exposes no per-id channel lookup, so the adapter scans the subscribed-channel list: a channel the
+> account does not follow answers `404` even though it exists, and `createdAt` is always absent from
+> the payload. The Baileys engine resolves any channel by id and fills `createdAt`. Neither engine
+> fills `picture`: WhatsApp reports the channel picture as a media path, not a URL.
 
 **Errors:** `400` `Session is not started` · `401` missing/invalid API key · `404` `Channel <channelId> not found` (engine returned null; on whatsapp-web.js this includes a channel the account does not follow) · `409` conflict or engine not ready (retryable) · `503` session not ready or dependency unavailable (retryable)
 
@@ -3903,7 +3902,6 @@ Subscribe to a channel using its invite code.
   "description": "Release notes and tips",
   "inviteCode": "ABC123xyz",
   "subscriberCount": 1042,
-  "picture": "https://example.com/ch.jpg",
   "verified": true,
   "createdAt": 1717200000
 }

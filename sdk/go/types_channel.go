@@ -11,7 +11,7 @@ type ChannelRecord struct {
 	// InviteCode is the invite code from the channel link.
 	InviteCode      *string `json:"inviteCode,omitempty"`
 	SubscriberCount int     `json:"subscriberCount,omitempty"`
-	// Picture is the channel picture URL. Populated by Baileys; whatsapp-web.js omits it.
+	// Picture is the channel picture URL. Not currently filled by either engine.
 	Picture  *string `json:"picture,omitempty"`
 	Verified *bool   `json:"verified,omitempty"`
 	// CreatedAt is the channel creation time as reported by the engine. Populated by Baileys;
