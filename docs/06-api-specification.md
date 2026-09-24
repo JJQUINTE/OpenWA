@@ -1310,7 +1310,8 @@ Fetch chat history live from WhatsApp for a chat, bypassing the local DB.
 
 **Response** `200`
 
-Returns a bare array of engine-neutral `IncomingMessage` objects:
+Returns a bare array of engine-neutral `IncomingMessage` objects: the chat's most recent `limit` messages, oldest first
+(ascending `timestamp`).
 
 ```json
 [
