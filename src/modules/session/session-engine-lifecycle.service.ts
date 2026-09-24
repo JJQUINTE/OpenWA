@@ -815,10 +815,17 @@ export class SessionEngineLifecycle {
       },
     );
 
-    // Reset reconnect attempts and clear any stale failure reason on success
+    // Reset reconnect attempts and clear any stale failure reason on success. READY also ends the
+    // episode: a reconnect still pending (the watchdog reported this engine, then it recovered on
+    // its own) would tear the recovered engine down. Only the timer goes; the state keeps the
+    // session's reconnect settings for its next drop.
     const reconnectState = this.reconnectStates.get(id);
     if (reconnectState) {
       reconnectState.attempts = 0;
+      if (reconnectState.timer) {
+        clearTimeout(reconnectState.timer);
+        reconnectState.timer = null;
+      }
     }
     // A fresh READY stretch starts the watchdog's failure budget clean too.
     this.watchdog.clear(id);
