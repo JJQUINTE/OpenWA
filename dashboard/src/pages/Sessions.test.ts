@@ -1080,6 +1080,51 @@ test('a disconnected push keeps the QR modal when the re-read fails', async () =
   }
 });
 
+// Another card's push starts a newer read while the disconnect's read is in flight, and the older read
+// answers first and is dropped. The close decision must still get a server answer, not the pushed rows.
+test('a disconnect re-read overtaken by a newer read still closes the QR modal', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = {
+    ...SESSION_QR,
+    id: 'sess-overtaken-1',
+    name: 'overtaken',
+    status: 'qr_ready',
+    engineLoaded: true,
+  };
+  const other: Session = { ...SESSION_QR, id: 'sess-overtaker-1', name: 'overtaker', status: 'authenticating' };
+  SESSIONS.push(row, other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('overtaken')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByAltText('QR');
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    let releaseDisconnect: () => void = () => {};
+    listGate = new Promise<void>(resolve => (releaseDisconnect = resolve));
+    Object.assign(row, { status: 'disconnected', engineLoaded: false });
+    const before = reads();
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    let releaseReady: () => void = () => {};
+    listGate = new Promise<void>(resolve => (releaseReady = resolve));
+    Object.assign(other, { status: 'ready' });
+    pushSessionStatus(other.id, 'ready');
+    await waitFor(() => assert.equal(reads(), before + 2));
+
+    releaseDisconnect();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    releaseReady();
+    await waitFor(() => assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open with no engine left'));
+  } finally {
+    SESSIONS.pop();
+    SESSIONS.pop();
+  }
+});
+
 // Two reads of the list can be in flight at once, one per status push, and nothing makes them answer
 // in the order they were sent. The older one must not put its snapshot back over the newer.
 test('a list read that answers after a newer one does not overwrite it', async () => {

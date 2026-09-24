@@ -117,11 +117,13 @@ export function Sessions() {
   // read is applied only if no newer read has been applied and no row was written since it started;
   // `rowWrites` counts those writes. A read that loses to a write is sent again, unless a newer read
   // is already on its way, so what it would have brought (a restriction, the rows after a socket gap)
-  // still arrives. A dropped read returns the newest rows the page holds, which is what its callers
-  // must decide on.
+  // still arrives. A read dropped for a newer applied one returns the rows the page holds; one dropped
+  // while a newer read is in flight answers with that read (`latestList`), so a caller deciding on
+  // server fields (the disconnect handler's engine check) never decides on rows a push wrote.
   const listRequest = useRef(0);
   const listApplied = useRef(0);
   const rowWrites = useRef(0);
+  const latestList = useRef<Promise<Session[]>>(Promise.resolve([]));
 
   // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
   // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Kept
@@ -131,7 +133,7 @@ export function Sessions() {
     sessionsRef.current = sessions;
   }, [sessions]);
 
-  const fetchSessions = useCallback(async (): Promise<Session[]> => {
+  const readSessions = useCallback(async (): Promise<Session[]> => {
     listReadFailed.current = false;
     let request = 0;
     try {
@@ -146,7 +148,8 @@ export function Sessions() {
         data = await sessionApi.list();
         if (request < listApplied.current) return sessionsRef.current;
         if (rowWrites.current === writes) break;
-        if (request !== listRequest.current) return sessionsRef.current;
+        // Only the most recently started read can hold the newest request, so this is never itself.
+        if (request !== listRequest.current) return latestList.current;
       }
       listApplied.current = request;
       sessionsRef.current = data;
@@ -175,6 +178,7 @@ export function Sessions() {
       setLoading(false);
     }
   }, [t, queryClient]);
+  const fetchSessions = useCallback(() => (latestList.current = readSessions()), [readSessions]);
 
   const {
     qrData,
