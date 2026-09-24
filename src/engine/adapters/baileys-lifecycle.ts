@@ -845,6 +845,7 @@ export class BaileysLifecycle {
       // DISCONNECTED before the awaited cleanup so no send/path observes a half-torn-down socket.
       this.localSocketShutdown(sourceSock);
       await this.host.config.messageStore?.clearSession(this.host.config.dbSessionId).catch(() => undefined);
+      await this.host.config.chatStateStore?.clearSession(this.host.config.sessionId).catch(() => undefined);
       // Wipe the multi-file auth dir so a fresh link starts clean — stale creds would otherwise be
       // reloaded on the next connect() and block re-linking (Baileys retries them, no QR emitted).
       // A removal failure propagates: completion requires cleanup, so the operation is incomplete.
@@ -912,9 +913,11 @@ export class BaileysLifecycle {
 
     const cleanup = (async (): Promise<void> => {
       try {
-        // The unlinked account's messages go with it, as they do on an API logout: the next account
-        // to link this session must not reply to, forward or retry them.
+        // The unlinked account's messages and chat states go with it, as they do on an API logout: the
+        // next account to link this session must not reply to, forward or retry them, nor inherit its
+        // muted, archived and pinned chats.
         await this.host.config.messageStore?.clearSession(this.host.config.dbSessionId).catch(() => undefined);
+        await this.host.config.chatStateStore?.clearSession(this.host.config.sessionId).catch(() => undefined);
         await this.clearAuthState();
       } catch (err) {
         // A failed credential removal is terminal: report FAILED + onError instead of looking like a

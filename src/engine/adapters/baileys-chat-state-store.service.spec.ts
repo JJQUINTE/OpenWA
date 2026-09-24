@@ -25,6 +25,10 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
       rows.set(KEY(v.sessionId, v.chatId), { ...v });
       return Promise.resolve(undefined);
     }),
+    delete: jest.fn(({ sessionId }: { sessionId: string }) => {
+      for (const [k, r] of rows) if (r.sessionId === sessionId) rows.delete(k);
+      return Promise.resolve(undefined);
+    }),
   };
   return repo;
 }
@@ -46,6 +50,19 @@ describe('ChatStateStoreService', () => {
     const svc = svcWith(makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 123, archived: true, pinned: false }]));
     await svc.reload();
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: 123, archived: true, pinned: false });
+  });
+
+  it('clearSession drops one session from the table and the cache, and leaves the others', async () => {
+    const repo = makeRepo([
+      { sessionId: 's', chatId: 'c', archived: true },
+      { sessionId: 't', chatId: 'c', pinned: true },
+    ]);
+    const svc = svcWith(repo);
+    await svc.reload();
+    await svc.clearSession('s');
+    expect([...repo.rows.values()].map(r => r.sessionId)).toEqual(['t']);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    expect(svc.get('t', 'c')).toEqual({ muteEndTime: null, archived: false, pinned: true });
   });
 
   it('returns undefined for an unknown chat', () => {

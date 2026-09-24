@@ -20,6 +20,8 @@ export interface ChatStateStore {
   remember(sessionId: string, chatId: string, patch: Partial<ChatStateValue>): Promise<void>;
   /** (Re)load the in-memory mirror from the table (boot, and after a full-replace restore). */
   reload(): Promise<void>;
+  /** Forget every chat state of one session (an unlink: the next account to link it starts clean). */
+  clearSession(sessionId: string): Promise<void>;
 }
 
 const DEFAULT_STATE: ChatStateValue = { muteEndTime: null, archived: false, pinned: false };
@@ -120,6 +122,15 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
       this.logger.warn(
         `Failed to persist chat state for ${chatId}: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    await this.repo.delete({ sessionId });
+    // Evicted after the delete, so a read-through that raced it cannot leave a deleted row cached.
+    const prefix = `${sessionId}${SEP}`;
+    for (const k of [...this.states.keys()]) {
+      if (k.startsWith(prefix)) this.states.delete(k);
     }
   }
 

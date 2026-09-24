@@ -20,6 +20,9 @@ class FakeChatStateStore implements ChatStateStore {
   reload(): Promise<void> {
     return Promise.resolve();
   }
+  clearSession(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe('BaileysSessionStore', () => {

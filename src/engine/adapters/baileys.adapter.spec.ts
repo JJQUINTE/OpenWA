@@ -4251,6 +4251,52 @@ describe('BaileysAdapter store-backed ops', () => {
     await adapter.logout();
     expect(fakeStore.clearSession).toHaveBeenCalledWith('db-uuid-1');
   });
+
+  describe('persisted chat states on an unlink', () => {
+    const chatStateStore = {
+      get: jest.fn(),
+      remember: jest.fn().mockResolvedValue(undefined),
+      reload: jest.fn().mockResolvedValue(undefined),
+      clearSession: jest.fn(),
+    };
+    const linked = async (onDisconnected = jest.fn()): Promise<BaileysAdapter> => {
+      // A failing clear must not change how either unlink ends.
+      chatStateStore.clearSession.mockRejectedValue(new Error('SQLITE_BUSY'));
+      const adapter = new BaileysAdapter({
+        sessionId: 'sess-1',
+        dbSessionId: 'db-uuid-1',
+        authDir: './data/baileys',
+        messageStore: fakeStore,
+        chatStateStore,
+      });
+      await adapter.initialize({ onDisconnected });
+      fakeSock.fire('connection.update', { connection: 'open' });
+      return adapter;
+    };
+
+    it('clears them on logout', async () => {
+      const adapter = await linked();
+      await expect(adapter.logout()).resolves.toBeUndefined();
+      expect(chatStateStore.clearSession).toHaveBeenCalledWith('sess-1');
+    });
+
+    it('clears them when WhatsApp unlinks the device', async () => {
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+      try {
+        const onDisconnected = jest.fn();
+        await linked(onDisconnected);
+        fakeSock.fire('connection.update', {
+          connection: 'close',
+          lastDisconnect: { error: { output: { statusCode: 401 } } },
+        });
+        await new Promise(r => setImmediate(r));
+        expect(chatStateStore.clearSession).toHaveBeenCalledWith('sess-1');
+        expect(onDisconnected).toHaveBeenCalledWith('logged out');
+      } finally {
+        rmSpy.mockRestore();
+      }
+    });
+  });
 });
 
 describe('BaileysAdapter group management', () => {
