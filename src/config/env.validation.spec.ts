@@ -428,6 +428,14 @@ describe('validateEnv', () => {
     ).not.toThrow();
   });
 
+  it("catches MAIN_DATABASE_NAME pointing at the data connection's default file", () => {
+    // DATABASE_NAME unset resolves to ./data/openwa.sqlite at runtime, so the guard must compare that.
+    expect(() => validateEnv({ MAIN_DATABASE_NAME: './data/openwa.sqlite' })).toThrow(/\.\/data\/openwa\.sqlite/);
+    expect(() => validateEnv({ DATABASE_TYPE: 'sqlite', MAIN_DATABASE_NAME: './data/../data/openwa.sqlite' })).toThrow(
+      /main database file/,
+    );
+  });
+
   it('rejects DATABASE_SYNCHRONIZE=true with DATABASE_TYPE=postgres (drops body_ts → /search 501)', () => {
     // The Postgres data connection hardcodes migrationsRun=true; an opted-in synchronize=true makes
     // TypeORM re-sync from entities on every boot, dropping the migration-created `body_ts` generated

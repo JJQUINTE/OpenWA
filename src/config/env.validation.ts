@@ -8,6 +8,8 @@ type EnvConfig = Record<string, unknown>;
 // the main DB and DATABASE_NAME follows it, and false-positive when the main DB moved away but
 // DATABASE_NAME still points at the (now unused) default file.
 const MAIN_DB_DEFAULT_PATH = './data/main.sqlite';
+// Default SQLite file of the 'data' connection (configuration.ts / data-source.ts), for the same reason.
+const DATA_DB_DEFAULT_PATH = './data/openwa.sqlite';
 
 // Duplicated rather than imported from configuration.ts (see MAIN_DB_DEFAULT_PATH above); the spec
 // asserts the two agree.
@@ -32,11 +34,10 @@ export function sqliteDataMainPathCollision(config: EnvConfig): string | null {
   // Postgres uses a bare database NAME, never a file path — no collision is possible there.
   const dbType = read('DATABASE_TYPE');
   if (dbType !== undefined && dbType !== 'sqlite') return null;
-  const dataDbName = read('DATABASE_NAME');
-  if (!dataDbName) return null;
+  const dataDbName = read('DATABASE_NAME') || DATA_DB_DEFAULT_PATH;
   const mainDbPath = read('MAIN_DATABASE_NAME') || MAIN_DB_DEFAULT_PATH;
   if (resolve(dataDbName) === resolve(mainDbPath)) {
-    return `DATABASE_NAME must not point at the main database file (${mainDbPath}); use a separate file`;
+    return `DATABASE_NAME (${dataDbName}) must not point at the main database file (${mainDbPath}); use a separate file`;
   }
   return null;
 }
