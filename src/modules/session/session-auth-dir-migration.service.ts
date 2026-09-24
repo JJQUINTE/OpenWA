@@ -4,6 +4,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isUUID } from 'class-validator';
 import { Session } from './entities/session.entity';
 import { baileysAuthDir, readAuthDirEntries, wwjsAuthDir } from '../../engine/auth-dir-paths';
 import { isSafeSessionName } from '../../common/utils/path-safety';
@@ -62,16 +63,23 @@ export class SessionAuthDirMigration implements OnModuleInit {
       );
     }
 
+    // The name rule lets a session be named after another session's id, and the "legacy" directory
+    // that name points at is then that session's live id-keyed login: moving it would hand the
+    // account to this row. Same guard as EngineFactory.purgeSessionData, plus the exact ids for a
+    // row imported with an id that is not UUID-shaped.
+    const ids = new Set(rows.map(row => row.id));
+    const movable = sessions.filter(row => !isUUID(row.name) && !ids.has(row.name));
+
     const sessionDataPath = this.configService.get<string>('engine.sessionDataPath') ?? './data/sessions';
     const authDir = this.configService.get<string>('engine.baileys.authDir') ?? './data/baileys';
     // Both engine shapes, whatever ENGINE_TYPE says: a session that ever ran under the other engine
     // still has a live auth directory there, and leaving it name-keyed would strand it (the same
     // reason EngineFactory.purgeSessionData removes both).
     const found = [
-      ...this.migrateBase('whatsapp-web.js', sessions, path.resolve(sessionDataPath), key =>
+      ...this.migrateBase('whatsapp-web.js', movable, path.resolve(sessionDataPath), key =>
         wwjsAuthDir(sessionDataPath, key),
       ),
-      ...this.migrateBase('baileys', sessions, authDir, key => baileysAuthDir(authDir, key)),
+      ...this.migrateBase('baileys', movable, authDir, key => baileysAuthDir(authDir, key)),
     ];
     this.warnOnCaseCollisions(sessions, new Set(found));
   }

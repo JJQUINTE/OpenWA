@@ -196,6 +196,37 @@ describe('SessionAuthDirMigration', () => {
     expect(fs.existsSync(path.join(baileysDir, BOB_ID))).toBe(false);
   });
 
+  // The name rule lets a session be named after another session's id. The "legacy" directory that
+  // name points at is then the other session's live id-keyed login, and moving it would hand that
+  // WhatsApp account to the misnamed row.
+  it.each([
+    ['UUID-shaped and another session id', BOB_ID],
+    ['another session id that is not UUID-shaped', 'imported-bob'],
+  ])('leaves another session login alone when a name is %s', async (_case, bobId) => {
+    seed(path.join(sessionsDir, `session-${bobId}`), 'wwjs-bob');
+    seed(path.join(baileysDir, bobId), 'baileys-bob');
+
+    await buildMigration([
+      { id: bobId, name: 'bob' },
+      { id: ALICE_ID, name: bobId },
+    ]).onModuleInit();
+
+    expect(markerAt(path.join(sessionsDir, `session-${bobId}`))).toBe('wwjs-bob');
+    expect(markerAt(path.join(baileysDir, bobId))).toBe('baileys-bob');
+    expect(fs.existsSync(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe(false);
+    expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
+  });
+
+  it('never moves a directory named by a UUID-shaped name, even when no session has that id', async () => {
+    const deletedId = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+    seed(path.join(baileysDir, deletedId), 'baileys-deleted');
+
+    await buildMigration([{ id: ALICE_ID, name: deletedId }]).onModuleInit();
+
+    expect(markerAt(path.join(baileysDir, deletedId))).toBe('baileys-deleted');
+    expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
+  });
+
   it('skips the query and the filesystem entirely when there are no sessions', async () => {
     seed(path.join(sessionsDir, 'session-orphan'), 'orphan');
 
