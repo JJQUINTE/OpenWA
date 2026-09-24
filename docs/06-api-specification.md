@@ -3572,6 +3572,8 @@ Validated against `ProductQueryDto` via the global ValidationPipe; any unknown q
 }
 ```
 
+`price` and `priceFormatted` are absent for a product WhatsApp lists without a price.
+
 **Baileys engine only.** whatsapp-web.js answers `501` (its readiness guard runs first, so a session that exists but is not `READY` gets `409` instead). Baileys pages the products with a cursor; query validation still runs first, so a bad `page`/`limit` is a `400`.
 
 **Errors:** `400` invalid `page`/`limit` or unknown query key · `401` missing/invalid API key · `404` `Session <sessionId> not found or not connected` · `409` session present but not READY · `501` whatsapp-web.js only (no Catalog API) · `503` the catalog query went unanswered by WhatsApp, or the session/dependency is not ready (retryable only in the not-ready case; a silently unanswered catalog query does not clear on retry)
@@ -3605,6 +3607,8 @@ Get a specific catalog product by id.
   "retailerId": "SKU-EB-01"
 }
 ```
+
+`price` and `priceFormatted` are absent for a product without a price, as in the list above.
 
 **Baileys engine only.** whatsapp-web.js answers `501` (readiness-guarded as above). Baileys resolves the product from the session catalog; an id no product carries answers `200` with an empty body.
 
