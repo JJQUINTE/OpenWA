@@ -3386,6 +3386,26 @@ describe('BaileysAdapter inbound fan-out', () => {
     });
   });
 
+  it("no longer shows a revoked message's text as the chat preview", async () => {
+    baileys.getContentType.mockImplementation(realGetContentType);
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net', name: 'Alice' }]);
+    const deliver = async (id: string, message: Record<string, unknown>, messageTimestamp: number) => {
+      fakeSock.fire('messages.upsert', {
+        type: 'notify',
+        messages: [{ key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id }, message, messageTimestamp }],
+      });
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+    };
+    await deliver('IN_LAST', { conversation: 'sent to the wrong chat' }, 1700000050);
+    expect((await adapter.getChats())[0]?.lastMessage).toBe('sent to the wrong chat');
+    await deliver('REVOKE_1', { protocolMessage: { key: { id: 'IN_LAST' }, type: 0 } }, 1700000060);
+    expect((await adapter.getChats())[0]?.lastMessage).toBe('');
+  });
+
   describe('contentless protocol traffic on the live path (#1568)', () => {
     /** Push one group message through the live upsert handler with Baileys' real content-type resolution. */
     const fireLive = async (
@@ -4385,6 +4405,40 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(await adapter.getChats()).toEqual([
       expect.objectContaining({ id: '628111@c.us', timestamp: 1700000100, lastMessage: 'on its way' }),
     ]);
+  });
+
+  describe("an API edit or delete of the chat's last message", () => {
+    const sentLast = {
+      key: { id: 'OUT_LATER', remoteJid: '628111@s.whatsapp.net', fromMe: true },
+      message: { extendedTextMessage: { text: 'on its way' } },
+      messageTimestamp: 1700000100,
+    };
+
+    /** Make an API send the chat's last message, then hand it back as the stored original. */
+    const sendLast = async (): Promise<BaileysAdapter> => {
+      const adapter = await ready();
+      fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net', name: 'Alice' }]);
+      fakeSock.sendMessage.mockResolvedValueOnce(sentLast);
+      await adapter.sendTextMessage('628111@s.whatsapp.net', 'on its way');
+      fakeStore.getMessage.mockResolvedValue(sentLast);
+      return adapter;
+    };
+    const preview = async (adapter: BaileysAdapter) => (await adapter.getChats())[0]?.lastMessage;
+
+    it('shows the edited text as the preview', async () => {
+      const adapter = await sendLast();
+      await adapter.editMessage('628111@s.whatsapp.net', 'OUT_LATER', 'arriving tomorrow');
+      expect(await preview(adapter)).toBe('arriving tomorrow');
+    });
+
+    it.each([
+      ['for everyone', true],
+      ['for the account', false],
+    ])('no longer shows the text once it is deleted %s', async (_label, forEveryone) => {
+      const adapter = await sendLast();
+      await adapter.deleteMessage('628111@s.whatsapp.net', 'OUT_LATER', forEveryone);
+      expect(await preview(adapter)).toBe('');
+    });
   });
 
   it('clears the store on logout', async () => {

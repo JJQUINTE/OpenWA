@@ -299,6 +299,7 @@ export class BaileysEvents {
             body: '',
             timestamp: toUnixSeconds(msg.messageTimestamp),
           };
+          this.host.recordMessageEdit(remoteJid, revoked.id, '');
           this.host.getOnMessageRevoked()?.(revoked);
           return;
         }

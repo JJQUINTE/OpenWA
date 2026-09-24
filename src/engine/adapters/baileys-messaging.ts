@@ -52,6 +52,8 @@ export interface BaileysMessagingHost {
   putStoredMessage(msg: WAMessage): Promise<void> | undefined;
   /** Make a just-sent message the chat's last-message preview and sort time (its echo is skipped). */
   recordMessage(msg: WAMessage): void;
+  /** Replace the chat preview's text when the message is still the chat's last one (edit, or '' once deleted). */
+  recordMessageEdit(chatId: string, messageId: string, text: string): void;
   /** Record the id of a message this session just sent, so its library echo is recognised as ours. */
   rememberOwnSend(id: string | null | undefined): void;
   /** Look up a previously-seen message from the store (the reply/forward/react/delete handle). */
@@ -541,8 +543,12 @@ export class BaileysMessaging {
     // revoke, yet the send resolves, so it would report a deletion that never happened. WhatsApp Web
     // deletes such a message for the account alone instead, and so does this. A group whose member
     // list shows no row for the account proves nothing either way, so the revoke still goes out there.
+    // Whichever branch runs, the text leaves this account's view, so it must not stay the chat
+    // preview. The echo of an own revoke is skipped as an own send, so the inbound path never clears it.
+    const chatJid = target.key.remoteJid ?? chatId;
     if (forEveryone && (target.key.fromMe === true || (await this.selfIsGroupAdmin(target.key.remoteJid)) !== false)) {
       await this.send(await this.toDeliverableJid(chatId), { delete: target.key });
+      this.host.recordMessageEdit(chatJid, messageId, '');
       return;
     }
     // Delete-for-me (revoke on this device only): Baileys exposes it as a chat modification, not a
@@ -560,6 +566,7 @@ export class BaileysMessaging {
       ),
       'the delete-for-me',
     );
+    this.host.recordMessageEdit(chatJid, messageId, '');
   }
 
   /**
@@ -602,6 +609,8 @@ export class BaileysMessaging {
     // content, so omitting mentions drops whatever tags the original carried.
     const editContent = { text: body, ...this.withMentions(mentions), edit: target.key };
     await this.send(jid, this.previewSafe(editContent), this.previewSafeOptions(editContent));
+    // The edit's echo is skipped as an own send, so the chat preview follows it from here.
+    this.host.recordMessageEdit(target.key.remoteJid ?? chatId, messageId, body);
     // Both fields describe the EDITED MESSAGE, not the protocol envelope that carried the edit.
     // That envelope has an id and a send time of its own; answering with either would name something
     // no route can address and no stored row is keyed by, and would disagree with the
