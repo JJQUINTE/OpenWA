@@ -3274,6 +3274,49 @@ describe('WhatsAppWebJsAdapter inbound media (MEDIA_DOWNLOAD_ENABLED=false)', ()
     expect(msg.media?.omitted).toBeUndefined();
   });
 
+  it('does not download the media of an own status post echo', async () => {
+    // The echo consumer drops status posts, so the blob was fetched in full, held an inbound limiter
+    // slot, and was thrown away.
+    process.env[ENV] = 'true';
+    const adapter = new WhatsAppWebJsAdapter({
+      sessionId: 'sess-echo-status',
+      sessionDataPath: './data/sessions',
+      puppeteer: {},
+    });
+    const client = Object.assign(new EventEmitter(), {
+      info: { wid: { user: '628123' }, pushname: 'Tester' },
+      getState: jest.fn().mockResolvedValue(WAState.CONNECTED),
+      pupPage: { evaluate: jest.fn().mockResolvedValue(true) },
+    });
+    (adapter as unknown as { client: unknown }).client = client;
+    const onMessageCreate = jest.fn();
+    (adapter as unknown as { callbacks: unknown }).callbacks = { onMessageCreate };
+    (adapter as unknown as { setupEventHandlers: () => void }).setupEventHandlers();
+
+    const mockMsg = {
+      id: { _serialized: 'OWN_STATUS_1' },
+      from: '628123@c.us',
+      to: 'status@broadcast',
+      body: '',
+      type: 'image',
+      timestamp: 1700000072,
+      fromMe: true,
+      hasMedia: true,
+      _data: { mimetype: 'image/png', size: 3 },
+      downloadMedia: jest.fn().mockResolvedValue({ mimetype: 'image/png', data: 'QUJD', filename: 'a.png' }),
+      hasQuotedMsg: false,
+    };
+
+    client.emit('message_create', mockMsg);
+    await new Promise(r => setImmediate(r));
+    await new Promise(r => setImmediate(r));
+
+    expect(onMessageCreate).toHaveBeenCalledTimes(1);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect((onMessageCreate.mock.calls[0][0] as { isStatusBroadcast?: boolean }).isStatusBroadcast).toBe(true);
+    expect(mockMsg.downloadMedia).not.toHaveBeenCalled();
+  });
+
   it('emits the echo with the omitted marker when the own-send media download fails', async () => {
     // Pinned on: the disabled exit builds an identical marker, so an ambient 'false' would let this
     // pass without ever attempting a download. The describe's afterEach restores it.
