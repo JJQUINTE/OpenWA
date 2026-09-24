@@ -515,7 +515,7 @@ docker compose down
 #    the checkout below because an image older than 0.23.7 cannot move its safety snapshot off the
 #    read-only container root
 docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
-  -v "$BACKUP_DIR:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups \
+  -v "$BACKUP_DIR:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups -e HOME=/tmp \
   openwa-api /backups/openwa-backup-<timestamp>.tar.gz --force
 
 # 3. Check out the previous release and rebuild the image
@@ -690,9 +690,11 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 >
 > ```bash
 > # Compose: the entrypoint override runs the script as root, which can read the archive and write
-> # the volume; the next start hands the restored files back to the app user.
+> # the volume; the next start hands the restored files back to the app user. The image sets
+> # HOME=/app/data, and the script refuses a data dir that is the home directory, so HOME is moved
+> # off it here for a compose file that does not already set it.
 > docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
->   -v "$PWD/backups:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups \
+>   -v "$PWD/backups:/backups" -e OPENWA_RESTORE_SNAPSHOT_DIR=/backups -e TMPDIR=/backups -e HOME=/tmp \
 >   openwa-api /backups/openwa-backup-<timestamp>.tar.gz --force
 >
 > # Helm, for a release named openwa (`kubectl get statefulset,configmap,pvc` shows the names of
@@ -725,8 +727,7 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 > EOF
 > kubectl wait --for=condition=Ready pod/openwa-restore --timeout=300s
 > kubectl cp ./backups/openwa-backup-<timestamp>.tar.gz openwa-restore:/restore/backup.tar.gz
-> # The image sets HOME=/app/data, and the script refuses a data dir that is the home directory, so
-> # HOME is moved off it here (the compose files already set HOME=/tmp).
+> # HOME is moved off the data dir here too, as in the compose command.
 > kubectl exec openwa-restore -- env HOME=/tmp OPENWA_RESTORE_SNAPSHOT_DIR=/restore TMPDIR=/restore \
 >   ./scripts/restore.sh /restore/backup.tar.gz --force
 > # The emptyDir goes away with the pod: copy off every snapshot the script named first.
