@@ -6711,17 +6711,17 @@ Get one instance (secret masked).
 
 Update an instance (secret masked in the response). Any subset of:
 
-| Field          | Type    | Description                                                                                                         |
-| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
-| `enabled`      | boolean | Whether ingress is accepted and dispatch is active                                                                  |
-| `sessionScope` | string  | Re-bind to another session (must be inside the key's `allowedSessions`; the old scope's binding is torn down first) |
-| `config`       | object  | Replace the per-instance config slice                                                                               |
+| Field          | Type           | Description                                                                                                                                                                                                                  |
+| -------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`      | boolean        | Whether ingress is accepted and dispatch is active                                                                                                                                                                           |
+| `sessionScope` | string \| null | Re-bind to another session, or `null` to serve all sessions again (the new scope must be inside the key's `allowedSessions`, so a key restricted to sessions cannot send `null`; the old scope's binding is torn down first) |
+| `config`       | object         | Replace the per-instance config slice                                                                                                                                                                                        |
 
 **Auth:** API key (ADMIN)
 
 **Response** `200` — the updated `InstanceView`.
 
-**Errors:** `400` validation · `401` · `403` key role < ADMIN, or the new `sessionScope` outside the key's `allowedSessions` · `404` unknown instance, or one outside the key's scope
+**Errors:** `400` validation · `401` · `403` key role < ADMIN, or the new `sessionScope` outside the key's `allowedSessions` (`null` included) · `404` unknown instance, or one outside the key's scope
 
 #### DELETE /api/integration/plugins/:pluginId/instances/:instanceId
 
