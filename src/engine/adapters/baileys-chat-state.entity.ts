@@ -23,7 +23,7 @@ export class ChatState {
   @PrimaryColumn()
   chatId!: string;
 
-  /** Epoch MILLISECONDS the mute ends, or null when the chat is not muted. */
+  /** Epoch MILLISECONDS the mute ends, -1 for a mute with no end ("Always"), or null when not muted. */
   @Column({
     type: 'bigint',
     nullable: true,

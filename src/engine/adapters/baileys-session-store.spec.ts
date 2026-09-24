@@ -225,6 +225,10 @@ describe('BaileysSessionStore', () => {
       const asLong = { toNumber: () => Date.now() + 60 * 60 * 1000 };
       expect(chatFor({ muteEndTime: asLong }).muted).toBe(true);
     });
+
+    it('reads a mute set to Always (WhatsApp sends muteEndTime -1) as muted indefinitely', () => {
+      expect(chatFor({ muteEndTime: -1 })).toMatchObject({ muted: true, muteExpiration: 0 });
+    });
   });
 
   describe('chat-state persistence (survives a reconnect Baileys cannot resync)', () => {
@@ -285,6 +289,17 @@ describe('BaileysSessionStore', () => {
       expect(chatOn(newStore(), { name: 'Alice' })).toMatchObject({ muted: true, muteExpiration: endMs });
       // An unmuted chat carries no expiry (undefined, so omitted from the JSON payload).
       expect(chatOn(newStore(), { muteEndTime: null }).muteExpiration).toBeUndefined();
+    });
+
+    it('persists a mute set to Always as -1 and reads it back as muted indefinitely', () => {
+      expect(chatOn(newStore(), { muteEndTime: -1 })).toMatchObject({ muted: true, muteExpiration: 0 });
+      expect(fake.get(SID, CHAT)?.muteEndTime).toBe(-1);
+      expect(chatOn(newStore(), { name: 'Alice' })).toMatchObject({ muted: true, muteExpiration: 0 });
+    });
+
+    it('reads a mute Always persisted as -1000 by an earlier version as muted indefinitely', async () => {
+      await fake.remember(SID, CHAT, { muteEndTime: -1000 });
+      expect(chatOn(newStore(), { name: 'Alice' })).toMatchObject({ muted: true, muteExpiration: 0 });
     });
 
     it('normalizes a seconds-scale expiry to ms for muteExpiration', () => {

@@ -605,11 +605,13 @@ export class BaileysSessionStore {
    * `conversationTimestamp` beside it. So it is normalised by magnitude: below 1e12 is seconds (an
    * epoch-ms stamp below 1e12 is a date before 2001-09) and is scaled to ms. The current state survives a
    * reconnect via {@link persistChatState}, because Baileys re-emits only app-state mutations newer than
-   * the persisted version, never an already-applied mute.
+   * the persisted version, never an already-applied mute. A negative value is WhatsApp's "Always"
+   * sentinel (-1, the value WhatsApp Web sends too), a mute with no end.
    */
   private isMuted(muteEndTime: number | { toNumber(): number } | null | undefined): boolean {
     const raw = this.toUnixSeconds(muteEndTime);
     if (!raw) return false;
+    if (raw < 0) return true;
     const endMs = raw < 1e12 ? raw * 1000 : raw;
     return endMs > Date.now();
   }
@@ -617,11 +619,12 @@ export class BaileysSessionStore {
   /**
    * The expiry instant (epoch ms) for {@link ChatSummary.muteExpiration}, or undefined when the chat
    * is not muted. Same normalisation as {@link isMuted}, so the two agree: a value only survives here
-   * when it is still in the future.
+   * when it is still in the future. A mute with no end reads 0, the contract's "muted indefinitely".
    */
   private muteExpirationMs(muteEndTime: number | { toNumber(): number } | null | undefined): number | undefined {
     const raw = this.toUnixSeconds(muteEndTime);
     if (!raw) return undefined;
+    if (raw < 0) return 0;
     const endMs = raw < 1e12 ? raw * 1000 : raw;
     return endMs > Date.now() ? endMs : undefined;
   }
@@ -643,10 +646,14 @@ export class BaileysSessionStore {
     }
   }
 
-  /** Normalise a raw muteEndTime to canonical epoch ms, or null (0/absent = unmuted). See {@link isMuted}. */
+  /**
+   * Normalise a raw muteEndTime to canonical epoch ms, or null (0/absent = unmuted). A mute with no end
+   * keeps the -1 sentinel rather than scaling it. See {@link isMuted}.
+   */
   private normalizeMuteEndTime(v: number | { toNumber(): number } | null | undefined): number | null {
     const n = this.toUnixSeconds(v);
     if (!n) return null;
+    if (n < 0) return -1;
     return n < 1e12 ? n * 1000 : n;
   }
 
