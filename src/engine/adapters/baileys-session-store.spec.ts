@@ -675,6 +675,28 @@ describe('BaileysSessionStore', () => {
       expect(store.lastMessage('628111@c.us')?.key.id).toBe('IN');
       expect(store.lastMessage(LID)?.key.id).toBe('IN');
     });
+
+    it('still finds a message filed under the lid before the mapping to the phone chat was learned', () => {
+      store.upsertChats([{ id: PHONE }]);
+      store.recordMessage(msg(LID, 'IN', 100));
+      store.addLidMappings([{ lid: LID, pn: PHONE }]);
+      for (const id of [LID, '628111@c.us']) {
+        expect(store.lastMessage(id)).toEqual({
+          key: { remoteJid: LID, fromMe: false, id: 'IN' },
+          timestamp: 100,
+          jid: PHONE,
+        });
+        expect(store.lastInboundMessage(id)?.key.id).toBe('IN');
+      }
+    });
+
+    it('prefers the newest message across twins over an older one under the chat key', () => {
+      store.upsertChats([{ id: PHONE }]);
+      store.recordMessage(msg(PHONE, 'OUT', 100, true));
+      store.recordMessage(msg(LID, 'IN', 200));
+      store.addLidMappings([{ lid: LID, pn: PHONE }]);
+      expect(store.lastMessage('628111@c.us')).toEqual(expect.objectContaining({ timestamp: 200, jid: PHONE }));
+    });
   });
 
   describe('persistent lid->phone table', () => {

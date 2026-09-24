@@ -526,14 +526,27 @@ export class BaileysSessionStore {
 
   /** The chat's newest message, with `jid`, the id the chat itself is keyed under. */
   lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null {
-    const jid = this.chatKey(chatId);
-    const m = this.lastMessages.get(jid);
-    return m ? { key: m.key, timestamp: m.timestamp, jid } : null;
+    const m = this.newestAcrossTwins(this.lastMessages, chatId);
+    return m ? { key: m.key, timestamp: m.timestamp, jid: this.chatKey(chatId) } : null;
   }
 
   /** The newest message the chat received (not one this account sent), or null when none is known. */
   lastInboundMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
-    return this.lastInbound.get(this.chatKey(chatId)) ?? null;
+    return this.newestAcrossTwins(this.lastInbound, chatId) ?? null;
+  }
+
+  /**
+   * The newest entry `map` holds for a chat under any of its spellings. A message recorded under the
+   * contact's lid before the lid->phone mapping was learned stays on the lid twin while the chat key
+   * moves to the phone-keyed chat record, so reading the chat key alone would lose it.
+   */
+  private newestAcrossTwins<T extends { timestamp: number }>(map: LruMap<string, T>, chatId: string): T | undefined {
+    let newest: T | undefined;
+    for (const k of [this.chatKey(chatId), ...this.chatTwins(chatId)]) {
+      const v = map.get(k);
+      if (v && (!newest || v.timestamp > newest.timestamp)) newest = v;
+    }
+    return newest;
   }
 
   /**
