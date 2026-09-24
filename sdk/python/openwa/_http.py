@@ -67,9 +67,9 @@ class HttpExecutor:
     ) -> None:
         # Caller-supplied default headers are applied FIRST so the auth/JSON
         # headers below always win and can never be clobbered (mirrors the JS SDK).
-        headers: dict[str, str] = {}
-        if default_headers:
-            headers.update(default_headers)
+        # httpx.Headers matches names case-insensitively, so a lowercase copy is
+        # replaced instead of being sent alongside ours.
+        headers = httpx.Headers(default_headers)
         headers["Content-Type"] = "application/json"
         headers["X-API-Key"] = api_key
         client_kwargs: dict[str, Any] = {

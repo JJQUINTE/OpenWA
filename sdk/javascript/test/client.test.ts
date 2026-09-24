@@ -286,6 +286,25 @@ describe('OpenWAClient', () => {
     expect(t.lastCall!.headers['x-trace']).toBe('keep');
   });
 
+  it('keeps the auth and JSON headers winning over a caller header that differs only in case', async () => {
+    // fetch folds header names case-insensitively and joins duplicates, so read what goes on the wire.
+    let wire: Headers | undefined;
+    const recordingFetch: FetchLike = async (_url, init) => {
+      wire = new Headers(init?.headers);
+      return new Response('[]', { status: 200 });
+    };
+    const c = new OpenWAClient({
+      baseUrl: 'http://localhost',
+      apiKey: 'REAL',
+      defaultHeaders: { 'x-api-key': 'EVIL', 'x-trace': 'keep' },
+      fetch: recordingFetch,
+    });
+    await c.request({ method: 'GET', path: '/api/sessions', headers: { 'content-type': 'text/plain' } });
+    expect(wire!.get('x-api-key')).toBe('REAL');
+    expect(wire!.get('content-type')).toBe('application/json');
+    expect(wire!.get('x-trace')).toBe('keep');
+  });
+
   it('calls the global fetch unbound from the client config when none is injected', async () => {
     // Browsers and Workers reject a fetch invoked as a method of another object ("Illegal invocation").
     vi.stubGlobal('fetch', function (this: unknown) {

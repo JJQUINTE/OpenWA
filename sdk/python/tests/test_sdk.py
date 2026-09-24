@@ -44,6 +44,19 @@ class TestClientCore:
         assert backend.last_call.headers["content-type"] == "application/json"
         assert backend.last_call.headers["x-trace"] == "keep"  # benign custom headers still pass through
 
+    def test_default_headers_cannot_override_api_key_in_another_case(self):
+        # Header names are case-insensitive: a lowercase copy must be replaced, not sent alongside.
+        backend = MockBackend().on("GET", "/api/sessions", body=[])
+        client = OpenWAClient(
+            base_url="http://localhost",
+            api_key="REAL_KEY",
+            default_headers={"x-api-key": "EVIL", "content-type": "text/plain"},
+            transport=backend.as_transport(),
+        )
+        client.sessions.list()
+        assert backend.last_call.headers["x-api-key"] == "REAL_KEY"
+        assert backend.last_call.headers["content-type"] == "application/json"
+
     def test_non_json_2xx_body_returns_text(self):
         import httpx
 
