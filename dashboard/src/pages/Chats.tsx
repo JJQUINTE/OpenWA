@@ -294,20 +294,26 @@ export function Chats() {
     void loadSessions();
   }, [t, showErrorToast]);
 
-  // 2. Fetch chats when active session changes
+  // 2. Fetch chats when active session changes. Only the newest call may write: a session switch
+  // does not cancel the list still loading for the session left behind, and a list that lands
+  // late would put that account's chats under the selected session.
+  const chatsRequestRef = useRef(0);
   const loadChats = useCallback(
     async (sessionId: string) => {
       if (!sessionId) return;
+      const request = ++chatsRequestRef.current;
       try {
         setLoadingChats(true);
         const data = await sessionApi.getChats(sessionId);
+        if (request !== chatsRequestRef.current) return;
         const sorted = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setChats(sorted);
       } catch (err) {
+        if (request !== chatsRequestRef.current) return;
         showErrorToast(t('chats.errors.loadChats'), err instanceof Error ? err.message : undefined);
         setChats([]);
       } finally {
-        setLoadingChats(false);
+        if (request === chatsRequestRef.current) setLoadingChats(false);
       }
     },
     [t, showErrorToast],

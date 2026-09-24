@@ -37,6 +37,10 @@ const SESSION: Session = {
 const SESSION_2: Session = { ...SESSION, id: 'session-2', name: 'Second', phone: '15559876543' };
 let twoSessions = false;
 
+// Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
+// the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
+let chatsResponder: ((sessionId: string) => Promise<Response>) | null = null;
+
 const CHAT: Chat = {
   id: '15550001111@c.us',
   name: 'Alice',
@@ -260,6 +264,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/chats`) {
+      if (chatsResponder) return chatsResponder(url.includes(`/sessions/${SESSION_2.id}/`) ? SESSION_2.id : SESSION.id);
       return Promise.resolve(jsonResponse([CHAT, CHAT_2]));
     }
     if (method === 'GET' && path.startsWith(`/api/sessions/${SESSION.id}/contacts/profile-pictures`)) {
@@ -369,6 +374,7 @@ afterEach(() => {
   olderPageGate = null;
   sendGate = null;
   olderPageFails = false;
+  chatsResponder = null;
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -810,6 +816,36 @@ test('a staged reply is dropped when another session is opened', async () => {
       null,
       "Alice's reply followed the user into the other session",
     );
+  } finally {
+    twoSessions = false;
+  }
+});
+
+test('a chat list that answers after the user switched sessions does not replace the new one', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>(resolve => {
+    releaseFirst = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id ? firstGate.then(() => jsonResponse([CHAT])) : Promise.resolve(jsonResponse([CHAT_2]));
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the first list never started'));
+
+    // Session 2's list lands first; session 1's slower answer arrives after it.
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await screen.findByText('Carol');
+    releaseFirst();
+    await flush();
+    await flush();
+
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats replaced the selected session's list");
+    assert.ok(screen.queryByText('Carol'), "the selected session's chats are gone");
   } finally {
     twoSessions = false;
   }
