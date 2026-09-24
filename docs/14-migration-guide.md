@@ -870,8 +870,13 @@ curl -f http://localhost:2785/api/health && echo "✅ Rollback successful"
 ```
 
 > [!TIP]
-> `./scripts/restore.sh <backup-archive.tar.gz>` performs the same restore from an archive produced by
-> `scripts/backup.sh` — including the Main DB (`./data/main.sqlite`), which the script above does not touch.
+> For an archive produced by `scripts/backup.sh`, follow
+> [11 - Runbook: Restore from Backup](./11-operational-runbooks.md#runbook-restore-from-backup)
+> instead. It also restores the Main DB (`main.sqlite`), which the script above does not touch, and
+> it runs `scripts/restore.sh` from the image against the production compose named volume
+> (`openwa-data`) or the Helm PVC. A host run of `./scripts/restore.sh`, like the copies into `./data`
+> above, reaches only a bare-metal install or `docker-compose.dev.yml`, which bind-mounts `./data`;
+> under the production compose file it fills a directory the container never reads.
 
 ### Rollback Decision Tree
 
