@@ -73,6 +73,23 @@ class ClientTest extends TestCase
         $this->assertSame('REAL_KEY', $headers['x-api-key'] ?? '');  // auth still wins
     }
 
+    public function testDefaultHeadersThatDifferOnlyInCaseDoNotReachTheWire(): void
+    {
+        // PSR-7 folds header names case-insensitively and keeps every value, so a lowercase copy
+        // would be sent ahead of ours: "x-api-key: EVIL, REAL_KEY".
+        $backend = (new MockBackend())->on(200, []);
+        $client = new \OpenWA\Client([
+            'baseUrl' => 'https://x',
+            'apiKey' => 'REAL_KEY',
+            'httpClient' => $backend->httpClient(),
+            'defaultHeaders' => ['x-api-key' => 'EVIL', 'content-type' => 'text/plain'],
+        ]);
+        $client->sessions->list();
+        $headers = $backend->lastCall()['headers'];
+        $this->assertSame('REAL_KEY', $headers['x-api-key'] ?? '');
+        $this->assertSame('application/json', $headers['content-type'] ?? '');
+    }
+
     public function testPathSegmentsAreEncoded(): void
     {
         $backend = (new MockBackend())->on(200, ['id' => 'x']);
