@@ -912,6 +912,9 @@ export class BaileysLifecycle {
 
     const cleanup = (async (): Promise<void> => {
       try {
+        // The unlinked account's messages go with it, as they do on an API logout: the next account
+        // to link this session must not reply to, forward or retry them.
+        await this.host.config.messageStore?.clearSession(this.host.config.dbSessionId).catch(() => undefined);
         await this.clearAuthState();
       } catch (err) {
         // A failed credential removal is terminal: report FAILED + onError instead of looking like a

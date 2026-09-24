@@ -316,6 +316,26 @@ describe('BaileysAdapter lifecycle & status', () => {
     }
   });
 
+  it('on a logged-out close: clears the stored messages, as an API logout does', async () => {
+    const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+    try {
+      const onDisconnected = jest.fn();
+      const adapter = newAdapter();
+      await adapter.initialize(noopCallbacks({ onDisconnected }));
+      fakeStore.clearSession.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+      fakeSock.fire('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: 401 } } },
+      });
+      await new Promise(r => setImmediate(r));
+      expect(fakeStore.clearSession).toHaveBeenCalledWith('db-uuid-1');
+      // A store failure does not turn the unlink into a failed cleanup.
+      expect(onDisconnected).toHaveBeenCalledWith('logged out');
+    } finally {
+      rmSpy.mockRestore();
+    }
+  });
+
   it('on a logged-out close: clears the on-disk auth dir so a fresh connect shows a new QR', async () => {
     // Root cause of the "QR never appears after logout" bug: the now-invalid multi-file auth dir was
     // left on disk, so the next connect() reloaded the dead creds and Baileys retried them instead of
