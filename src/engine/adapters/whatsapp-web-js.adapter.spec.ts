@@ -1409,11 +1409,13 @@ describe('WhatsAppWebJsAdapter chat labels (add/remove via read-modify-write, Bu
   };
 
   // whatsapp-web.js has no add-/remove-one primitive: addOrRemoveLabels(ids, chats) REPLACES the chat's
-  // label set with `ids`. A client mock that reports the chat already carries label 'A'.
+  // label set with `ids`. A client mock that reports the chat already carries label 'A'; the account
+  // itself defines labels 'A' and 'B'.
   const clientWith = (existing: string[], addOrRemoveLabels: jest.Mock) => ({
     getChatById: jest.fn().mockResolvedValue({
       getLabels: jest.fn().mockResolvedValue(existing.map(id => ({ id, name: id, hexColor: '#fff' }))),
     }),
+    getLabels: jest.fn().mockResolvedValue(['A', 'B'].map(id => ({ id, name: id, hexColor: '#fff' }))),
     addOrRemoveLabels,
   });
 
@@ -1421,6 +1423,24 @@ describe('WhatsAppWebJsAdapter chat labels (add/remove via read-modify-write, Bu
     const addOrRemoveLabels = jest.fn().mockResolvedValue(undefined);
     await readyAdapter(clientWith(['A'], addOrRemoveLabels)).addLabelToChat(USER, 'B');
     expect(addOrRemoveLabels).toHaveBeenCalledWith(['A', 'B'], [USER]);
+  });
+
+  // The page filters out an id it does not know and resolves, so the write leaves the chat unchanged.
+  // Reporting that as success told the caller a typo'd or deleted label had been applied.
+  it('answers 404 when adding a label the account does not have', async () => {
+    const addOrRemoveLabels = jest.fn().mockResolvedValue(undefined);
+    await expect(readyAdapter(clientWith(['A'], addOrRemoveLabels)).addLabelToChat(USER, '999')).rejects.toBeInstanceOf(
+      LabelNotFoundError,
+    );
+  });
+
+  // Removing a label the account does not have is already an idempotent no-op, not a lookup.
+  it('still removes an unknown label without a 404', async () => {
+    const addOrRemoveLabels = jest.fn().mockResolvedValue(undefined);
+    const client = clientWith(['A'], addOrRemoveLabels);
+    await readyAdapter(client).removeLabelFromChat(USER, '999');
+    expect(addOrRemoveLabels).toHaveBeenCalledWith(['A'], [USER]);
+    expect(client.getLabels).not.toHaveBeenCalled();
   });
 
   it('is idempotent when adding a label the chat already has', async () => {
