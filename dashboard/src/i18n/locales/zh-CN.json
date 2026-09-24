@@ -680,7 +680,9 @@
     },
     "exportFailed": "无法导出审计日志",
     "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。",
-    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。"
+    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。",
+    "exportNoMatches": "没有与搜索匹配的审计日志记录，因此未导出任何内容。",
+    "exportNoMatchesTruncated": "已扫描的最新 {{rows}} 条记录中没有与搜索匹配的条目，因此未导出任何内容。更早的条目未被搜索。"
   },
   "messageTester": {
     "title": "消息测试器",

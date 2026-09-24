@@ -635,7 +635,9 @@
     },
     "exportFailed": "No se pudo exportar el registro de auditoría",
     "exportTruncated": "La exportación solo abarca las {{rows}} entradas más recientes. Restringe el filtro de severidad para exportar las más antiguas.",
-    "exportThrottled": "La exportación solo abarca las {{rows}} entradas más recientes porque la puerta de enlace está limitando las lecturas del registro de auditoría. Espera un minuto y vuelve a exportar."
+    "exportThrottled": "La exportación solo abarca las {{rows}} entradas más recientes porque la puerta de enlace está limitando las lecturas del registro de auditoría. Espera un minuto y vuelve a exportar.",
+    "exportNoMatches": "Ninguna entrada del registro de auditoría coincide con la búsqueda, así que no se exportó nada.",
+    "exportNoMatchesTruncated": "Ninguna de las {{rows}} entradas más recientes revisadas coincide con la búsqueda, así que no se exportó nada. Las entradas más antiguas no se revisaron."
   },
   "messageTester": {
     "title": "Probador de mensajes",

@@ -680,7 +680,9 @@
     },
     "exportFailed": "無法匯出審計記錄",
     "exportTruncated": "匯出僅涵蓋最新的 {{rows}} 條記錄。請收窄嚴重程度篩選範圍以匯出較早的項目。",
-    "exportThrottled": "閘道正在限制審計記錄的讀取頻率，匯出僅涵蓋最新的 {{rows}} 條記錄。請等待一分鐘後重新匯出。"
+    "exportThrottled": "閘道正在限制審計記錄的讀取頻率，匯出僅涵蓋最新的 {{rows}} 條記錄。請等待一分鐘後重新匯出。",
+    "exportNoMatches": "沒有與搜尋相符的審計記錄，因此未有匯出任何內容。",
+    "exportNoMatchesTruncated": "已掃描的最新 {{rows}} 條記錄中沒有與搜尋相符的項目，因此未有匯出任何內容。較早的項目未被搜尋。"
   },
   "messageTester": {
     "title": "訊息測試器",

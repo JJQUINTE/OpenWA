@@ -104,12 +104,19 @@ export function Logs() {
       const rows = q
         ? all.filter(l => l.action.toLowerCase().includes(q) || (l.errorMessage || '').toLowerCase().includes(q))
         : all;
-      if (rows.length > 0) download(buildCsv(rows));
       // Either stop keeps the newest rows (the API orders newest first); older ones are missing. A
       // narrower filter gets past the cap, only waiting gets past the throttle. The count follows the UI
       // language, not the browser's locale, so it reads right inside the sentence.
+      const rowCount = all.length.toLocaleString(i18n.resolvedLanguage);
+      if (rows.length === 0) {
+        // After a truncated walk the older rows were never searched, so the message must not read as
+        // a verdict on the whole history.
+        if (truncated) toast.warning(t('logs.exportNoMatchesTruncated', { rows: rowCount }));
+        else toast.info(t('logs.exportNoMatches'));
+        return;
+      }
+      download(buildCsv(rows));
       if (truncated) {
-        const rowCount = all.length.toLocaleString(i18n.resolvedLanguage);
         toast.warning(t(throttled ? 'logs.exportThrottled' : 'logs.exportTruncated', { rows: rowCount }));
       }
     } catch (err) {

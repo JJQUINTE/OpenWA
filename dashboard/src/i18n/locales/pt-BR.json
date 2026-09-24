@@ -635,7 +635,9 @@
     },
     "exportFailed": "Não foi possível exportar o registro de auditoria",
     "exportTruncated": "A exportação cobre apenas as {{rows}} entradas mais recentes. Restrinja o filtro de severidade para exportar as mais antigas.",
-    "exportThrottled": "A exportação cobre apenas as {{rows}} entradas mais recentes porque o gateway está limitando as leituras do log de auditoria. Aguarde um minuto e exporte novamente."
+    "exportThrottled": "A exportação cobre apenas as {{rows}} entradas mais recentes porque o gateway está limitando as leituras do log de auditoria. Aguarde um minuto e exporte novamente.",
+    "exportNoMatches": "Nenhuma entrada do log de auditoria corresponde à busca, então nada foi exportado.",
+    "exportNoMatchesTruncated": "Nenhuma das {{rows}} entradas mais recentes verificadas corresponde à busca, então nada foi exportado. As entradas mais antigas não foram verificadas."
   },
   "messageTester": {
     "title": "Testador de mensagens",

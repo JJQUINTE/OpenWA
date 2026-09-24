@@ -684,7 +684,9 @@
     },
     "exportFailed": "Impossible d'exporter le journal d'audit",
     "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes.",
-    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export."
+    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export.",
+    "exportNoMatches": "Aucune entrée du journal d'audit ne correspond à la recherche : rien n'a été exporté.",
+    "exportNoMatchesTruncated": "Aucune des {{rows}} entrées les plus récentes parcourues ne correspond à la recherche : rien n'a été exporté. Les entrées plus anciennes n'ont pas été parcourues."
   },
   "messageTester": {
     "title": "Testeur de messages",
