@@ -3,7 +3,7 @@
     "name": "Baileys Engine",
     "version": "1.0.0",
     "type": "engine",
-    "description": "Baileys (WebSocket, no-browser) engine adapter for OpenWA — minimal slice: text send/receive",
+    "description": "Baileys (WebSocket, no-browser) engine adapter for OpenWA",
     "author": "OpenWA Team",
     "main": "index.ts",
     "provides": ["whatsapp-engine", "text-messages"],

@@ -548,7 +548,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     return this.contacts.clearChatMessages(chatId);
   }
 
-  // ----- Gated: not supported by this minimal slice (no store) -----
+  // ----- Gated: unsupported on Baileys (reasons inline) -----
   /* eslint-disable @typescript-eslint/no-unused-vars */
 
   getMessageReactions(_chatId: string, _messageId: string): Promise<MessageReaction[]> {

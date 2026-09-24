@@ -5334,15 +5334,17 @@ List available WhatsApp engine plugins.
 [
   {
     "id": "whatsapp-web.js",
-    "name": "WhatsApp Web.js",
+    "name": "WhatsApp Web.js Engine",
     "enabled": true,
-    "features": ["send", "receive", "media", "groups"],
+    "features": ["text-messages", "media-messages", "group-management", "labels", "channels", "status-updates"],
     "library": { "name": "whatsapp-web.js", "version": "1.34.7" }
   }
 ]
 ```
 
-`library` is optional and may be omitted per engine.
+`features` is shortened here. It is the engine plugin's own `getFeatures()` list, so it differs per engine:
+Baileys adds `catalog` and omits `labels`, while whatsapp-web.js omits `catalog`. `library` is optional and may be
+omitted per engine.
 
 **Errors:** `401` · `403`
 
