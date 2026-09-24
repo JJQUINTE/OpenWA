@@ -126,8 +126,10 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
     // A push name is sender-controlled: strip the span delimiters so a name cannot close its own
-    // mention early and hand its tail back to Linkify and the format parser.
-    const name = m.chatName.replace(MENTION_DELIMITERS, '').trim();
+    // mention early and hand its tail back to Linkify and the format parser. Backticks go too:
+    // parseMessageBody peels code before it sees a mention span, so one in the name would pair
+    // with another backtick and split the span the same way.
+    const name = m.chatName.replace(MENTION_DELIMITERS, '').replace(/`/g, '').trim();
     // Rows are ascending by time, so the last write is the participant's current push name.
     if (name && !blankMentionName(name) && /^\d+$/.test(local)) map.set(local, name);
   }
