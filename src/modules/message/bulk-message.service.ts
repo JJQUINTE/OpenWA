@@ -784,7 +784,7 @@ export class BulkMessageService implements OnApplicationBootstrap {
         metadata: media
           ? {
               media: {
-                mimetype: media.mimetype,
+                mimetype: this.mediaMimetype(type, content),
                 data: stripBase64DataUri(media.base64) || media.url,
                 filename: media.filename,
               },
@@ -796,6 +796,19 @@ export class BulkMessageService implements OnApplicationBootstrap {
       // merges onto the echo's row. Anything reaching this point is a real persistence fault.
       this.logger.warn(`Batch message persisted-after-send failed: ${String(error)}`);
     }
+  }
+
+  /**
+   * The mimetype a media item is sent with, and so the one its row must record: a stored row with no
+   * mimetype cannot be served back from the media endpoint.
+   */
+  private mediaMimetype(type: string, content: BulkMessageContent): string {
+    const declared = content[type as 'image' | 'video' | 'audio' | 'document']?.mimetype;
+    if (declared) return declared;
+    if (type === 'image') return 'image/jpeg';
+    if (type === 'video') return 'video/mp4';
+    if (type === 'audio') return content.audio?.ptt ? 'audio/ogg; codecs=opus' : 'audio/mpeg';
+    return 'application/octet-stream';
   }
 
   private sendMessage(
@@ -811,14 +824,14 @@ export class BulkMessageService implements OnApplicationBootstrap {
           : engine.sendTextMessage(chatId, content.text || '');
       case 'image':
         return engine.sendImageMessage(chatId, {
-          mimetype: content.image?.mimetype || 'image/jpeg',
+          mimetype: this.mediaMimetype(type, content),
           data: stripBase64DataUri(content.image?.base64) || content.image?.url || '',
           caption: content.caption,
           mentions: content.mentions,
         });
       case 'video':
         return engine.sendVideoMessage(chatId, {
-          mimetype: content.video?.mimetype || 'video/mp4',
+          mimetype: this.mediaMimetype(type, content),
           data: stripBase64DataUri(content.video?.base64) || content.video?.url || '',
           caption: content.caption,
           mentions: content.mentions,
@@ -829,14 +842,14 @@ export class BulkMessageService implements OnApplicationBootstrap {
         // (see sendAudioMessage in baileys-messaging.ts). Dropping it here would accept the field and
         // then deliver an untagged voice note with nothing to say so.
         return engine.sendAudioMessage(chatId, {
-          mimetype: content.audio?.mimetype || (content.audio?.ptt ? 'audio/ogg; codecs=opus' : 'audio/mpeg'),
+          mimetype: this.mediaMimetype(type, content),
           data: stripBase64DataUri(content.audio?.base64) || content.audio?.url || '',
           ptt: content.audio?.ptt,
           mentions: content.mentions,
         });
       case 'document':
         return engine.sendDocumentMessage(chatId, {
-          mimetype: content.document?.mimetype || 'application/octet-stream',
+          mimetype: this.mediaMimetype(type, content),
           data: stripBase64DataUri(content.document?.base64) || content.document?.url || '',
           filename: content.document?.filename,
           caption: content.caption,

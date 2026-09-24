@@ -609,6 +609,23 @@ describe('BulkMessageService.processBatch', () => {
     );
   });
 
+  it('persists the mimetype the engine was given when a base64 item declares none', async () => {
+    const batch = makeBatch(1);
+    batch.messages = [{ chatId: 'c0@c.us', type: 'image', content: { image: { base64: 'AAAA' } } }];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ mimetype: 'image/jpeg', data: 'AAAA' }),
+    );
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ metadata: { media: { mimetype: 'image/jpeg', data: 'AAAA', filename: undefined } } }),
+    );
+  });
+
   it('runs the message:sending gate for each bulk message (bulk no longer bypasses moderation)', async () => {
     repo.findOne.mockResolvedValue(makeBatch(1));
 
