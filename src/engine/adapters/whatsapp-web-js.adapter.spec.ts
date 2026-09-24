@@ -658,6 +658,26 @@ describe('WhatsAppWebJsAdapter.getChatHistory enrichment (parity with the live p
     return adapter;
   };
 
+  // Chat.fetchMessages only caps the page when `limit > 0` (Chat.js), so a NaN, null or 0 limit
+  // returned every loaded message. The channel read already substitutes the default for the same case.
+  it.each([Number.NaN, null, 0, -5])('fetches the default page for a limit of %p, not every message', async limit => {
+    const chat = { fetchMessages: jest.fn().mockResolvedValue([]) };
+    const client = { getChatById: jest.fn().mockResolvedValue(chat) };
+
+    await readyAdapter(client).getChatHistory('621@c.us', limit as number, false);
+
+    expect(chat.fetchMessages).toHaveBeenCalledWith({ limit: 50 });
+  });
+
+  it('passes a usable limit through, truncated', async () => {
+    const chat = { fetchMessages: jest.fn().mockResolvedValue([]) };
+    const client = { getChatById: jest.fn().mockResolvedValue(chat) };
+
+    await readyAdapter(client).getChatHistory('621@c.us', 7.9, false);
+
+    expect(chat.fetchMessages).toHaveBeenCalledWith({ limit: 7 });
+  });
+
   it('populates location coordinates and resolves the quoted message for historical messages', async () => {
     const locMsg = {
       id: { _serialized: 'M1' },

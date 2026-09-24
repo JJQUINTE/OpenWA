@@ -713,6 +713,9 @@ export class WwebjsMessaging {
     signal?: AbortSignal,
   ): Promise<IncomingMessage[]> {
     this.host.ensureReady();
+    // Chat.fetchMessages only caps the page when `limit > 0` (Chat.js), so a 0/negative/NaN limit fails
+    // OPEN and returns every loaded message. Substitute the default, as getChannelMessages does.
+    const safeLimit = Number.isFinite(limit) && limit >= 1 ? Math.trunc(limit) : 50;
     const messages = await this.withPage('getChatHistory', async () => {
       const chat = await this.client().getChatById(chatId);
       // Unknown chat: getChatById resolves undefined rather than throwing. A chat this account cannot
@@ -721,7 +724,7 @@ export class WwebjsMessaging {
       if (!chat) {
         return [];
       }
-      return chat.fetchMessages({ limit });
+      return chat.fetchMessages({ limit: safeLimit });
     });
     const results: IncomingMessage[] = [];
     // Aggregate base64 budget across the whole pass: the per-message cap bounds ONE blob, but without
