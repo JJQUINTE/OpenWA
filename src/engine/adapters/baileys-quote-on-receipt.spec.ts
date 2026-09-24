@@ -203,6 +203,26 @@ describe('quoting a Baileys message the moment it is announced', () => {
       expect(options.quoted?.message?.conversation).toBe('after the edit');
     });
 
+    it('empties a message stored under its lid when the delete names the chat by phone', async () => {
+      const revoked = jest.fn();
+      const { events, messaging } = build(() => undefined, { revoked });
+      const byLid = inbound('TARGET');
+      byLid.key = { ...byLid.key, remoteJid: '99887@lid', remoteJidAlt: CHAT };
+      events.handleMessagesUpsert({ messages: [byLid], type: 'notify' });
+      await ticks();
+      release();
+      await ticks();
+
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+
+      expect(revoked).toHaveBeenCalledTimes(1);
+      expect((await store.getMessage('s1', 'TARGET'))?.message).toBeNull();
+      await expect(messaging.forwardMessage(CHAT, '628555@s.whatsapp.net', 'TARGET')).rejects.toBeInstanceOf(
+        MessageNotFoundError,
+      );
+    });
+
     it('refuses a consumer of the delete that quotes the deleted message at once', async () => {
       let reply: Promise<unknown> | undefined;
       const { events, messaging, sock } = build(() => undefined, {

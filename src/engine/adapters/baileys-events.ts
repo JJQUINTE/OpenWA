@@ -607,14 +607,19 @@ export class BaileysEvents {
    * checks neither the chat nor the sender of either (Utils/process-message.js), so the stored copy
    * changes only for one from the same chat and from the message's author. A group admin may delete
    * anyone's message, which nothing here can verify, so a group delete skips the author check.
-   * Compared in the neutral dialect, so a chat or sender seen by lid once and by phone once matches.
+   * Compared in the neutral dialect, and through each key's alt twin as targetsForeignMessage does, so
+   * a chat or sender seen by lid once and by phone once matches even when the pair is not yet known.
    */
   private mayChange(target: WAMessageKey, envelope: WAMessageKey, isDelete: boolean): boolean {
-    const chat = (key: WAMessageKey): string => this.host.toNeutralJid(key.remoteJid ?? '');
-    const author = (key: WAMessageKey): string =>
-      key.fromMe === true ? 'fromMe' : this.host.toNeutralJid(key.participant || key.remoteJid || '');
-    if (chat(target) !== chat(envelope)) return false;
-    return (isDelete && parseWaId(chat(target)).kind === 'group') || author(target) === author(envelope);
+    const neutral = (jids: Array<string | null | undefined>): string[] =>
+      jids.filter((jid): jid is string => !!jid).map(jid => this.host.toNeutralJid(jid));
+    const chat = (key: WAMessageKey): string[] => neutral([key.remoteJid, key.remoteJidAlt]);
+    const author = (key: WAMessageKey): string[] =>
+      key.fromMe === true ? ['fromMe'] : key.participant ? neutral([key.participant, key.participantAlt]) : chat(key);
+    const overlap = (a: string[], b: string[]): boolean => a.some(jid => b.includes(jid));
+    if (!overlap(chat(target), chat(envelope))) return false;
+    const inGroup = chat(target).some(jid => parseWaId(jid).kind === 'group');
+    return (isDelete && inGroup) || overlap(author(target), author(envelope));
   }
 
   handleMessagesUpdate(updates: Array<{ key?: { id?: string | null }; update?: { status?: number | null } }>): void {
