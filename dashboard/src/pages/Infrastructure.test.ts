@@ -98,6 +98,8 @@ const SAVED_BAILEYS: SavedConfig = { ...SAVED_CONFIG, engine: { ...SAVED_CONFIG.
 // Saved storage differs from the running one — the "saved, awaiting restart" state, with no pin.
 const SAVED_STORAGE_DRIFT: SavedConfig = { ...SAVED_CONFIG, storage: { ...SAVED_CONFIG.storage, type: 's3' } };
 
+const CONFIG_LOAD_ERROR = "Couldn't load the saved configuration, so it can't be edited here. Refresh to try again.";
+
 const PENDING_RESTART_NOTE = 'Saved, but not applied yet — restart the server for this change to take effect.';
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -285,8 +287,25 @@ test('a failed /config read offers no Save, so defaults cannot overwrite the sto
   overrides = { savedFails: true };
   renderInfrastructure();
 
-  await screen.findByText("Couldn't load the current infrastructure status. Refresh to try again.");
+  await screen.findByText(CONFIG_LOAD_ERROR);
   assert.ok(!screen.queryByRole('button', { name: 'Save Configuration' }), 'Save offered without the saved config');
+});
+
+// The backup only reads the running database, so a missing saved config must not take it away.
+test('a failed /config read names the config, and still offers the data backup export and import', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  resetFetchCalls();
+  overrides = { savedFails: true };
+  const { container } = renderInfrastructure();
+
+  await screen.findByText(CONFIG_LOAD_ERROR);
+  assert.ok(
+    !screen.queryByText("Couldn't load the current infrastructure status. Refresh to try again."),
+    'the status that did load is reported as failed',
+  );
+  assert.ok(container.querySelector('.data-migration-row input[type="file"]'), 'no backup import offered');
+  fireEvent.click(screen.getByRole('button', { name: 'Export data' }));
+  await waitFor(() => assert.ok(findFetchCall('GET', '/api/infra/export-data'), 'the backup export was not requested'));
 });
 
 test('the storage badge names local storage in the active language', async () => {

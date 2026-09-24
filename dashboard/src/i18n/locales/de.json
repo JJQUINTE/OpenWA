@@ -921,7 +921,8 @@
     "toasts": {
       "saveFailed": "Speichern fehlgeschlagen"
     },
-    "statusLoadError": "Der aktuelle Infrastrukturstatus konnte nicht geladen werden. Aktualisiere die Seite und versuche es erneut."
+    "statusLoadError": "Der aktuelle Infrastrukturstatus konnte nicht geladen werden. Aktualisiere die Seite und versuche es erneut.",
+    "configLoadError": "Die gespeicherte Konfiguration konnte nicht geladen werden und lässt sich hier daher nicht bearbeiten. Aktualisiere die Seite und versuche es erneut."
   },
   "plugins": {
     "title": "Plugins",

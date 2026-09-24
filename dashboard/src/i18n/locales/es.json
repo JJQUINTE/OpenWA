@@ -925,7 +925,8 @@
       "invalidFile": "Ese archivo no es una copia de seguridad de datos válida de OpenWA.",
       "importTooLarge": "La copia de seguridad supera el límite de la solicitud. Aumenta BODY_SIZE_LIMIT en el servidor e inténtalo de nuevo."
     },
-    "statusLoadError": "No se pudo cargar el estado actual de la infraestructura. Actualiza para reintentar."
+    "statusLoadError": "No se pudo cargar el estado actual de la infraestructura. Actualiza para reintentar.",
+    "configLoadError": "No se pudo cargar la configuración guardada, así que no se puede editar aquí. Actualiza para reintentar."
   },
   "plugins": {
     "title": "Plugins",

@@ -921,7 +921,8 @@
     "toasts": {
       "saveFailed": "Save Failed"
     },
-    "statusLoadError": "Couldn't load the current infrastructure status. Refresh to try again."
+    "statusLoadError": "Couldn't load the current infrastructure status. Refresh to try again.",
+    "configLoadError": "Couldn't load the saved configuration, so it can't be edited here. Refresh to try again."
   },
   "plugins": {
     "title": "Plugins",

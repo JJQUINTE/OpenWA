@@ -921,7 +921,8 @@
       "invalidFile": "该文件不是有效的 OpenWA 数据备份。",
       "importTooLarge": "备份超出请求大小限制。请在服务器上调高 BODY_SIZE_LIMIT 后重试。"
     },
-    "statusLoadError": "无法加载当前基础设施状态。请刷新重试。"
+    "statusLoadError": "无法加载当前基础设施状态。请刷新重试。",
+    "configLoadError": "无法加载已保存的配置，因此无法在此编辑。请刷新重试。"
   },
   "plugins": {
     "title": "插件",

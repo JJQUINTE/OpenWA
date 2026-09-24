@@ -921,7 +921,8 @@
       "invalidFile": "該檔案並非有效的 OpenWA 資料備份。",
       "importTooLarge": "備份超出請求大小限制。請在伺服器上調高 BODY_SIZE_LIMIT 後重試。"
     },
-    "statusLoadError": "無法載入目前的基礎設施狀態。請重新整理以重試。"
+    "statusLoadError": "無法載入目前的基礎設施狀態。請重新整理以重試。",
+    "configLoadError": "無法載入已儲存的設定，因此無法在此編輯。請重新整理以重試。"
   },
   "plugins": {
     "title": "外掛",

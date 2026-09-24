@@ -921,7 +921,8 @@
     "toasts": {
       "saveFailed": "Kaydetme Başarısız"
     },
-    "statusLoadError": "Mevcut altyapı durumu yüklenemedi. Yeniden denemek için sayfayı yenileyin."
+    "statusLoadError": "Mevcut altyapı durumu yüklenemedi. Yeniden denemek için sayfayı yenileyin.",
+    "configLoadError": "Kayıtlı yapılandırma yüklenemedi, bu yüzden burada düzenlenemiyor. Yeniden denemek için sayfayı yenileyin."
   },
   "plugins": {
     "title": "Eklentiler",

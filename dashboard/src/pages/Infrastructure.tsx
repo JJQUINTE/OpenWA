@@ -98,6 +98,38 @@ export function Infrastructure() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [infraStatus]);
 
+  // Data backup / restore, used to carry data across a database switch (#488). It reads and writes the
+  // running database only, so it is offered even when the saved config could not be read.
+  const dataBackupRow = (
+    <div className="data-migration-row">
+      <div>
+        <strong>{t('infrastructure.migration.backupTitle')}</strong>
+        <small>{t('infrastructure.migration.backupHint')}</small>
+      </div>
+      <div className="data-migration-actions">
+        <button className="btn-secondary btn-sm" onClick={dataBackup.exportBackup} disabled={dataBackup.migrating}>
+          {dataBackup.migrating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          {t('infrastructure.migration.export')}
+        </button>
+        <label className="btn-secondary btn-sm" style={{ cursor: dataBackup.migrating ? 'default' : 'pointer' }}>
+          <Upload size={14} />
+          {t('infrastructure.migration.import')}
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="hidden-file-input"
+            disabled={dataBackup.migrating}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) void dataBackup.importBackup(file);
+              e.target.value = '';
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+
   if (loading || configLoading) {
     return (
       <div className="infrastructure-page infra-loading">
@@ -112,16 +144,20 @@ export function Infrastructure() {
   // Likewise without the saved config: the database, storage and engine detail fields hydrate only
   // from it, and a Save sends every one of them.
   if (statusError || !infraStatus || !savedConfig) {
+    const configOnly = !statusError && !!infraStatus;
     return (
       <div className="infrastructure-page">
         <PageHeader title={t('infrastructure.title')} subtitle={t('infrastructure.subtitle')} />
         <div className="infra-card status-error-card">
           <AlertTriangle size={32} className="status-error-icon" />
-          <p className="status-error-text">{t('infrastructure.statusLoadError')}</p>
+          <p className="status-error-text">
+            {t(configOnly ? 'infrastructure.configLoadError' : 'infrastructure.statusLoadError')}
+          </p>
           <button className="btn-secondary status-error-retry" onClick={() => window.location.reload()}>
             {t('common.retry')}
           </button>
         </div>
+        {configOnly && <section className="infra-card">{dataBackupRow}</section>}
       </div>
     );
   }
@@ -337,38 +373,7 @@ export function Infrastructure() {
             <p className="muted-hint">{t('infrastructure.database.migrationsHint')}</p>
           </div>
 
-          {/* Data backup / restore — used to carry data across a database switch (#488). */}
-          <div className="data-migration-row">
-            <div>
-              <strong>{t('infrastructure.migration.backupTitle')}</strong>
-              <small>{t('infrastructure.migration.backupHint')}</small>
-            </div>
-            <div className="data-migration-actions">
-              <button
-                className="btn-secondary btn-sm"
-                onClick={dataBackup.exportBackup}
-                disabled={dataBackup.migrating}
-              >
-                {dataBackup.migrating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                {t('infrastructure.migration.export')}
-              </button>
-              <label className="btn-secondary btn-sm" style={{ cursor: dataBackup.migrating ? 'default' : 'pointer' }}>
-                <Upload size={14} />
-                {t('infrastructure.migration.import')}
-                <input
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden-file-input"
-                  disabled={dataBackup.migrating}
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) void dataBackup.importBackup(file);
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-            </div>
-          </div>
+          {dataBackupRow}
         </section>
 
         {/* Engine */}

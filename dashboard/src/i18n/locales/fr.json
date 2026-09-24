@@ -925,7 +925,8 @@
       "invalidFile": "Ce fichier n'est pas une sauvegarde de données OpenWA valide.",
       "importTooLarge": "La sauvegarde dépasse la limite de la requête. Augmentez BODY_SIZE_LIMIT sur le serveur, puis réessayez."
     },
-    "statusLoadError": "Impossible de charger l'état actuel de l'infrastructure. Actualisez pour réessayer."
+    "statusLoadError": "Impossible de charger l'état actuel de l'infrastructure. Actualisez pour réessayer.",
+    "configLoadError": "Impossible de charger la configuration enregistrée, elle ne peut donc pas être modifiée ici. Actualisez pour réessayer."
   },
   "plugins": {
     "title": "Plugins",
