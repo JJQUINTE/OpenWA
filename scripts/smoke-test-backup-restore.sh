@@ -21,6 +21,7 @@
 #       OPENWA_RESTORE_SNAPSHOT_DIR when that is set (skipped as root)
 #   (o) such a state dir under a read-only parent, a mount point in the container, is restored in
 #       place (skipped as root)
+#   (p) a symlinked database target or data dir is snapshotted as a copy of what the link points at
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -619,6 +620,50 @@ if [ "$(id -u)" -ne 0 ]; then
 else
   echo "SKIP: (n) and (o) running as root, which ignores the permission bits these cases rely on"
 fi
+
+echo ""
+echo "==> (p) a symlinked database target or data dir is snapshotted as a copy"
+# cp -R copies a symlink as the link itself, and the restore then writes through that link, which
+# would leave a snapshot showing the archive instead of the state it replaced.
+P="$WORK/p"
+mkdir -p "$P/src/data" "$P/real/data"
+make_fixture "$P/src/data/main.sqlite" "papa-archive-main"
+make_fixture "$P/src/data/openwa.sqlite" "papa-archive-data"
+(
+  cd "$P/src"
+  BACKUP_DIR="$P/out" "$BACKUP" >/dev/null
+)
+ARCHIVE_P="$(ls "$P"/out/openwa-backup-*.tar.gz)"
+make_fixture "$P/real/main.sqlite" "papa-live-main"
+make_fixture "$P/real/data/openwa.sqlite" "papa-live-data"
+ln -s "$P/real/main.sqlite" "$P/ext-main.sqlite"
+ln -s "$P/real/data" "$P/live"
+(
+  cd "$P"
+  MAIN_DATABASE_NAME="$P/ext-main.sqlite" DATABASE_NAME="$P/live/openwa.sqlite" OPENWA_DATA_DIR="$P/live" \
+    "$RESTORE" "$ARCHIVE_P" --force >/dev/null
+)
+SNAPSHOT_P="$(ls -d "$P"/ext-main.sqlite.pre-restore-*)"
+if [ -L "$SNAPSHOT_P" ]; then
+  fail "(p) the snapshot of a symlinked database is a link to the file the restore overwrote"
+fi
+if [ "$(db_fingerprint "$SNAPSHOT_P")" != "papa-live-main" ]; then
+  fail "(p) the snapshot does not hold the database the restore replaced"
+fi
+SNAPSHOT_P="$(ls -d "$P"/live.pre-restore-*)"
+if [ -L "$SNAPSHOT_P" ]; then
+  fail "(p) the snapshot of a symlinked data dir is a link to the directory the restore overwrote"
+fi
+if [ "$(db_fingerprint "$SNAPSHOT_P/openwa.sqlite")" != "papa-live-data" ]; then
+  fail "(p) the data-dir snapshot does not hold the data store the restore replaced"
+fi
+if [ "$(db_fingerprint "$P/ext-main.sqlite")" != "papa-archive-main" ]; then
+  fail "(p) the archived main DB was not restored"
+fi
+if [ "$(db_fingerprint "$P/live/openwa.sqlite")" != "papa-archive-data" ]; then
+  fail "(p) the archived data store was not restored"
+fi
+pass "(p) a symlinked database target and data dir are snapshotted as copies"
 
 echo ""
 echo "All smoke tests passed!"

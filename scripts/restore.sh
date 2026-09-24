@@ -202,7 +202,9 @@ snapshot_external() {
   done
   log "Snapshotting current $target -> $external_snapshot"
   mkdir -p "$snapshot_dir"
-  cp -pR "$target" "$external_snapshot"
+  # -H copies what a symlinked target points at. The restore writes through such a link, so a copy of
+  # the link itself would end up showing the archive instead of the state it replaced.
+  cp -pRH "$target" "$external_snapshot"
 }
 
 # restore_db <staged file> <target> <label>
@@ -305,7 +307,8 @@ if [ -d "$DATA_DIR" ] && [ -n "$(ls -A "$DATA_DIR" 2>/dev/null || true)" ]; then
   SAFETY="${SAFETY_DIR%/}/$(basename "$DATA_DIR").pre-restore-$RESTORE_TIMESTAMP"
   log "Snapshotting current data dir -> $SAFETY"
   mkdir -p "$SAFETY_DIR"
-  cp -pR "$DATA_DIR" "$SAFETY"
+  # -H for a symlinked data dir, as in snapshot_external.
+  cp -pRH "$DATA_DIR" "$SAFETY"
 fi
 
 mkdir -p "$DATA_DIR"
