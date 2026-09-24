@@ -24,6 +24,8 @@
 #   (p) a symlinked database target or data dir is snapshotted as a copy of what the link points at
 #   (q) a leftover -wal is cleared before a database is restored and kept in its snapshot (skipped
 #       without sqlite3)
+#   (r) a symlinked state dir is archived by content and restored through the link, and an archive
+#       member that is itself a symlink is refused
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -712,6 +714,69 @@ if [ "$HAS_SQLITE3" -eq 1 ]; then
 else
   echo "SKIP: (q) sqlite3 not found on this host, so there is no WAL-mode database to build"
 fi
+
+echo ""
+echo "==> (r) a symlinked state dir is archived by content and refilled in place"
+# An operator who keeps media on another disk links ./data/media there. cp -R archived the link and
+# not the files, and the restore replaced the link with a real directory on the data disk, leaving
+# the linked disk with the old files.
+R="$WORK/r"
+mkdir -p "$R/src/data" "$R/src-disk/media" "$R/live" "$R/disk/media"
+make_fixture "$R/src/data/main.sqlite" "romeo-archive-main"
+make_fixture "$R/src/data/openwa.sqlite" "romeo-archive-data"
+printf 'romeo-archive\n' >"$R/src-disk/media/a.jpg"
+ln -s "$R/src-disk/media" "$R/src/data/media"
+(
+  cd "$R/src"
+  BACKUP_DIR="$R/out" "$BACKUP" >/dev/null
+)
+ARCHIVE_R="$(ls "$R"/out/openwa-backup-*.tar.gz)"
+if ! tar -tzf "$ARCHIVE_R" | grep -qx './media/a.jpg'; then
+  fail "(r) backup archived the symlinked media dir as a link instead of its files"
+fi
+printf 'romeo-live\n' >"$R/disk/media/m0"
+ln -s "$R/disk/media" "$R/live/media"
+# restore_r <archive>: a forced restore over $R/live. Output lands in OUT, the exit code in RC.
+restore_r() {
+  set +e
+  OUT="$(cd "$R" && MAIN_DATABASE_NAME="$R/live/main.sqlite" DATABASE_NAME="$R/live/openwa.sqlite" \
+    OPENWA_DATA_DIR="$R/live" "$RESTORE" "$1" --force 2>&1)"
+  RC=$?
+  set -e
+}
+restore_r "$ARCHIVE_R"
+if [ "$RC" -ne 0 ]; then
+  fail "(r) restore over a symlinked media dir failed: $OUT"
+fi
+if [ ! -L "$R/live/media" ]; then
+  fail "(r) the restore replaced the symlinked media dir with a real directory"
+fi
+if [ "$(cat "$R/disk/media/a.jpg" 2>/dev/null || true)" != "romeo-archive" ] || [ -e "$R/disk/media/m0" ]; then
+  fail "(r) the directory the link points at was not refilled with the archived media"
+fi
+if [ "$(cat "$R"/live/media.pre-restore-*/m0 2>/dev/null || true)" != "romeo-live" ]; then
+  fail "(r) the snapshot does not hold the media the restore replaced"
+fi
+# An archive written before backup.sh followed such links carries the link itself, which on this host
+# may point at the very directory being emptied. It is refused before anything is touched.
+mkdir -p "$R/linked"
+tar -xzf "$ARCHIVE_R" -C "$R/linked"
+rm -rf "${R:?}/linked/media"
+ln -s "$R/disk/media" "$R/linked/media"
+tar -czf "$R/linked.tar.gz" -C "$R/linked" .
+rm -f "$R/live/main.sqlite"
+make_fixture "$R/live/main.sqlite" "romeo-live-main"
+restore_r "$R/linked.tar.gz"
+if [ "$RC" -eq 0 ]; then
+  fail "(r) restore accepted an archive whose media member is a symlink"
+fi
+if ! printf '%s' "$OUT" | grep -q 'symlink'; then
+  fail "(r) the refusal does not say the archive member is a symlink"
+fi
+if [ "$(db_fingerprint "$R/live/main.sqlite")" != "romeo-live-main" ] || [ ! -f "$R/disk/media/a.jpg" ]; then
+  fail "(r) the refused restore changed the install"
+fi
+pass "(r) a symlinked media dir is archived by content, refilled through the link, and a linked member is refused"
 
 echo ""
 echo "All smoke tests passed!"

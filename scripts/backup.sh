@@ -160,33 +160,35 @@ else
   REQUIRED_MEMBERS+=("./openwa.sqlite")
 fi
 
+# The state directories below are copied with -H: a directory an operator moved to another disk and
+# linked back is archived by its content. Without it the archive held only the link, with no data.
 if [ -d "$SESSIONS_DIR" ]; then
   log "Backing up whatsapp-web.js sessions"
-  cp -pR "$SESSIONS_DIR" "$STAGE/sessions"
+  cp -pRH "$SESSIONS_DIR" "$STAGE/sessions"
 else
   log "WARN: $SESSIONS_DIR not found — skipping sessions"
 fi
 
 if [ -d "$BAILEYS_DIR" ]; then
   log "Backing up Baileys authentication state"
-  cp -pR "$BAILEYS_DIR" "$STAGE/baileys"
+  cp -pRH "$BAILEYS_DIR" "$STAGE/baileys"
 elif [ "${ENGINE_TYPE:-}" = "baileys" ]; then
   log "WARN: ENGINE_TYPE=baileys but $BAILEYS_DIR was not found — restored sessions will require pairing"
 fi
 
 if [ -d "$MEDIA_DIR" ]; then
   log "Backing up local media"
-  cp -pR "$MEDIA_DIR" "$STAGE/media"
+  cp -pRH "$MEDIA_DIR" "$STAGE/media"
 fi
 
 if [ -d "$PLUGIN_PACKAGES_DIR" ]; then
   log "Backing up installed plugin packages"
-  cp -pR "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
+  cp -pRH "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
 fi
 
 if [ -d "$PLUGIN_STATE_DIR" ]; then
   log "Backing up plugin registry and persisted state"
-  cp -pR "$PLUGIN_STATE_DIR" "$STAGE/plugin-state"
+  cp -pRH "$PLUGIN_STATE_DIR" "$STAGE/plugin-state"
 fi
 
 if [ -f "$GENERATED_ENV" ]; then

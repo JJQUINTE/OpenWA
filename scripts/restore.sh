@@ -168,11 +168,13 @@ replace_tree() {
     return
   fi
   log "Restoring $label"
-  if [ -d "$target_dir" ] && [ ! -L "$target_dir" ]; then
+  if [ -d "$target_dir" ]; then
     # Empty the directory and refill it rather than remove it: it may be a mount point (a volume under
-    # the container's read-only root), which can be neither removed nor re-created.
-    find "$target_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    cp -pR "$source_dir/." "$target_dir"
+    # the container's read-only root), which can be neither removed nor re-created. A symlink to a
+    # directory is refilled through the link, so an operator's layout on another disk survives. The
+    # trailing slash makes find descend into the link's target instead of stopping at the link.
+    find "$target_dir/" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -pR "$source_dir/." "$target_dir/"
   else
     rm -rf -- "$target_dir"
     mkdir -p "$(dirname "$target_dir")"
@@ -284,6 +286,17 @@ while IFS= read -r entry; do
   esac
 done < <(tar -tzf "$ARCHIVE")
 tar -xzf "$ARCHIVE" -C "$STAGE"
+
+# backup.sh archives state directories by content. An archive from before it followed symlinks
+# carries a link instead, which on this host may point at the very directory the restore empties
+# before refilling it from that link. Refuse it before any existing state is touched.
+for member in sessions baileys media plugin-packages plugin-state; do
+  if [ -L "$STAGE/$member" ]; then
+    log "ERROR: archive member $member/ is a symlink, not a directory: the backup holds no data for it"
+    log "       re-take the backup with this version of backup.sh, or extract the archive and restore by hand"
+    exit 1
+  fi
+done
 
 # A backup taken without sqlite3 .backup carries this marker: the database snapshots were
 # plain-copied from a possibly-live app and may be torn. Warn loudly and continue — unless
