@@ -25,11 +25,16 @@ const SECRET_KEYS: ReadonlySet<string> = new Set(['password', 'secret', 'token',
  * the whole proxy config, password included, as its only enumerable property. At debug level that
  * went to stdout verbatim, which on a shipped deployment means the proxy password in the container
  * log. Bounded depth: these records nest a couple of levels at most, and a logger must not walk an
- * arbitrary graph on the wire path.
+ * arbitrary graph on the wire path. An Error's message and stack are not enumerable, so they are copied
+ * explicitly: they are what an operator raised the log level to see.
  */
 function redactSecrets(value: unknown, depth = 0): unknown {
   if (depth > 4 || value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) return value.map(v => redactSecrets(v, depth + 1));
+  if (value instanceof Error) {
+    const own = redactSecrets({ ...value }, depth) as Record<string, unknown>;
+    return { name: value.name, message: value.message, stack: value.stack, ...own };
+  }
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([k, v]) => [
       k,
@@ -59,9 +64,10 @@ export function createBaileysLogger(): BaileysLogger {
       if (BAILEYS_LOG_LEVELS.indexOf(lvl) < threshold) {
         return;
       }
-      const rec = redactSecrets(
-        typeof obj === 'string' ? { msg: obj } : { ...(obj as Record<string, unknown>), ...(msg ? { msg } : {}) },
-      ) as Record<string, unknown>;
+      const rec =
+        typeof obj === 'string'
+          ? { msg: obj }
+          : { ...(redactSecrets(obj) as Record<string, unknown>), ...(msg ? { msg } : {}) };
       process.stdout.write(
         JSON.stringify({ ts: new Date().toISOString(), level: lvl, context: 'baileys-wire', ...rec }) + '\n',
       );
