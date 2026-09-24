@@ -950,3 +950,35 @@ describe('PluginsService — recovering a plugin whose code went missing', () =>
     expect(fs.existsSync(path.join(pluginsDir, 'svc-plg', 'legacy.js'))).toBe(true);
   });
 });
+
+describe('PluginsService remote catalog', () => {
+  const fetchMock = fetchSafeBuffer as unknown as jest.Mock;
+  const service = (): PluginsService => {
+    const config = {
+      get: (k: string) => (k === 'plugins.catalogUrl' ? 'https://catalog.example/plugins.json' : undefined),
+    } as unknown as ConfigService;
+    return new PluginsService({ getAllPlugins: () => [] } as unknown as PluginLoaderService, config);
+  };
+  const serveOnce = (json: string): void => {
+    fetchMock.mockImplementationOnce(() => Promise.resolve(Buffer.from(json)));
+  };
+
+  it('annotates a well-formed catalog', async () => {
+    serveOnce('[{"id":"a","name":"A","version":"1.0.0"}]');
+    await expect(service().getCatalog()).resolves.toEqual([
+      { id: 'a', name: 'A', version: '1.0.0', installed: false, installedVersion: null, updateAvailable: false },
+    ]);
+  });
+
+  it.each(['[null]', '[{"id":"a","name":"A","version":"1.0.0"},5]', '[[]]'])(
+    'answers 400, not 500, for a catalog with a non-object entry (%s)',
+    async json => {
+      serveOnce(json);
+      const err: unknown = await service()
+        .getCatalog()
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).message).toMatch(/Invalid plugin catalog JSON/);
+    },
+  );
+});

@@ -458,6 +458,9 @@ export class PluginsService {
     try {
       const parsed: unknown = JSON.parse(raw.toString('utf8'));
       if (!Array.isArray(parsed)) throw new Error('catalog is not a JSON array');
+      if (!parsed.every(e => typeof e === 'object' && e !== null && !Array.isArray(e))) {
+        throw new Error('catalog entries must be JSON objects');
+      }
       entries = parsed as CatalogEntry[];
     } catch (error) {
       throw new BadRequestException(
