@@ -102,7 +102,7 @@ test('PluginConfigUi replies to config:get with localized schema and locale', as
           },
         },
       },
-    },
+    } as unknown as Plugin,
   ];
 
   renderPlugins();
@@ -114,17 +114,17 @@ test('PluginConfigUi replies to config:get with localized schema and locale', as
   rtl.fireEvent.click(configureButton);
 
   // Wait for the iframe to be rendered
-  let iframe: HTMLIFrameElement | null = null;
-  await rtl.waitFor(() => {
-    iframe = document.querySelector('iframe');
-    assert.ok(iframe, 'ConfigUi iframe not found in DOM');
+  const iframe = await rtl.waitFor(() => {
+    const el = document.querySelector('iframe');
+    assert.ok(el, 'ConfigUi iframe not found in DOM');
+    return el;
   });
 
   // We spy on the iframe's contentWindow postMessage
   // JSDOM creates an empty contentWindow for the iframe
-  let postedMessage: Record<string, unknown> | null = null;
-  iframe.contentWindow!.postMessage = (message: unknown) => {
-    postedMessage = message as Record<string, unknown>;
+  let postedMessage: any = null;
+  iframe.contentWindow!.postMessage = (message: any) => {
+    postedMessage = message;
   };
 
   // Dispatch the handshake message from the iframe to the window
