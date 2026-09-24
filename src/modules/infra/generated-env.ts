@@ -28,3 +28,14 @@ export function readGeneratedEnv(): Record<string, string> {
   const envPath = generatedEnvPath();
   return fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
 }
+
+/**
+ * `value` in the form dotenv reads back unchanged, or `undefined` when no form does. dotenv takes an
+ * unquoted `#` as a comment and strips outer quotes and whitespace, so such a value is quoted; any
+ * other value stays bare, which keeps existing files and scripts/lib-env.sh (plain lines only) as-is.
+ */
+export function encodeGeneratedEnvValue(key: string, value: string): string | undefined {
+  return [value, `'${value}'`, `"${value}"`, `\`${value}\``].find(
+    form => dotenv.parse(`${key}=${form}`)[key] === value,
+  );
+}

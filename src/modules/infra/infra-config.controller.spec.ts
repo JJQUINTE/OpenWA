@@ -260,6 +260,45 @@ describe('InfraConfigController.saveConfig rejects values that would inject extr
   });
 });
 
+describe('InfraConfigController.saveConfig writes values the next boot reads back unchanged', () => {
+  const newController = () => new InfraConfigController({} as never, {} as never, {} as never);
+
+  function savedPassword(password: string): { line: string | undefined; parsed: string | undefined } {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({ database: { type: 'postgres', builtIn: false, host: 'db', password } } as never);
+    const content = ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+    return {
+      line: content.split('\n').find(l => l.startsWith('DATABASE_PASSWORD=')),
+      parsed: jest.requireActual<typeof import('dotenv')>('dotenv').parse(content).DATABASE_PASSWORD,
+    };
+  }
+
+  // dotenv reads an unquoted `#` as a comment and trims outer quotes and whitespace, so a raw
+  // `KEY=value` line would boot with a different secret than the one saved.
+  it.each(['S3cr#tPass', ' spaced ', "'quoted'", '"dq"', 'p\\nq', `it's#`, `a'b"c#`])(
+    'round-trips %j through dotenv',
+    password => {
+      expect(savedPassword(password).parsed).toBe(password);
+    },
+  );
+
+  it('keeps a value that needs no quoting bare', () => {
+    expect(savedPassword('Str0ng!Passw0rd').line).toBe('DATABASE_PASSWORD=Str0ng!Passw0rd');
+  });
+
+  it('refuses a value no dotenv form can carry, writing nothing', () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    expect(() =>
+      newController().saveConfig({
+        database: { type: 'postgres', builtIn: false, host: 'db', password: `a'b"c\`d#` },
+      } as never),
+    ).toThrow(BadRequestException);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+});
+
 describe('InfraConfigController.saveConfig engine selection (persist ENGINE_TYPE — Infrastructure tile)', () => {
   const engineFactory = {
     getAvailableEngines: () => [{ id: 'whatsapp-web.js' }, { id: 'baileys' }],

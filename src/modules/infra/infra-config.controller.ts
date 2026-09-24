@@ -27,7 +27,7 @@ import { assertNoDefaultSecretsInProduction } from '../../config/bootstrap-secur
 import { BLANK_SHADOWED_ENV_KEYS, isEnvPinned, isOsProvidedEnv } from '../../config/env-precedence';
 import * as fs from 'fs';
 import * as path from 'path';
-import { generatedEnvPath, readGeneratedEnv } from './generated-env';
+import { encodeGeneratedEnvValue, generatedEnvPath, readGeneratedEnv } from './generated-env';
 import {
   applyDatabaseSection,
   applyEngineSection,
@@ -333,7 +333,17 @@ export class InfraConfigController {
   private persistGeneratedEnv(envPath: string, merged: Record<string, string>): void {
     const body = Object.keys(merged)
       .sort()
-      .map(key => `${key}=${merged[key]}`);
+      .map(key => {
+        // Quoted where a raw line would read back differently (a `#` in a password would otherwise
+        // truncate it on the next boot); refused, before anything is written, where no form can carry it.
+        const encoded = encodeGeneratedEnvValue(key, merged[key]);
+        if (encoded === undefined) {
+          throw new BadRequestException(
+            `Invalid configuration value for ${key}: it cannot be stored so that it reads back unchanged`,
+          );
+        }
+        return `${key}=${encoded}`;
+      });
     const contents = [
       '# OpenWA Configuration',
       `# Generated at ${new Date().toISOString()}`,
