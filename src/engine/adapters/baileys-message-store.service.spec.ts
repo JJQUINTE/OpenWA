@@ -214,6 +214,74 @@ describe('BaileysMessageStoreService', () => {
     });
   });
 
+  describe('a read issued while the write is in flight', () => {
+    /** Hold the next upsert until released: the database round trip a reader can land inside. */
+    const holdNextUpsert = (): { release: () => void; fail: (err: Error) => void } => {
+      let release!: () => void;
+      let fail!: (err: Error) => void;
+      const gate = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      const real = repo.upsert.bind(repo);
+      jest.spyOn(repo, 'upsert').mockImplementationOnce(async (...args: Parameters<typeof real>) => {
+        await gate;
+        return real(...args);
+      });
+      return { release, fail };
+    };
+    const ticks = async (): Promise<void> => {
+      for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
+    };
+
+    beforeEach(() => seedSession('s1'));
+
+    it('getMessage waits for the write', async () => {
+      const held = holdNextUpsert();
+      const write = service.put('s1', msg('M1'));
+      const read = service.getMessage('s1', 'M1');
+      await ticks();
+      held.release();
+      await write;
+      expect((await read)?.key?.id).toBe('M1');
+    });
+
+    it('getMessages waits for the write', async () => {
+      const held = holdNextUpsert();
+      const write = service.put('s1', msg('M1'));
+      const read = service.getMessages('s1', ['M1', 'OTHER']);
+      await ticks();
+      held.release();
+      await write;
+      expect((await read).map(m => m.key.id)).toEqual(['M1']);
+    });
+
+    it('a failed write rejects put and leaves the read to report the message missing', async () => {
+      const held = holdNextUpsert();
+      const write = service.put('s1', msg('M1'));
+      const read = service.getMessage('s1', 'M1');
+      await ticks();
+      held.fail(new Error('disk full'));
+      await expect(write).rejects.toThrow('disk full');
+      expect(await read).toBeNull();
+    });
+
+    it('a read waits for the latest write of an id, not an earlier failed one', async () => {
+      const first = holdNextUpsert();
+      const firstWrite = service.put('s1', msg('M1'));
+      await ticks();
+      const second = holdNextUpsert();
+      const secondWrite = service.put('s1', msg('M1'));
+      first.fail(new Error('disk full'));
+      await expect(firstWrite).rejects.toThrow('disk full');
+      const read = service.getMessage('s1', 'M1');
+      await ticks();
+      second.release();
+      await secondWrite;
+      expect((await read)?.key?.id).toBe('M1');
+    });
+  });
+
   it('clearSession removes only that session', async () => {
     await seedSession('s1');
     await seedSession('s2');

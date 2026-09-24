@@ -7,7 +7,11 @@ import type { ChatStateStore } from '../adapters/baileys-chat-state-store.servic
  * interface (not the concrete Nest service) so it stays unit-testable with a fake.
  */
 export interface BaileysMessageStore {
-  /** Persist a message (idempotent on the same id) so it can be referenced by reply/forward/react/delete. */
+  /**
+   * Persist a message (idempotent on the same id) so it can be referenced by reply/forward/react/delete.
+   * A read of the id issued any time after this is called waits for the write, so the message is
+   * readable from the moment its write starts.
+   */
   put(sessionId: string, msg: WAMessage): Promise<void>;
   /** Look up a previously-seen message by its id, or null. */
   getMessage(sessionId: string, messageId: string): Promise<WAMessage | null>;
