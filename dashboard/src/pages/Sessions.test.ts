@@ -391,6 +391,32 @@ test('creating a session issues POST /api/sessions with the entered name', async
   await screen.findByText('backup-bot');
 });
 
+test('Enter in the name field follows the same gate as the Create button', async () => {
+  const { screen, fireEvent, waitFor, within } = rtl;
+  resetFetchCalls();
+  renderSessions();
+
+  await screen.findByText('new-device');
+  fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+  const dialog = await screen.findByRole('dialog');
+  const input = within(dialog).getByPlaceholderText('e.g., marketing-bot');
+  const posted = () => fetchCalls.filter(c => c.method === 'POST' && c.path === '/api/sessions').map(c => c.body);
+
+  // A name the form flags as invalid is not posted on Enter either.
+  fireEvent.change(input, { target: { value: 'ab' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  assert.deepEqual(posted(), [], 'Enter posted a name the Create button refuses');
+
+  // A second Enter while the first create is in flight does not post the same name again.
+  fireEvent.change(input, { target: { value: 'enter-bot' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  await screen.findByText('enter-bot');
+  await waitFor(() => assert.ok(!screen.queryByRole('dialog')));
+  assert.deepEqual(posted(), [{ name: 'enter-bot' }]);
+});
+
 test('opening the proxy modal fetches GET /api/sessions/:id/proxy', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();

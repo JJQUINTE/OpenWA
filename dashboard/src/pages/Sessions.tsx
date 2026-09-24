@@ -568,6 +568,9 @@ export function Sessions() {
   // One term: isValidProxyUrl rejects '' too, so the emptiness check was redundant, and its
   // `string && boolean` shape widened this to `boolean | ""`, which the disabled prop rejects.
   const createProxyInvalid = useProxy && !isValidProxyUrl(createProxyUrl.trim());
+  // Shared by the Create button and the name field's Enter key, which would otherwise post a name
+  // the button refuses, or post the same name twice while the first create is in flight.
+  const createDisabled = creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid;
 
   if (loading) {
     return (
@@ -659,11 +662,7 @@ export function Sessions() {
               <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                 {t('common.cancel')}
               </button>
-              <button
-                className="btn-primary"
-                onClick={handleCreate}
-                disabled={creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid}
-              >
+              <button className="btn-primary" onClick={handleCreate} disabled={createDisabled}>
                 {creating ? <Loader2 className="animate-spin" size={16} /> : t('common.create')}
               </button>
             </>
@@ -679,7 +678,7 @@ export function Sessions() {
               const value = e.target.value.toLowerCase().replace(/\s+/g, '-');
               setNewSessionName(value);
             }}
-            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            onKeyDown={e => e.key === 'Enter' && !createDisabled && handleCreate()}
           />
           <p className="input-hint">
             <Trans i18nKey="sessions.create.hint" components={{ code: <code /> }} />
