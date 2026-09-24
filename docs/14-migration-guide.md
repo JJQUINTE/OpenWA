@@ -518,6 +518,13 @@ migrateSqliteToPostgres(config)
 
 ### Step-by-Step Migration
 
+This flow runs the legacy script on the host, so the host must be able to read the SQLite file and
+reach the PostgreSQL server. The shipped production compose file allows neither: its SQLite file lives
+in the `openwa-data` volume, and the built-in `postgres` service publishes no host port. Use the
+API-based migration above there. What follows moves `docker-compose.dev.yml` (which bind-mounts
+`./data`) to a PostgreSQL server of your own: add `-f docker-compose.dev.yml` to each `docker compose`
+command. On a bare-metal install, stop and start the process where it says `docker compose`.
+
 ```bash
 # Step 1: Stop OpenWA
 docker compose down
@@ -525,27 +532,34 @@ docker compose down
 # Step 2: Backup current data (both databases + session auth + media)
 ./scripts/backup.sh
 
-# Step 3: Setup PostgreSQL (if not exists) — the built-in service lives behind a compose profile
-docker compose --profile postgres up -d postgres
+# Step 3: Point OpenWA at PostgreSQL in the project's .env. docker-compose.dev.yml forwards these
+#         keys to the app, and a bare-metal start reads the file itself. DATABASE_HOST is the
+#         address the APP connects to, so never localhost for a container.
+#   DATABASE_TYPE=postgres
+#   DATABASE_HOST=db.example.com
+#   DATABASE_PORT=5432
+#   DATABASE_NAME=openwa
+#   DATABASE_USERNAME=openwa
+#   DATABASE_PASSWORD=<strong password>
+#   DATABASE_SYNCHRONIZE=false   # docker-compose.dev.yml defaults it to true
 
-# Step 4: Run the migration — save the "Migration Script (Legacy)" example above as
-#         migrate-sqlite-to-postgres.ts first; it is not shipped in the repo
-npx ts-node migrate-sqlite-to-postgres.ts
+# Step 4: Start OpenWA once so its migrations create the schema the script writes into, then stop it
+docker compose up -d
+curl http://localhost:2785/api/health   # repeat until it answers
+docker compose down
 
-# Step 5: Update environment
-export DATABASE_TYPE=postgres
-export DATABASE_HOST=localhost
-export DATABASE_PORT=5432
-export DATABASE_NAME=openwa
-export DATABASE_USERNAME=user
-export DATABASE_PASSWORD=pass
+# Step 5: Copy the rows. Save the "Migration Script (Legacy)" example above as
+#         migrate-sqlite-to-postgres.ts first; it is not shipped in the repo. SQLITE_PATH and
+#         DATABASE_URL are inputs to the script only.
+export DATABASE_URL='postgresql://openwa:<strong password>@db.example.com:5432/openwa'
+SQLITE_PATH=./data/openwa.sqlite npx ts-node migrate-sqlite-to-postgres.ts
 
 # Step 6: Verify migration
-psql -h "$DATABASE_HOST" -U "$DATABASE_USERNAME" -d "$DATABASE_NAME" -c "SELECT COUNT(*) FROM sessions;"
-psql -h "$DATABASE_HOST" -U "$DATABASE_USERNAME" -d "$DATABASE_NAME" -c "SELECT COUNT(*) FROM messages;"
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM sessions;"
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM messages;"
 
 # Step 7: Start with PostgreSQL
-docker compose --profile postgres up -d
+docker compose up -d
 
 # Step 8: Verify functionality
 curl http://localhost:2785/api/health
