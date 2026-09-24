@@ -491,12 +491,17 @@ export class BaileysEvents {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
-      if (msg.key.fromMe === true) {
-        this.host.getOnMessageCreate()?.(incoming);
-      } else {
-        this.host.getOnMessage()?.(incoming);
+      // Its delete was announced first and found nothing to clear, so announcing the message now, or
+      // leaving its text as the chat preview, would publish what the sender took back.
+      if (!deleted) {
+        if (msg.key.fromMe === true) {
+          this.host.getOnMessageCreate()?.(incoming);
+        } else {
+          this.host.getOnMessage()?.(incoming);
+        }
       }
       this.host.recordMessage(msg);
+      if (deleted) this.host.recordMessageEdit(remoteJid, storedId, '');
     } catch (err) {
       this.host.logger.error(
         `Unhandled error processing inbound message (id=${msg.key?.id ?? 'unknown'}); dropping`,

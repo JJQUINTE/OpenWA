@@ -36,6 +36,8 @@ describe('quoting a Baileys message the moment it is announced', () => {
   let upsert: jest.SpyInstance;
   /** One release per media download started, in call order: each download is held until released. */
   let downloads: Array<() => void>;
+  /** Every chat preview write, in order: `record:<id>` for a message, `edit:<id>:<text>` for an edit. */
+  let preview: string[];
   const ticks = async (): Promise<void> => {
     for (let i = 0; i < 20; i++) await new Promise<void>(resolve => setImmediate(resolve));
   };
@@ -51,6 +53,7 @@ describe('quoting a Baileys message the moment it is announced', () => {
     repo = ds.getRepository(BaileysStoredMessage);
     store = new BaileysMessageStoreService(repo);
     downloads = [];
+    preview = [];
     await ds
       .getRepository(Session)
       .save(ds.getRepository(Session).create({ id: 's1', name: 's1', status: SessionStatus.READY, config: {} }));
@@ -105,8 +108,9 @@ describe('quoting a Baileys message the moment it is announced', () => {
       getFetchDispatcher: () => undefined,
       inboundLimiter: new ConcurrencyLimiter(4),
       recordKeyLidMappings: () => undefined,
-      recordMessage: () => undefined,
-      recordMessageEdit: () => undefined,
+      recordMessage: (m: WAMessage) => preview.push(`record:${m.key.id}`),
+      recordMessageEdit: (_chatId: string, messageId: string, text: string) =>
+        preview.push(`edit:${messageId}:${text}`),
       putStoredMessage: (m: WAMessage) => store.put('s1', m),
       getStoredMessage: (id: string) => store.getMessage('s1', id),
       updateStoredMessage: (id: string, change: (stored: WAMessage) => WAMessage | null) =>
@@ -219,11 +223,9 @@ describe('quoting a Baileys message the moment it is announced', () => {
   describe('a delete for everyone that arrives while the original is still downloading its media', () => {
     beforeEach(() => release()); // the held step here is the download, not the store write
 
-    it('keeps the content out of the store and out of a quote of the original announced after it', async () => {
-      let reply: Promise<unknown> | undefined;
-      const { events, messaging, sock } = build(m => {
-        reply = messaging.replyToMessage(CHAT, m.id, 'ok').catch((err: unknown) => err);
-      });
+    it('keeps the content out of the store, out of the chat preview and out of any announcement', async () => {
+      const heard = jest.fn();
+      const { events, messaging } = build(heard);
       events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
       await ticks();
       events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
@@ -232,9 +234,11 @@ describe('quoting a Baileys message the moment it is announced', () => {
       downloads[0]();
       await ticks();
 
-      expect(await reply).toBeInstanceOf(MessageNotFoundError);
-      expect(sock.sendMessage).not.toHaveBeenCalled();
+      expect(heard).not.toHaveBeenCalled();
       expect(writtenContents('TARGET')).toEqual([null]);
+      // The delete found no preview to clear, so the original, recorded after it, must not restore one.
+      expect(preview).toEqual(['edit:TARGET:', 'record:TARGET', 'edit:TARGET:']);
+      await expect(messaging.replyToMessage(CHAT, 'TARGET', 'ok')).rejects.toBeInstanceOf(MessageNotFoundError);
     });
 
     it('keeps a repeat delivery that passed the repeat check from restoring the content', async () => {
