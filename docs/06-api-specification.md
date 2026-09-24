@@ -6944,7 +6944,7 @@ Every registered webhook receives an HTTP `POST` with a JSON body of this shape:
   "event": "message.received",
   "timestamp": "2026-02-02T10:00:00.000Z",
   "sessionId": "my-session",
-  "idempotencyKey": "msg_my-session_3EB0ABC123",
+  "idempotencyKey": "msg_my-session_3EB0ABC123_f1e2d3c4-b5a6-7890-1234-567890abcdef",
   "deliveryId": "dlv_550e8400-e29b-41d4-a716-446655440000",
   "data": {}
 }
@@ -7040,11 +7040,11 @@ Every delivery includes:
 | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `X-OpenWA-Event`           | The event name (mirrors `event`)                                                                             |
 | `X-OpenWA-Idempotency-Key` | Content-derived key; **stable across retries** of the same occurrence — dedupe on this                       |
-| `X-OpenWA-Delivery-Id`     | A fresh `dlv_<uuid>` generated **per delivery** (differs per retry and per webhook) — for tracing, not dedup |
+| `X-OpenWA-Delivery-Id`     | `dlv_<uuid>` per webhook per event, **same on every automatic retry**; replays get a new one. Not for dedup. |
 | `X-OpenWA-Retry-Count`     | Retry attempt number (`0` = first attempt)                                                                   |
 | `X-OpenWA-Signature`       | HMAC (only when a secret is set)                                                                             |
 
-**Idempotency key derivation.** The key is content-derived so duplicates of the same logical event collapse to one value:
+**Idempotency key derivation.** The key is content-derived so duplicates of the same logical event collapse to one value. Every key below is then suffixed with `_{webhookId}`, so two webhooks subscribed to the same event never share a key:
 
 - `message.received` / `message.sent`: `msg_{sessionId}_{messageId}`
 - `message.ack`: `ack_{sessionId}_{messageId}_{status}`
