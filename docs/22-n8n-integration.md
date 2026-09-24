@@ -285,8 +285,12 @@ Always use the correct format for chat IDs:
    whatsapp-web.js and `call.received` is not reliable there (see the note under the trigger event
    table above)
 7. Ask OpenWA which side dropped the event:
-   `GET /api/webhooks/delivery-failures?sessionId={sessionId}` (ADMIN key). A row means OpenWA
-   delivered and n8n rejected it; an empty list means the event never reached delivery at all
+   `GET /api/webhooks/delivery-failures?sessionId={sessionId}` (ADMIN key). A row with an HTTP
+   `lastStatusCode` means OpenWA delivered and n8n rejected it. A row without one and with
+   `attempts: 0` was never sent (shed under load, dropped at shutdown, over the payload size cap, or
+   failed before sending; a shed or shutdown row is replayed later); with attempts, n8n timed out or
+   was unreachable. An empty list means nothing has failed permanently yet: retries still in flight
+   show only in the server logs, and an event that never matched the webhook leaves no row
 
 ### Message Not Sending
 
