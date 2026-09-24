@@ -466,7 +466,7 @@
         "body": "Nachrichteninhalt",
         "type": "Nachrichtentyp",
         "isGroup": "Ist Gruppenchat",
-        "kind": "Chat kind",
+        "kind": "Chat-Typ",
         "fromMe": "Von mir gesendet",
         "hasMedia": "Enthält Medien",
         "mentions": "Erwähnungen"

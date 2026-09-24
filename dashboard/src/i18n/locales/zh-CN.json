@@ -466,7 +466,7 @@
         "body": "消息正文",
         "type": "消息类型",
         "isGroup": "是群聊",
-        "kind": "Chat kind",
+        "kind": "聊天类型",
         "fromMe": "由我发送",
         "hasMedia": "包含媒体",
         "mentions": "提及"

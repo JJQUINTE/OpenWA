@@ -466,7 +466,7 @@
         "body": "Mesaj içeriği",
         "type": "Mesaj türü",
         "isGroup": "Grup sohbeti mi",
-        "kind": "Chat kind",
+        "kind": "Sohbet türü",
         "fromMe": "Benim tarafımdan gönderildi",
         "hasMedia": "Medya içeriyor",
         "mentions": "Bahsetmeler"

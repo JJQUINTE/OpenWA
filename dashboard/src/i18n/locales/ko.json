@@ -466,7 +466,7 @@
         "body": "메시지 본문",
         "type": "메시지 유형",
         "isGroup": "그룹 채팅 여부",
-        "kind": "Chat kind",
+        "kind": "채팅 유형",
         "fromMe": "내가 보낸 메시지",
         "hasMedia": "미디어 포함",
         "mentions": "멘션"

@@ -339,3 +339,10 @@ test('the session proxy button uses the same script as the modal title it opens'
     assert.ok(!latin.test(label), `${lng} sessions.actions.proxy is "${label}", the modal title is translated`);
   }
 });
+
+test('the webhook filter chat-kind field is translated in every locale', () => {
+  for (const lng of NON_EN_LOCALES) {
+    const label = i18n.t('webhooks.filters.fields.kind', { lng });
+    assert.notEqual(label, 'Chat kind', `${lng} webhooks.filters.fields.kind is still English`);
+  }
+});

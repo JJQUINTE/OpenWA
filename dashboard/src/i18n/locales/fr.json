@@ -470,7 +470,7 @@
         "body": "Corps du message",
         "type": "Type de message",
         "isGroup": "Est une discussion de groupe",
-        "kind": "Chat kind",
+        "kind": "Type de discussion",
         "fromMe": "Envoyé par moi",
         "hasMedia": "Contient un média",
         "mentions": "Mentions"
