@@ -1145,13 +1145,13 @@ async function fullImport(options: ImportOptions): Promise<void> {
 
 ### Common Issues
 
-| Issue                    | Cause                  | Solution                     |
-| ------------------------ | ---------------------- | ---------------------------- |
-| Session not reconnecting | Auth data corrupted    | Re-scan QR code              |
-| Foreign key errors       | Wrong import order     | Use provided import order    |
-| Duplicate key errors     | Existing data conflict | Use merge strategy           |
-| Permission denied        | File ownership         | `chown -R 1000:1000 ./data`  |
-| Out of memory            | Large export           | Increase Docker memory limit |
+| Issue                    | Cause                    | Solution                                                                                                                                                                                                |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session not reconnecting | Auth data corrupted      | Re-scan QR code                                                                                                                                                                                         |
+| Foreign key errors       | Wrong import order       | Use provided import order                                                                                                                                                                               |
+| Duplicate key errors     | Existing data conflict   | Use merge strategy                                                                                                                                                                                      |
+| Permission denied        | Data directory ownership | Keep the entrypoint's root start and its `cap_add` entries, and use the named volume; a host `chown` is not a fix (see [12 - Volume Permissions](./12-troubleshooting-faq.md#issue-volume-permissions)) |
+| Out of memory            | Large export             | Increase Docker memory limit                                                                                                                                                                            |
 
 ### PostgreSQL: boot crash-loop after upgrading a `DATABASE_SYNCHRONIZE=true` deployment
 
