@@ -1,7 +1,7 @@
 import { Injectable, OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { JobState, Queue } from 'bullmq';
 import { createHash } from 'crypto';
 import { PluginLoaderService } from '../../core/plugins/plugin-loader.service';
 import { IngressJobData } from '../queue/processors/ingress.processor';
@@ -60,6 +60,10 @@ export function resolveIngressJobOptions(): { attempts: number; backoff: { type:
 export function sanitizeIngressJobId(jobId: string, namespace = ''): string {
   const raw = typeof jobId === 'string' ? jobId : String(jobId);
   return `ing-${createHash('sha256').update(`${namespace}\u0000${raw}`).digest('hex').slice(0, 40)}`;
+}
+
+function queueJobId(data: IngressJobData, jobId: string): string {
+  return sanitizeIngressJobId(jobId, `${data.pluginId}\u0000${data.instanceId}`);
 }
 
 /**
@@ -121,6 +125,30 @@ export class IngressEnqueueService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * State of the job an earlier enqueue() of this delivery left in the queue, or undefined when the
+   * queue is off, holds no such job, or cannot answer. add() resolves for a duplicate jobId whatever
+   * state the existing job is in, so a caller replaying under the original jobId must look first: a
+   * retained failed job (removeOnFail keeps it for a day) would silently swallow the replay.
+   */
+  async existingJobState(data: IngressJobData, jobId: string): Promise<JobState | undefined> {
+    if (!this.config.get<boolean>('queue.enabled', false) || !this.ingressQueue) return undefined;
+    try {
+      const state = await this.ingressQueue.getJobState(queueJobId(data, jobId));
+      return state === 'unknown' ? undefined : state;
+    } catch (err) {
+      // Redis unreachable: enqueue() then takes its own inline fallback, as it would without the probe.
+      this.logger.warn('Ingress job state lookup failed', {
+        pluginId: data.pluginId,
+        instanceId: data.instanceId,
+        deliveryId: data.deliveryId,
+        error: err instanceof Error ? err.message : String(err),
+        action: 'ingress_job_state_lookup_failed',
+      });
+      return undefined;
+    }
+  }
+
   async enqueue(data: IngressJobData, jobId: string): Promise<EnqueueOutcome> {
     const queueEnabled = this.config.get<boolean>('queue.enabled', false);
     const useQueue = queueEnabled && !!this.ingressQueue;
@@ -132,7 +160,7 @@ export class IngressEnqueueService implements OnApplicationBootstrap {
         // is sanitized because BullMQ refuses several id shapes at add() (see sanitizeIngressJobId),
         // which would otherwise read as a Redis failure here and fall through to inline dispatch.
         await this.ingressQueue.add('ingress', data, {
-          jobId: sanitizeIngressJobId(jobId, `${data.pluginId}\u0000${data.instanceId}`),
+          jobId: queueJobId(data, jobId),
           ...resolveIngressJobOptions(),
         });
         return { outcome: 'queued' };
