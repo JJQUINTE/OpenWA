@@ -181,9 +181,9 @@ export class StatusController {
     status: 403,
     description:
       "Key lacks OPERATOR role; on whatsapp-web.js, the id is not one of the account's own statuses; on " +
-      'Baileys, the status was not posted by this session in the last 24 hours (or was posted before a ' +
-      'restart, from the phone or from another node), so its recipients are unknown and the revoke cannot ' +
-      'be addressed to them.',
+      'Baileys, the status was not posted by this session in the last 24 hours (or was posted before the ' +
+      'session last started or reconnected, before a restart, from the phone or from another node), so its ' +
+      'recipients are unknown and the revoke cannot be addressed to them.',
   })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 404, description: SESSION_NOT_STARTED_404 })

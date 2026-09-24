@@ -73,7 +73,8 @@
 > and `memoryUsage` is this process's. `engineLoaded` is the exception, since it also counts a live
 > claim by another node. With routing on, `GET /api/sessions/:sessionId` is forwarded to the owner, so
 > its answer is the owner's; `start`, `stop`, `logout` and `force-kill` are forwarded the same way, so a
-> `true` means they can act. Without `NODE_URL` nothing is forwarded, so a node that does not hold the
+> `true` means `stop`, `logout` and `force-kill` can act (and `start` answers `400`, as it does on the
+> owner). Without `NODE_URL` nothing is forwarded, so a node that does not hold the
 > session still reports `true` but cannot act on it: `start` and `stop` answer `409` there, and `logout`
 > and `force-kill` answer `400`.
 >

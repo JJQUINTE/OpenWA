@@ -984,6 +984,8 @@ adapter boundary — none silently stubs.
   `forEveryone=true` on a message the account cannot revoke (not its own, and not in a group it
   administers) falls back to that same delete-for-me, as whatsapp-web.js does. WhatsApp ignores such
   a revoke while the send still resolves, so sending it would report a deletion that never happened.
+  When the group's member list shows no row the gateway can identify as the account, admin status is
+  unknown and the revoke is still sent.
 
 ## 29.8 Snapshot summary
 
