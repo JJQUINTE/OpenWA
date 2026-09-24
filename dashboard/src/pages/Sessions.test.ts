@@ -103,6 +103,7 @@ function resetFetchCalls(): void {
   stopFailure = null;
   qrGate = null;
   listGate = null;
+  pairingGate = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -136,6 +137,8 @@ let qrGate: { sessionId: string; until: Promise<void> } | null = null;
 // When set, the next GET /api/sessions reads the rows as they are when it arrives but answers only once
 // this settles, so a test can land an older read after a newer one. Spent by that one read.
 let listGate: Promise<void> | null = null;
+// When set, POST .../pairing-code answers only once this settles.
+let pairingGate: Promise<void> | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -246,7 +249,9 @@ function installFetchStub(): void {
 
     const pairingMatch = path.match(/^\/api\/sessions\/([^/]+)\/pairing-code$/);
     if (method === 'POST' && pairingMatch) {
-      return Promise.resolve(jsonResponse({ pairingCode: '12345678', status: 'qr_ready' }));
+      const answer = () => jsonResponse({ pairingCode: '12345678', status: 'qr_ready' });
+      if (pairingGate) return pairingGate.then(answer);
+      return Promise.resolve(answer());
     }
 
     const lifecycleMatch = path.match(/^\/api\/sessions\/([^/]+)\/(start|stop|logout|force-kill)$/);
@@ -587,6 +592,48 @@ test('a QR answer that lands after its modal closed changes nothing', async () =
     await new Promise(resolve => setTimeout(resolve, 50));
     const dialog = screen.getByRole('dialog');
     assert.ok(within(dialog).queryByText('second-device'), "a late QR answer replaced another session's modal");
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// Closing the modal does not cancel a pairing-code request either (whatsapp-web.js can take seconds to
+// answer). Its code must not appear in a modal opened since, for another session or for the same one
+// reset to a blank form, and that modal must not start with Generate stuck on the old request.
+test('a pairing code that lands after its modal closed changes nothing', async () => {
+  const { screen, fireEvent, within, act } = rtl;
+  resetFetchCalls();
+  const other: Session = { ...SESSION_QR, id: 'sess-qr-3', name: 'third-device' };
+  SESSIONS.push(other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const otherCard = screen.getByText('third-device').closest('.session-card') as HTMLElement;
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+
+    for (const reopen of [otherCard, card]) {
+      let release: () => void = () => {};
+      pairingGate = new Promise<void>(resolve => (release = resolve));
+      fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+      await screen.findByAltText('QR');
+      fireEvent.click(screen.getByRole('tab', { name: 'Link with Phone Number' }));
+      fireEvent.change(screen.getByLabelText('Phone Number'), { target: { value: '919876543210' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate Pairing Code' }));
+      await screen.findByText('Generating pairing code...');
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+
+      fireEvent.click(within(reopen).getByRole('button', { name: 'Show QR' }));
+      await screen.findByAltText('QR');
+      fireEvent.click(screen.getByRole('tab', { name: 'Link with Phone Number' }));
+      const dialog = screen.getByRole('dialog');
+      assert.ok(!within(dialog).queryByText('Generating pairing code...'), 'Generate stayed stuck on the old request');
+      release();
+      await settle();
+
+      assert.ok(!dialog.querySelector('.pairing-code-display'), 'a late pairing code landed in a modal opened since');
+      assert.ok(within(dialog).queryByRole('tab', { name: 'QR Code' }), 'a late pairing code hid the tab bar');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    }
   } finally {
     SESSIONS.pop();
   }
