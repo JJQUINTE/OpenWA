@@ -126,6 +126,47 @@ describe('resolveCurrentWebVersion', () => {
     const fetcher = jest.fn(() => Promise.resolve(json({ currentBeta: null, currentVersion: '2.3000.SOLO-alpha' })));
     await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.SOLO-alpha');
   });
+
+  // The registry deletes a build's HTML about 60 days after release. A pin cached for the life of the
+  // process ended up pointing at a 404, and the page silently loaded the live build (#488 class).
+  describe('on a long-running process', () => {
+    const DAY = 86_400_000;
+    let now = FIXED_NOW;
+    beforeEach(() => {
+      now = FIXED_NOW;
+      jest.spyOn(Date, 'now').mockImplementation(() => now);
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('re-reads the registry once the pin is a day old', async () => {
+      const fetcher = jest
+        .fn()
+        .mockResolvedValueOnce(json({ currentVersion: '2.3000.OLD-alpha' }))
+        .mockResolvedValueOnce(json({ currentVersion: '2.3000.NEW-alpha' }));
+
+      await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.OLD-alpha');
+      now += DAY - 1;
+      await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.OLD-alpha');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      now += 1;
+      await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.NEW-alpha');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the previous pin when a refresh fails, rather than dropping it', async () => {
+      const fetcher = jest
+        .fn()
+        .mockResolvedValueOnce(json({ currentVersion: '2.3000.OLD-alpha' }))
+        .mockRejectedValue(new Error('boom'));
+
+      await resolveCurrentWebVersion(fetcher as never);
+      now += DAY;
+      await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.OLD-alpha');
+      // Inside the failure backoff too: no second fetch, and still the previous pin.
+      await expect(resolveCurrentWebVersion(fetcher as never)).resolves.toBe('2.3000.OLD-alpha');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 // Remote-HTML pins execute inside the authenticated web.whatsapp.com origin with no integrity
