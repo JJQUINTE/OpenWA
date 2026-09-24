@@ -1,12 +1,14 @@
 package com.rmyndharis.openwa.resources;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.rmyndharis.openwa.ClientConfig;
 import com.rmyndharis.openwa.OpenWAClient;
 import com.rmyndharis.openwa.http.HttpMethod;
 import com.rmyndharis.openwa.model.CatalogProductsQuery;
+import com.rmyndharis.openwa.model.PaginatedProducts;
 import com.rmyndharis.openwa.model.SendProductRequest;
 import com.rmyndharis.openwa.support.MockTransport;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,19 @@ class CatalogResourceTest {
         catalog.products("s", CatalogProductsQuery.builder().page(2).limit(5).build());
         assertEquals("http://h/api/sessions/s/catalog/products?page=2&limit=5", tx.lastRequest().url());
         assertEquals(HttpMethod.GET, tx.lastRequest().method());
+    }
+
+    @Test
+    void productWithoutAPriceDecodesAsNullPrice() {
+        // A catalog item with no price reaches the wire as "price":null, which a primitive double
+        // component cannot hold: Gson then rejects the whole page.
+        tx.respond(
+            200,
+            "{\"products\":[{\"id\":\"p1\",\"name\":\"n\",\"price\":null,\"isAvailable\":true}],"
+                + "\"pagination\":{\"page\":1,\"limit\":20,\"total\":1,\"totalPages\":1}}");
+        PaginatedProducts page = catalog.products("s", null);
+        assertEquals("p1", page.products().get(0).id());
+        assertNull(page.products().get(0).price());
     }
 
     @Test
