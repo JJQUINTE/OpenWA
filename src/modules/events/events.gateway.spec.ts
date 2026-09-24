@@ -234,6 +234,39 @@ describe('EventsGateway connection auth + subscribe re-validation', () => {
     expect(sessionRoomJoins(sock)).toEqual([]);
   });
 
+  // The session id becomes part of every room name the socket keeps until it disconnects, so an
+  // oversized or malformed one must be refused before it costs a key lookup or a room.
+  it.each([
+    ['oversized', 'a'.repeat(129)],
+    ['malformed', 'sess:1'],
+  ])('refuses a %s sessionId with INVALID_SESSION', async (_label, sessionId) => {
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: null });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    authService.validateApiKey.mockClear();
+
+    const res = (await gateway.handleMessage(asSocket(sock), subscribeMsg(sessionId, ['*']))) as WSErrorResponse;
+
+    expect(res.code).toBe('INVALID_SESSION');
+    expect(authService.validateApiKey).not.toHaveBeenCalled();
+    expect(sessionRoomJoins(sock)).toEqual([]);
+  });
+
+  it('refuses a subscribe that would take the socket past its room cap', async () => {
+    authService.validateApiKey.mockResolvedValue({ name: 'k', allowedSessions: null });
+    const sock = makeSocket({ apiKey: 'good' });
+    await gateway.handleConnection(asSocket(sock));
+    for (let i = 0; i < 4096; i++) sock.rooms.add(buildRoomName(`s${i}`, '*'));
+
+    const res = (await gateway.handleMessage(asSocket(sock), subscribeMsg('sess-1', ['*']))) as WSErrorResponse;
+    expect(res.code).toBe('TOO_MANY_SUBSCRIPTIONS');
+    expect(sessionRoomJoins(sock)).toEqual([]);
+
+    // Re-subscribing a room the socket already holds adds nothing, so it is still granted.
+    const again = (await gateway.handleMessage(asSocket(sock), subscribeMsg('s1', ['*']))) as WSSubscribedResponse;
+    expect(again.type).toBe('subscribed');
+  });
+
   it('pushes a command reply on the message event, not only through the ack callback', async () => {
     // The Socket.IO adapter delivers a handler's return value through the ack callback and nothing
     // else, so a client that emits without one (the dashboard, and the documented example client)
