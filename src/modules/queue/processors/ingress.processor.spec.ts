@@ -107,6 +107,59 @@ describe('IngressProcessor', () => {
   });
 });
 
+// BullMQ fails a job that stalls more than maxStalledCount WITHOUT calling process(), then emits
+// 'failed'. The ingress row already retired its payload on 'queued', so the DLQ row is the only copy.
+describe('IngressProcessor stall exhaustion (worker failed event)', () => {
+  const STALLED = new Error('job stalled more than allowable limit');
+  const setup = () => {
+    const failures = { save: jest.fn().mockResolvedValue(undefined) };
+    const hooks = { execute: jest.fn().mockResolvedValue({ continue: true }) };
+    const proc = new IngressProcessor({} as never, failures as never, hooks as never);
+    return { proc, failures, hooks };
+  };
+
+  it('records one inbound DLQ row with the full payload and fires ingress:error', async () => {
+    const { proc, failures, hooks } = setup();
+    await proc.onWorkerFailed(job({ attemptsMade: 1 }), STALLED);
+    expect(failures.save).toHaveBeenCalledTimes(1);
+    expect(failures.save).toHaveBeenCalledWith({
+      direction: 'inbound',
+      pluginId: 'chatwoot',
+      instanceId: 'acct1',
+      sessionId: null,
+      deliveryId: 'd1',
+      attempts: 1,
+      lastError: 'job stalled more than allowable limit',
+      payload: {
+        route: 'chatwoot',
+        method: undefined,
+        providerConversationId: undefined,
+        ingress: { headers: {}, query: {}, body: '{}', rawBody: '{}' },
+      },
+      redriven: false,
+    });
+    expect(hooks.execute).toHaveBeenCalledWith(
+      'ingress:error',
+      expect.objectContaining({ deliveryId: 'd1', error: 'job stalled more than allowable limit' }),
+      expect.anything(),
+    );
+  });
+
+  it('ignores any other failure (process() already recorded it) and a pruned job', async () => {
+    const { proc, failures, hooks } = setup();
+    await proc.onWorkerFailed(job({ attemptsMade: 3 }), new Error('boom'));
+    await proc.onWorkerFailed(undefined, STALLED);
+    expect(failures.save).not.toHaveBeenCalled();
+    expect(hooks.execute).not.toHaveBeenCalled();
+  });
+
+  it('logs instead of rejecting when the DLQ write fails (an event listener must not reject)', async () => {
+    const { proc, failures } = setup();
+    failures.save.mockRejectedValue(new Error('db down'));
+    await expect(proc.onWorkerFailed(job(), STALLED)).resolves.toBeUndefined();
+  });
+});
+
 describe('KeyedAsyncLock import sanity', () => {
   it('is exported from the integration module for processor injection', () => {
     expect(new KeyedAsyncLock()).toBeInstanceOf(KeyedAsyncLock);
