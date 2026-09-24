@@ -4622,9 +4622,12 @@ describe('BaileysAdapter group management', () => {
     fakeSock.groupFetchAllParticipating.mockResolvedValue({ '123-456@g.us': lidMeta });
     fakeSock.groupMetadata.mockResolvedValueOnce(lidMeta);
     const adapter = await ready();
+    // Read the info first so the queued metadata is spent even when an assertion below fails;
+    // a leftover once-value would leak into the next getGroupInfo test.
+    const info = await adapter.getGroupInfo('123-456@g.us');
     expect(await adapter.getGroups()).toEqual([expect.objectContaining({ id: '123-456@g.us', isAdmin: true })]);
     // An admin of an announce-only group can still post there.
-    expect(await adapter.getGroupInfo('123-456@g.us')).toMatchObject({ isAnnounce: true, isReadOnly: false });
+    expect(info).toMatchObject({ isAnnounce: true, isReadOnly: false });
   });
 
   it('getGroupInfo maps groupMetadata, and returns null only for a server refusal (401/403/404)', async () => {
