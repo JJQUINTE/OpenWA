@@ -6,6 +6,14 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   // Per tab, next to the API key it was validated for: a role outliving its key (or shared with
   // another tab signed in with a different key) would gate the UI for the wrong actor.
   const [role, setRoleState] = useState<UserRole | null>(() => {
+    // Older builds kept the role in localStorage, shared by every tab. A tab that already holds its
+    // key adopts that copy once, so the first reload after an upgrade does not drop the role until
+    // /auth/validate answers; the shared copy goes either way.
+    const legacy = localStorage.getItem('openwa_user_role');
+    localStorage.removeItem('openwa_user_role');
+    if (legacy && !sessionStorage.getItem('openwa_user_role') && sessionStorage.getItem('openwa_api_key')) {
+      sessionStorage.setItem('openwa_user_role', legacy);
+    }
     const saved = sessionStorage.getItem('openwa_user_role');
     return (saved as UserRole) || null;
   });
