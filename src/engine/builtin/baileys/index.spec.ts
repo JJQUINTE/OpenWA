@@ -38,7 +38,7 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
     );
   });
 
-  it('advertises the slice-3b supported feature set', () => {
+  it('advertises the supported feature set', () => {
     expect(new BaileysPlugin().getFeatures()).toEqual([
       'text-messages',
       'typing-indicator',
@@ -51,6 +51,9 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
       'message-deletion',
       'group-management',
       'read-receipts',
+      'channels',
+      'status-updates',
+      'catalog',
     ]);
   });
 

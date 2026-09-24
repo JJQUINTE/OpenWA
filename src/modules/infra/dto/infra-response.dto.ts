@@ -184,7 +184,8 @@ export class AvailableEngineDto {
 
   @ApiPropertyOptional({
     type: EngineLibraryDto,
-    description: 'Absent when the plugin does not report a library, which includes any disabled engine.',
+    description:
+      'Absent when the plugin does not report a library. Built-in engines report it whether or not they are enabled.',
   })
   library?: EngineLibraryDto;
 }

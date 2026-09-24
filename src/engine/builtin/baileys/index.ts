@@ -77,6 +77,11 @@ export class BaileysPlugin implements IEnginePlugin {
       'message-deletion',
       'group-management',
       'read-receipts',
+      'channels',
+      'status-updates',
+      'catalog',
+      // No 'labels': Baileys can create, delete and attach labels but has no query for them, so the
+      // label and chat-label reads 501 and a client could not read back what it wrote.
     ];
   }
 
