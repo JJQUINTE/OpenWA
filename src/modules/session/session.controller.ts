@@ -12,7 +12,9 @@ import {
   HttpStatus,
   ParseUUIDPipe,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import {
@@ -635,9 +637,14 @@ export class SessionController {
   async getPresence(
     @Param('sessionId', ParseUUIDPipe) id: string,
     @Param('chatId') chatId: string,
-  ): Promise<ChatPresenceResponseDto | null> {
+    @Res() res: Response,
+  ): Promise<void> {
     const presence = await this.sessionService.getPresence(id, chatId);
-    return presence ? { ...presence, observedAt: new Date(presence.observedAt) } : null;
+    const body: ChatPresenceResponseDto | null = presence
+      ? { ...presence, observedAt: new Date(presence.observedAt) }
+      : null;
+    // Written directly: Nest answers a returned null with an empty body, not the JSON `null` above.
+    res.json(body);
   }
 
   @ChatScoped('fenced')
