@@ -3416,6 +3416,7 @@ describe('BaileysAdapter inbound fan-out', () => {
       const original = { remoteJid: '1700000000@broadcast', fromMe: false, participant: alice };
       expect(await deliver(original, { remoteJid: alice, fromMe: true }, reaction)).toBe(1);
       expect(await deliver(original, { remoteJid: alice, fromMe: false }, reaction)).toBe(1);
+      expect(await deliver(original, { ...original }, reaction)).toBe(1);
       expect(await deliver(original, { remoteJid: bob, fromMe: false }, reaction)).toBe(0);
     });
 

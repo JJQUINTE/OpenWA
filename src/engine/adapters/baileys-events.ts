@@ -577,7 +577,7 @@ export class BaileysEvents {
    * own-device copy under the list jid (`<id>@broadcast`), while each recipient reacts from their 1:1
    * chat, so no chat can ever match it. A list message the account received is filed under the list
    * jid too, but Baileys shows it in the 1:1 chat with its sender (getChatId in process-message.js), so
-   * a reaction to it is checked against that sender, whose other-dialect id Baileys puts in
+   * a reaction to it may also come from that sender's chat, whose other-dialect id Baileys puts in
    * remoteJidAlt. Edits and revokes stay strict.
    */
   private async targetsForeignMessage(
@@ -592,11 +592,11 @@ export class BaileysEvents {
     if (!original) return false;
     const broadcast = kind === 'reaction' && !!original.remoteJid?.endsWith('@broadcast');
     if (broadcast && original.fromMe === true) return false;
-    const originalChat =
-      broadcast && original.remoteJid !== 'status@broadcast' ? original.participant : original.remoteJid;
+    const originalChats = [original.remoteJid, original.remoteJidAlt];
+    if (broadcast && original.remoteJid !== 'status@broadcast') originalChats.push(original.participant);
     const neutral = (jid: string): string => this.host.toNeutralJid(jid);
     const foreign =
-      differentWaIds([originalChat, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
+      differentWaIds(originalChats, [key.remoteJid, key.remoteJidAlt], neutral) ||
       (checkAuthor &&
         ((original.fromMe === true) !== (key.fromMe === true) ||
           (key.fromMe !== true &&
