@@ -70,7 +70,7 @@ before(async () => {
     disconnect(): void {}
   };
   installFetchStub();
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   const { i18nReady } = await import('../i18n/index.ts');
   await i18nReady;
   rtl = await import('@testing-library/react');
@@ -87,7 +87,7 @@ afterEach(() => {
   sessionList = [];
   stopStatus = 200;
   sessionsStatus = 200;
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
 });
 
 function renderDashboard(): void {
@@ -152,7 +152,7 @@ test('a failed stop is reported, not swallowed', async () => {
   webhooksStatus = 200;
   sessionList = [READY_SESSION];
   stopStatus = 400;
-  window.localStorage.setItem('openwa_user_role', 'operator');
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
   renderDashboard();
   const disconnect = await rtl.screen.findByRole('button', { name: 'Disconnect' });
   // The session changed on the server even though the stop answered an error: the list is re-read.

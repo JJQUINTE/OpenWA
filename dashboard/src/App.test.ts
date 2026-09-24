@@ -63,7 +63,7 @@ function renderAt(path: string, as: string): void {
   role = as;
   window.history.replaceState(null, '', path);
   window.sessionStorage.setItem('openwa_api_key', 'test-key');
-  window.localStorage.setItem('openwa_user_role', as);
+  window.sessionStorage.setItem('openwa_user_role', as);
   rtl.render(createElement(App));
 }
 

@@ -45,7 +45,7 @@ afterEach(() => {
   rtl.cleanup();
   textReads = 0;
   globalThis.fetch = emptyFetch;
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 interface BulkItem {
@@ -88,7 +88,7 @@ function stubGateway(): { bulkBodies: { messages: BulkItem[] }[] } {
 }
 
 async function renderBulkAsWriter(): Promise<HTMLElement> {
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   const { container } = rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
@@ -137,7 +137,7 @@ let restoreFetch: (() => void) | null = null;
 afterEach(() => {
   restoreFetch?.();
   restoreFetch = null;
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 function groupJsonResponse(data: unknown, status = 200): Response {
@@ -170,7 +170,7 @@ function stubGroupGateway(groups: { id: string; name?: string }[], refuseFirstWi
 }
 
 async function renderGroupsAsWriter(): Promise<void> {
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
@@ -291,7 +291,7 @@ test('a session that stops being ready is replaced by what the selector shows', 
     }
     return Promise.resolve(jsonResponse([]));
   }) as typeof fetch;
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   const { container } = rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),

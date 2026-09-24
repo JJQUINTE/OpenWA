@@ -25,7 +25,7 @@ before(async () => {
 
 afterEach(() => {
   rtl.cleanup();
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 const CHAT: Chat = {
@@ -59,7 +59,7 @@ function renderThread(
   role: string,
   messages: ChatMessageView[] = [PROMPT],
 ): { clicks: string[]; container: HTMLElement } {
-  window.localStorage.setItem('openwa_user_role', role);
+  window.sessionStorage.setItem('openwa_user_role', role);
   const clicks: string[] = [];
   const noop = () => {};
   const { container } = rtl.render(

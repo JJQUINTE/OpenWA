@@ -3,17 +3,19 @@ import type { UserRole, RoleContextType } from '../types/role';
 import { RoleContext } from '../hooks/useRole';
 
 export function RoleProvider({ children }: { children: ReactNode }) {
+  // Per tab, next to the API key it was validated for: a role outliving its key (or shared with
+  // another tab signed in with a different key) would gate the UI for the wrong actor.
   const [role, setRoleState] = useState<UserRole | null>(() => {
-    const saved = localStorage.getItem('openwa_user_role');
+    const saved = sessionStorage.getItem('openwa_user_role');
     return (saved as UserRole) || null;
   });
 
   const setRole = useCallback((newRole: UserRole | null) => {
     setRoleState(newRole);
     if (newRole) {
-      localStorage.setItem('openwa_user_role', newRole);
+      sessionStorage.setItem('openwa_user_role', newRole);
     } else {
-      localStorage.removeItem('openwa_user_role');
+      sessionStorage.removeItem('openwa_user_role');
     }
   }, []);
 
