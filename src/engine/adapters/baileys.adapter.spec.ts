@@ -3914,11 +3914,63 @@ describe('BaileysAdapter store-backed ops', () => {
     );
   });
 
-  it('deleteMessage revokes via the stored key', async () => {
-    fakeStore.getMessage.mockResolvedValue(stored);
+  it('deleteMessage revokes an own message via the stored key', async () => {
+    fakeStore.getMessage.mockResolvedValue(ownStored);
     const adapter = await ready();
     await adapter.deleteMessage('628111@s.whatsapp.net', 'TARGET', true);
-    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', { delete: stored.key });
+    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', { delete: ownStored.key });
+  });
+
+  it('deleteMessage for everyone of a message the account received deletes it for the account only', async () => {
+    // WhatsApp ignores a sender revoke of somebody else's message, so sending one reported a deletion
+    // that never happened. WhatsApp Web deletes it for the account instead, and so does this.
+    fakeStore.getMessage.mockResolvedValue({ ...stored, messageTimestamp: '1700000007' });
+    const adapter = await ready();
+    await adapter.deleteMessage('628111@s.whatsapp.net', 'TARGET', true);
+    expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+    expect(fakeSock.chatModify).toHaveBeenCalledWith(
+      { deleteForMe: { deleteMedia: true, key: stored.key, timestamp: 1700000007 } },
+      '628111@s.whatsapp.net',
+    );
+  });
+
+  describe('deleteMessage for everyone of another member message in a group', () => {
+    const GROUP = '120363000@g.us';
+    const memberMessage = {
+      key: { id: 'TARGET', remoteJid: GROUP, fromMe: false, participant: '628111@s.whatsapp.net' },
+      message: { conversation: 'hi' },
+      messageTimestamp: '1700000007',
+    };
+    const withSelfRole = (admin: 'admin' | null) =>
+      fakeSock.groupMetadata.mockResolvedValue({
+        id: GROUP,
+        subject: 'G',
+        participants: [
+          { id: '628999@s.whatsapp.net', admin },
+          { id: '628111@s.whatsapp.net', admin: null },
+        ],
+      });
+
+    it('revokes it when the account is a group admin', async () => {
+      fakeStore.getMessage.mockResolvedValue(memberMessage);
+      withSelfRole('admin');
+      const adapter = await ready();
+      await adapter.deleteMessage(GROUP, 'TARGET', true);
+      expect(fakeSock.sendMessage).toHaveBeenCalledWith(GROUP, { delete: memberMessage.key });
+      expect(fakeSock.chatModify).not.toHaveBeenCalled();
+    });
+
+    it('deletes it for the account only when the account is not an admin', async () => {
+      fakeStore.getMessage.mockResolvedValue(memberMessage);
+      withSelfRole(null);
+      const adapter = await ready();
+      await adapter.deleteMessage(GROUP, 'TARGET', true);
+      expect(fakeSock.sendMessage).not.toHaveBeenCalled();
+      expect(fakeSock.chatModify).toHaveBeenCalledWith(
+        { deleteForMe: { deleteMedia: true, key: memberMessage.key, timestamp: 1700000007 } },
+        GROUP,
+      );
+    });
   });
 
   it('media sends honor the chat disappearing timer via the funnel (#473)', async () => {
@@ -3945,15 +3997,15 @@ describe('BaileysAdapter store-backed ops', () => {
   });
 
   it('react and delete never carry an ephemeral timer (Baileys does not exclude reactions) (#473)', async () => {
-    fakeStore.getMessage.mockResolvedValue(stored);
+    fakeStore.getMessage.mockResolvedValue(ownStored);
     const adapter = await ready();
     fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net', ephemeralExpiration: 604800 }]);
     await adapter.reactToMessage('628111@s.whatsapp.net', 'TARGET', '👍');
     await adapter.deleteMessage('628111@s.whatsapp.net', 'TARGET', true);
     expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', {
-      react: { text: '👍', key: stored.key },
+      react: { text: '👍', key: ownStored.key },
     });
-    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', { delete: stored.key });
+    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', { delete: ownStored.key });
   });
 
   it('throws when the referenced message is not in the store', async () => {

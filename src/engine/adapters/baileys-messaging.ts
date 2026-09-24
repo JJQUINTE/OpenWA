@@ -16,6 +16,7 @@ import {
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
 import { toEngineParticipants } from './baileys-groups';
+import { mapBaileysGroup } from './baileys-group-mapper';
 import { buildVCard } from './vcard';
 import { resolveBaileysButtonClick } from './baileys-message-mapper';
 import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
@@ -533,7 +534,10 @@ export class BaileysMessaging {
     this.host.ensureReady();
     const target = await this.requireStored(messageId);
     this.assertStoredInChat(target, chatId, messageId);
-    if (forEveryone) {
+    // Only the sender, or a group admin, can delete a message for everyone. WhatsApp ignores any other
+    // revoke, yet the send resolves, so it would report a deletion that never happened. WhatsApp Web
+    // deletes such a message for the account alone instead, and so does this.
+    if (forEveryone && (target.key.fromMe === true || (await this.selfIsGroupAdmin(target.key.remoteJid)))) {
       await this.send(await this.toDeliverableJid(chatId), { delete: target.key });
       return;
     }
@@ -552,6 +556,17 @@ export class BaileysMessaging {
       ),
       'the delete-for-me',
     );
+  }
+
+  /** Whether the account is an admin of this chat; false for anything that is not a group. */
+  private async selfIsGroupAdmin(jid: string | null | undefined): Promise<boolean> {
+    if (!jid?.endsWith('@g.us')) return false;
+    const metadata = await withQueryDeadline(
+      this.sock().groupMetadata(jid),
+      this.queryBudgetMs,
+      'WhatsApp did not answer the group metadata query in time',
+    );
+    return mapBaileysGroup(metadata, this.host.normalizedSelfJid(), id => this.host.toNeutralJid(id)).isAdmin === true;
   }
 
   async editMessage(chatId: string, messageId: string, body: string, mentions?: string[]): Promise<MessageResult> {
