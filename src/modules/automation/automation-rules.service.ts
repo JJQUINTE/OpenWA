@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createLogger } from '../../common/services/logger.service';
 import { LidMappingStoreService } from '../../engine/identity/lid-mapping-store.service';
+import { chatKind } from '../../engine/identity/wa-id';
 import { evaluateFilters } from '../webhook/filters/filter-evaluator';
 import { PLUGIN_MESSAGE_PORT, type PluginMessagePort } from '../../core/plugins/plugin-host-ports';
 import { AutomationRule } from './entities/automation-rule.entity';
@@ -21,6 +22,13 @@ const COOLDOWN_SWEEP_THRESHOLD = 10_000;
  * queued message only after its own cooldown has long expired.
  */
 const MAX_MESSAGE_AGE_SECONDS = 300;
+
+/**
+ * Chat kinds a rule answers only when it names them. A reply into a channel is published to every
+ * follower when the account is an admin there, and is refused everywhere else (a failed send that can
+ * also count toward the send-pacing breaker); a status or broadcast list has no conversation to answer.
+ */
+const OPT_IN_CHAT_KINDS: ReadonlySet<string> = new Set(['channel', 'broadcast', 'status']);
 
 /**
  * Single-message autoreply rules: evaluated on every inbound message, first matching rule replies
@@ -153,10 +161,17 @@ export class AutomationRulesService {
     // matches a lid-addressed sender identically in both places.
     const resolveLid = (jid: string): string | null => this.lidMappingStore?.resolveLid(jid) ?? null;
 
+    // Resolved the way the `kind` filter field resolves it, so the guard and a kind condition agree.
+    const kind = typeof message.kind === 'string' && message.kind ? message.kind : chatKind(chatId);
+    const optInOnly = OPT_IN_CHAT_KINDS.has(kind);
+
     // First match wins: one inbound message never produces more than one automated reply, and rule
-    // order (creation order) is the tiebreak the operator can reason about.
-    const rule = rules.find(candidate =>
-      evaluateFilters(candidate.conditions, 'message.received', message, resolveLid),
+    // order (creation order) is the tiebreak the operator can reason about. A rule without a `kind`
+    // condition skips the opt-in chat kinds; naming the kind is how a rule reaches them.
+    const rule = rules.find(
+      candidate =>
+        (!optInOnly || candidate.conditions?.conditions?.some(c => c.field === 'kind')) &&
+        evaluateFilters(candidate.conditions, 'message.received', message, resolveLid),
     );
     if (!rule) return;
     if (this.inCooldown(rule, chatId)) return;

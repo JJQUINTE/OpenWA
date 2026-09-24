@@ -459,7 +459,8 @@ CREATE TABLE webhooks (
 ### 5.3.2a automation_rules
 
 Per-session single-message autoreply rules. `conditions` reuses the webhook filter shape verbatim
-(null/empty matches every inbound message); the reply goes through the ordinary send path.
+(null/empty matches every inbound message except channel, broadcast-list and status messages, which
+need a `kind` condition); the reply goes through the ordinary send path.
 
 ```sql
 CREATE TABLE automation_rules (

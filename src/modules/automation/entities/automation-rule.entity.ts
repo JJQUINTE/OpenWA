@@ -18,7 +18,8 @@ import { WebhookFilters } from '../../webhook/filters/filter-types';
  *
  * `conditions` reuses the webhook filter shape (`message` family) verbatim — same JSON, same
  * validator, same evaluator — so a rule matches exactly what a filtered `message.received` webhook
- * would have fired for. Null/empty conditions match every inbound message.
+ * would have fired for. Null/empty conditions match every inbound message. One exception: a rule
+ * without a `kind` condition never answers a channel, broadcast list or status (see evaluateInbound).
  */
 @Entity('automation_rules')
 export class AutomationRule {

@@ -6572,7 +6572,11 @@ the receive path and runs at most once per message (engine re-fires are deduplic
 
 `conditions` uses the **webhook filter format** (`message` family — see 6.4.8): a flat AND list of
 conditions over `sender`, `recipient`, `chatId`, `body`, `type`, `isGroup`, `kind`, `fromMe`, `hasMedia`, `mentions`.
-Omitted or empty conditions match every inbound message.
+Omitted or empty conditions match every inbound message except channel, broadcast-list and status
+messages: a rule answers those only when its conditions include a `kind` condition that matches
+them (for example `kind is channel`). A rule without one skips those chats, because a reply into a
+channel the account administers is published to every follower, and anywhere else WhatsApp refuses
+it.
 
 Loop safety: a rule never answers the account's own (`fromMe`) messages, messages older than
 5 minutes get no automated answer (so a reconnect never burst-replies the offline-queued backlog),
@@ -6588,13 +6592,13 @@ Create a rule. **Auth:** API key (OPERATOR)
 
 **Request body**
 
-| Field           | Type    | Required | Description                                                        |
-| --------------- | ------- | -------- | ------------------------------------------------------------------ |
-| name            | string  | yes      | Display name, max 100 chars.                                       |
-| replyText       | string  | yes      | Reply content, max 4096 chars (the send-text limit).               |
-| conditions      | object  | no       | Webhook-filter conditions (`message` family). Omitted = match all. |
-| cooldownSeconds | number  | no       | Per-chat quiet period, 0–86400. Default `60`.                      |
-| enabled         | boolean | no       | Default `true`.                                                    |
+| Field           | Type    | Required | Description                                                                                 |
+| --------------- | ------- | -------- | ------------------------------------------------------------------------------------------- |
+| name            | string  | yes      | Display name, max 100 chars.                                                                |
+| replyText       | string  | yes      | Reply content, max 4096 chars (the send-text limit).                                        |
+| conditions      | object  | no       | Webhook-filter conditions (`message` family). Omitted = match all (see above for channels). |
+| cooldownSeconds | number  | no       | Per-chat quiet period, 0–86400. Default `60`.                                               |
+| enabled         | boolean | no       | Default `true`.                                                                             |
 
 **Response** `201`
 

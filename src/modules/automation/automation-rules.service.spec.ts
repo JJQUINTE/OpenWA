@@ -150,6 +150,47 @@ describe('AutomationRulesService', () => {
       expect(sends).toHaveLength(1);
     });
 
+    it('a rule with no kind condition never answers a channel, broadcast list or status', async () => {
+      await service.create('sessA', { name: 'all', replyText: 'ack', cooldownSeconds: 0 });
+      await service.create('sessA', {
+        name: 'hello',
+        replyText: 'hi',
+        cooldownSeconds: 0,
+        conditions: { conditions: [{ field: 'body', operator: 'contains', value: 'hello' }] },
+      });
+
+      for (const chatId of ['120363000000000001@newsletter', '1234@broadcast', 'status@broadcast']) {
+        await service.evaluateInbound('sessA', inbound({ chatId, from: chatId }));
+      }
+      expect(sends).toHaveLength(0);
+
+      // Direct and group chats are still answered.
+      await service.evaluateInbound('sessA', inbound());
+      await service.evaluateInbound('sessA', inbound({ chatId: '120363000000000002@g.us', isGroup: true }));
+      expect(sends.map(s => s.chatId)).toEqual(['628111@c.us', '120363000000000002@g.us']);
+    });
+
+    it('an explicit kind condition still reaches a channel or broadcast list', async () => {
+      // Ordered first, so it would win if the kind guard did not skip it for the channel.
+      const all = await service.create('sessA', { name: 'all', replyText: 'ack', cooldownSeconds: 0 });
+      await service.create('sessA', {
+        name: 'channels',
+        replyText: 'channel-reply',
+        cooldownSeconds: 0,
+        conditions: { conditions: [{ field: 'kind', operator: 'is', value: ['channel', 'broadcast'] }] },
+      });
+      // createdAt has 1s precision on SQLite; pin it so the evaluation order is the one described.
+      await ds.getRepository(AutomationRule).update(all.id, { createdAt: new Date('2026-01-01T00:00:00Z') });
+
+      await service.evaluateInbound('sessA', inbound({ chatId: '120363000000000001@newsletter' }));
+      await service.evaluateInbound('sessA', inbound({ chatId: '1234@broadcast' }));
+
+      expect(sends.map(s => [s.chatId, s.text])).toEqual([
+        ['120363000000000001@newsletter', 'channel-reply'],
+        ['1234@broadcast', 'channel-reply'],
+      ]);
+    });
+
     it('never replies to the account’s own messages (fromMe)', async () => {
       await service.create('sessA', { name: 'all', replyText: 'ack' });
 
