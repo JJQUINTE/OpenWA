@@ -575,7 +575,10 @@ export class BaileysEvents {
    *
    * A reaction to a message the account sent to a broadcast list is exempt: Baileys files the
    * own-device copy under the list jid (`<id>@broadcast`), while each recipient reacts from their 1:1
-   * chat, so no chat can ever match it. Edits and revokes stay strict.
+   * chat, so no chat can ever match it. A list message the account received is filed under the list
+   * jid too, but Baileys shows it in the 1:1 chat with its sender (getChatId in process-message.js), so
+   * a reaction to it is checked against that sender, whose other-dialect id Baileys puts in
+   * remoteJidAlt. Edits and revokes stay strict.
    */
   private async targetsForeignMessage(
     targetId: string | null | undefined,
@@ -587,10 +590,13 @@ export class BaileysEvents {
       ? (await this.readStoredMessage(targetId, 'checking what an edit, revoke or reaction targets'))?.key
       : undefined;
     if (!original) return false;
-    if (kind === 'reaction' && original.fromMe === true && original.remoteJid?.endsWith('@broadcast')) return false;
+    const broadcast = kind === 'reaction' && !!original.remoteJid?.endsWith('@broadcast');
+    if (broadcast && original.fromMe === true) return false;
+    const originalChat =
+      broadcast && original.remoteJid !== 'status@broadcast' ? original.participant : original.remoteJid;
     const neutral = (jid: string): string => this.host.toNeutralJid(jid);
     const foreign =
-      differentWaIds([original.remoteJid, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
+      differentWaIds([originalChat, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
       (checkAuthor &&
         ((original.fromMe === true) !== (key.fromMe === true) ||
           (key.fromMe !== true &&

@@ -3407,7 +3407,16 @@ describe('BaileysAdapter inbound fan-out', () => {
       expect(await deliver(original, key, reaction)).toBe(1);
       expect(await deliver(original, key, edit)).toBe(0);
       expect(await deliver(original, key, revoke)).toBe(0);
-      expect(await deliver({ ...original, fromMe: false }, key, reaction)).toBe(0);
+      expect(await deliver({ ...original, fromMe: false, participant: bob }, key, reaction)).toBe(0);
+    });
+
+    // A broadcast-list message the account received is filed under the list jid with its sender as
+    // participant, and Baileys shows it, and files reactions to it, in the 1:1 chat with that sender.
+    it('keeps a reaction to a received broadcast-list message from its sender chat, but not from another', async () => {
+      const original = { remoteJid: '1700000000@broadcast', fromMe: false, participant: alice };
+      expect(await deliver(original, { remoteJid: alice, fromMe: true }, reaction)).toBe(1);
+      expect(await deliver(original, { remoteJid: alice, fromMe: false }, reaction)).toBe(1);
+      expect(await deliver(original, { remoteJid: bob, fromMe: false }, reaction)).toBe(0);
     });
 
     it('keeps an edit whose chat is an unresolved lid, since it may be the stored phone-number chat', async () => {
