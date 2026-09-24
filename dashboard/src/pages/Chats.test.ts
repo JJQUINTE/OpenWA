@@ -320,6 +320,9 @@ function installFetchStub(): void {
       const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
     }
+    if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-audio`) {
+      return Promise.resolve(jsonResponse({ messageId: 'wamid.out.audio', timestamp: 1_700_000_100 }));
+    }
     if (method === 'GET' && path.startsWith('/api/search?')) {
       return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
     }
@@ -708,10 +711,10 @@ test('a read-only key opening a chat sends no mark-as-read', async () => {
 // copies window properties that Node does not already define, so `Blob`/`File` stay Node's while
 // `FileReader` is JSDOM's — and JSDOM's readAsDataURL brand-checks its argument against JSDOM's
 // own Blob ("parameter 1 is not of type 'Blob'").
-async function stageAttachment(container: HTMLElement, filename: string): Promise<void> {
+async function stageAttachment(container: HTMLElement, filename: string, type = 'application/pdf'): Promise<void> {
   const { fireEvent, waitFor } = rtl;
   const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-  const file = new window.File(['%PDF-1.4 stub'], filename, { type: 'application/pdf' });
+  const file = new window.File(['%PDF-1.4 stub'], filename, { type });
   fireEvent.change(fileInput, { target: { files: [file] } });
   // The bytes arrive through FileReader.onload, so the banner is asynchronous.
   await waitFor(() => {
@@ -737,6 +740,32 @@ test('a staged attachment survives closing and reopening the same room', async (
   await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
   assert.ok(container.querySelector('.attachment-preview-banner'), 'attachment was lost on reopen');
   assert.equal(container.querySelector('.preview-filename')?.textContent, 'contract.pdf');
+});
+
+test('text typed with an audio attachment stays in the input instead of showing as sent', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await stageAttachment(container, 'note.ogg', 'audio/ogg');
+
+  // Audio carries no caption on either engine, so the input does not offer one and keeps the text.
+  const input = screen.getByPlaceholderText('Type a message...') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'not a caption' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-audio`);
+    assert.ok(call, 'expected a POST to the send-audio endpoint');
+    assert.equal((call.body as { caption?: string }).caption, undefined);
+  });
+  await flush();
+
+  assert.equal(input.value, 'not a caption', 'the text that was not sent was cleared');
+  assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
 });
 
 test('a staged attachment is dropped when a different chat is opened', async () => {

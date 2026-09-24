@@ -73,6 +73,8 @@ function ChatComposer({
   const queryClient = useQueryClient();
 
   const [sending, setSending] = useState<boolean>(false);
+  // Audio carries no caption on either engine, so text typed next to it is never sent with it.
+  const attachmentIsAudio = attachment?.mimetype.startsWith('audio/') ?? false;
 
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
   // Monotonic token invalidating an in-flight attachment FileReader: picking a second file (or
@@ -194,7 +196,8 @@ function ChatComposer({
     const textToSend = messageInput.trim();
     if (!textToSend && !attachment) return;
 
-    setMessageInput('');
+    // Text that cannot travel with an audio file stays in the input to be sent as its own message.
+    if (!attachmentIsAudio) setMessageInput('');
     setSending(true);
 
     const tempId = `temp_${Date.now()}`;
@@ -204,9 +207,7 @@ function ChatComposer({
       from: 'me',
       to: activeChat.id,
       body: attachment
-        ? attachment.mimetype.startsWith('image/') ||
-          attachment.mimetype.startsWith('video/') ||
-          attachment.mimetype.startsWith('audio/')
+        ? attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')
           ? textToSend
           : attachment.filename
         : textToSend,
@@ -365,7 +366,7 @@ function ChatComposer({
             type="text"
             placeholder={
               canWrite
-                ? attachment
+                ? attachment && !attachmentIsAudio
                   ? t('chats.captionPlaceholder')
                   : t('chats.messagePlaceholder')
                 : t('chats.noPermission')
