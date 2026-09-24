@@ -23,8 +23,12 @@ export interface BaileysContactsHost {
   findContact(contactId: string): Contact | null;
   resolvePhone(contactId: string): string | null;
   listChats(): ChatSummary[];
-  /** The chat's last known message (the handle readMessages/chatModify need), or null when none. */
-  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null;
+  /**
+   * The chat's last known message (the handle readMessages/chatModify need), or null when none.
+   * `jid` is the id the chat itself is keyed under, which for a lid-migrated contact is its lid
+   * whatever id was passed.
+   */
+  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null;
   /**
    * Stored copies of the named messages, in whatever order the store returns them. Ids the store
    * has never seen are absent, so neither the length nor the order tracks the input. `undefined`
@@ -395,7 +399,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { markRead: false, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the unread mark',
     );
@@ -411,7 +415,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { clear: true, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the chat clear',
     );
@@ -427,7 +431,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { archive, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the archive change',
     );
@@ -460,7 +464,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { delete: true, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the chat delete',
     );

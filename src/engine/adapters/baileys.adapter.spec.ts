@@ -6113,6 +6113,37 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     );
   });
 
+  it.each([
+    ['markUnread', (a: BaileysAdapter) => a.markUnread('628111@c.us')],
+    ['clearChatMessages', (a: BaileysAdapter) => a.clearChatMessages('628111@c.us')],
+    ['archiveChat', (a: BaileysAdapter) => a.archiveChat('628111@c.us', true)],
+    ['deleteChat', (a: BaileysAdapter) => a.deleteChat('628111@c.us')],
+  ])('%s addresses a lid-keyed chat by its lid when called with the listed @c.us id', async (_n, act) => {
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    fakeSock.fire('chats.upsert', [{ id: '484848@lid' }]);
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: '484848@lid', remoteJidAlt: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+          message: { conversation: 'hi' },
+          messageTimestamp: 1700000020,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    expect((await adapter.getChats())[0]?.id).toBe('628111@c.us');
+    await expect(act(adapter)).resolves.toBe(true);
+    expect(fakeSock.chatModify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMessages: [{ key: expect.objectContaining({ id: 'M1' }) as unknown, messageTimestamp: 1700000020 }],
+      }),
+      '484848@lid',
+    );
+  });
+
   it('clearChatMessages returns false for a chat with no known history', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});
