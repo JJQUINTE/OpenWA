@@ -4333,12 +4333,13 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(fakeStore.clearSession).toHaveBeenCalledWith('db-uuid-1');
   });
 
-  describe('persisted chat states on an unlink', () => {
+  describe('persisted chat states', () => {
     const chatStateStore = {
       get: jest.fn(),
       remember: jest.fn().mockResolvedValue(undefined),
       reload: jest.fn().mockResolvedValue(undefined),
       clearSession: jest.fn(),
+      forgetAbsent: jest.fn(),
     };
     const linked = async (onDisconnected = jest.fn()): Promise<BaileysAdapter> => {
       // A failing clear must not change how either unlink ends.
@@ -4354,6 +4355,12 @@ describe('BaileysAdapter store-backed ops', () => {
       fakeSock.fire('connection.update', { connection: 'open' });
       return adapter;
     };
+
+    // Another node may have written rows while it held the session (takeover).
+    it('re-reads them on start for chats found without a row before', async () => {
+      await linked();
+      expect(chatStateStore.forgetAbsent).toHaveBeenCalledWith('sess-1');
+    });
 
     it('clears them on logout', async () => {
       const adapter = await linked();

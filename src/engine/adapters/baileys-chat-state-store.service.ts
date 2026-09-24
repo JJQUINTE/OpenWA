@@ -22,6 +22,8 @@ export interface ChatStateStore {
   reload(): Promise<void>;
   /** Forget every chat state of one session (an unlink: the next account to link it starts clean). */
   clearSession(sessionId: string): Promise<void>;
+  /** Re-read a session's chats known to have no row (a start: another node may have written them since). */
+  forgetAbsent(sessionId: string): void;
 }
 
 const DEFAULT_STATE: ChatStateValue = { muteEndTime: null, archived: false, pinned: false };
@@ -151,6 +153,13 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     const prefix = `${sessionId}${SEP}`;
     for (const k of [...this.states.keys()]) {
       if (k.startsWith(prefix)) this.states.delete(k);
+    }
+  }
+
+  forgetAbsent(sessionId: string): void {
+    const prefix = `${sessionId}${SEP}`;
+    for (const k of [...this.absent]) {
+      if (k.startsWith(prefix)) this.absent.delete(k);
     }
   }
 

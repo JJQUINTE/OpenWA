@@ -235,6 +235,7 @@ export class BaileysLifecycle {
     if (this.intentionalClose) {
       return;
     }
+    this.host.config.chatStateStore?.forgetAbsent(this.host.config.sessionId);
 
     // An install that skipped a Baileys patch fails later with errors that name no cause: an
     // app-state resync that never terminates, a newsletter create that cannot parse its reply.

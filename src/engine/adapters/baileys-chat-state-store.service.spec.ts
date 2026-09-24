@@ -157,6 +157,21 @@ describe('ChatStateStoreService', () => {
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
   });
 
+  it('forgetAbsent makes one session read through again for chats it found no row for', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    svc.get('s', 'c');
+    svc.get('t', 'c');
+    await tick(); // both are now known to have no row
+    await repo.upsert({ sessionId: 's', chatId: 'c', archived: true } as ChatState); // written by another node
+    svc.forgetAbsent('s');
+    svc.get('s', 'c');
+    svc.get('t', 'c');
+    await tick();
+    expect(svc.get('s', 'c')).toEqual(expect.objectContaining({ archived: true }));
+    expect(repo.findOne).toHaveBeenCalledTimes(3); // 't' is still skipped
+  });
+
   it('swallows a repo error on reload and remember (table may not exist yet)', async () => {
     const repo = {
       find: jest.fn(() => Promise.reject(new Error('no such table'))),
