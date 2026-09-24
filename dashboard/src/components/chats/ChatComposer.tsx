@@ -171,7 +171,14 @@ function ChatComposer({
       if (attachmentReadSeq.current !== myRead) return;
       const dataUrl = event.target?.result as string;
       const base64Data = dataUrl.split(',')[1];
-      setAttachment({ file, base64: base64Data, mimetype: file.type, filename: file.name });
+      // A file the browser has no MIME mapping for has type '', which the gateway refuses for base64;
+      // the generic type sends it as a document, the gateway's own default.
+      setAttachment({
+        file,
+        base64: base64Data,
+        mimetype: file.type || 'application/octet-stream',
+        filename: file.name,
+      });
     };
     reader.readAsDataURL(file);
   };

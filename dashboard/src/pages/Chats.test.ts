@@ -856,6 +856,25 @@ test('a caption sent with a document shows in its bubble', async () => {
   assert.ok(within(thread).queryByText('please sign'), 'the caption that was sent is missing from the bubble');
 });
 
+test('a file the browser cannot type goes out as a document with a generic MIME type', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  // File.type is '' for an extension the browser has no mapping for, and the gateway refuses base64
+  // without a MIME type.
+  await stageAttachment(container, 'settings.env', '');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-document`);
+    assert.ok(call, 'expected a POST to the send-document endpoint');
+    assert.equal((call.body as { mimetype?: string }).mimetype, 'application/octet-stream');
+  });
+});
+
 test('the reply banner and the sent snippet name a media type in words, not as a raw token', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
