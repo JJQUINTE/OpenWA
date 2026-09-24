@@ -4109,7 +4109,7 @@ Add a label to a chat.
 
 The handler always returns the literal `{ "success": true }`.
 
-**Errors:** `400` validation failure (missing/empty/non-string `labelId`, or any unknown body field — strict whitelist), or session is not started · `401` missing/invalid API key · `403` key lacks `OPERATOR` role · `404` (whatsapp-web.js) the chat does not exist on this session, so nothing was written · `409` conflict or engine not ready (retryable) · `422` labels require a WhatsApp Business account, or the chat type has no labels · `503` session not ready or dependency unavailable (retryable)
+**Errors:** `400` validation failure (missing/empty/non-string `labelId`, or any unknown body field — strict whitelist), or session is not started · `401` missing/invalid API key · `403` key lacks `OPERATOR` role · `404` (whatsapp-web.js) the chat does not exist on this session, so nothing was written, or the account has no label with this `labelId` (`Label <labelId> not found`), so the chat's labels are unchanged · `409` conflict or engine not ready (retryable) · `422` labels require a WhatsApp Business account, or the chat type has no labels · `503` session not ready or dependency unavailable (retryable)
 
 #### DELETE /api/sessions/:sessionId/labels/chat/:chatId/:labelId
 
