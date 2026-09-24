@@ -38,7 +38,7 @@ For tests, inject a Guzzle client whose handler is a `MockHandler` — no networ
 
 ```php
 $client = new Client([
-    'baseUrl'    => 'http://x',
+    'baseUrl'    => 'http://localhost',
     'apiKey'     => 'k',
     'httpClient' => $mockGuzzleClient,
 ]);
@@ -72,6 +72,8 @@ try {
 ## Notes
 
 - **Use HTTPS in production** — the API key is sent as `X-API-Key` and is bearer-equivalent.
+  Over plaintext `http://` to a non-localhost host the client writes a warning with `error_log()`;
+  pass `'allowInsecureHttp' => true` to skip it (for example on a private Docker network).
 - The SDK does **not** retry, and **never follows redirects** (so the key is never re-sent to
   a redirect target). Path segments are percent-encoded; a base-URL path prefix (e.g. behind a
   reverse proxy) is preserved.

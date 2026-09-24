@@ -25,6 +25,29 @@ class ClientTest extends TestCase
         new \OpenWA\Client(['baseUrl' => 'https://x', 'apiKey' => '']);
     }
 
+    public function testInsecureHttpBaseUrlLogsInsteadOfRaisingAPhpError(): void
+    {
+        // Laravel, Symfony and PHPUnit's failOnWarning turn an E_USER_WARNING into an exception, so a
+        // raised warning left the client unbuildable for an http:// host on a private network.
+        $log = (string) tempnam(sys_get_temp_dir(), 'openwa');
+        $previousLog = ini_set('error_log', $log);
+        set_error_handler(static function (int $errno, string $errstr): bool {
+            throw new \ErrorException($errstr, 0, $errno);
+        });
+        try {
+            new \OpenWA\Client(['baseUrl' => 'http://openwa:2785', 'apiKey' => 'k']);
+            $this->assertStringContainsString('insecure http://', (string) file_get_contents($log));
+
+            file_put_contents($log, '');
+            new \OpenWA\Client(['baseUrl' => 'http://openwa:2785', 'apiKey' => 'k', 'allowInsecureHttp' => true]);
+            $this->assertSame('', file_get_contents($log));
+        } finally {
+            restore_error_handler();
+            ini_set('error_log', (string) $previousLog);
+            unlink($log);
+        }
+    }
+
     public function testSendsApiKeyHeader(): void
     {
         $backend = (new MockBackend())->on(200, []);
