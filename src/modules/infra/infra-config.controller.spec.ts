@@ -287,6 +287,37 @@ describe('InfraConfigController.saveConfig writes values the next boot reads bac
     expect(savedPassword('Str0ng!Passw0rd').line).toBe('DATABASE_PASSWORD=Str0ng!Passw0rd');
   });
 
+  // Each line reads back on its own, but the next boot parses the whole file, where a quote one value
+  // leaves open can run on to a later line that holds the same quote character.
+  function savedFile(databasePassword: string, redisPassword: string): string {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({
+      database: { type: 'postgres', builtIn: false, host: 'db', password: databasePassword },
+      redis: { enabled: true, builtIn: false, host: 'cache', password: redisPassword },
+    } as never);
+    return ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+  }
+
+  it('keeps every key intact when a value opens a quote that a later line closes', () => {
+    const dotenv = jest.requireActual<typeof import('dotenv')>('dotenv');
+    const content = savedFile('"x7Kp', 'ab"#cd');
+    const whole = dotenv.parse(content);
+    const lineByLine = Object.assign({}, ...content.split('\n').map(line => dotenv.parse(line))) as Record<
+      string,
+      string
+    >;
+
+    expect(whole).toEqual(lineByLine);
+    expect(whole).toMatchObject({ DATABASE_TYPE: 'postgres', DATABASE_PASSWORD: '"x7Kp', REDIS_PASSWORD: 'ab"#cd' });
+  });
+
+  it('refuses a quoted value that a later line would extend, writing nothing', () => {
+    // `#x\` needs quoting, and its `\'` escapes the closing quote once a later line holds a `'#`.
+    expect(() => savedFile('#x\\', `a'#b`)).toThrow(/DATABASE_PASSWORD/);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+
   it('refuses a value no dotenv form can carry, writing nothing', () => {
     (fs.existsSync as jest.Mock).mockReturnValue(false);
     (fs.writeFileSync as jest.Mock).mockClear();

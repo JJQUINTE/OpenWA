@@ -33,9 +33,12 @@ export function readGeneratedEnv(): Record<string, string> {
  * `value` in the form dotenv reads back unchanged, or `undefined` when no form does. dotenv takes an
  * unquoted `#` as a comment and strips outer quotes and whitespace, so such a value is quoted; any
  * other value stays bare, which keeps existing files and scripts/lib-env.sh (plain lines only) as-is.
+ * A leading quote is never left bare: it reads back on its own line, but in the whole file it opens a
+ * quoted value that a later line holding the same quote character closes.
  */
 export function encodeGeneratedEnvValue(key: string, value: string): string | undefined {
-  return [value, `'${value}'`, `"${value}"`, `\`${value}\``].find(
+  const quoted = [`'${value}'`, `"${value}"`, `\`${value}\``];
+  return (/^['"`]/.test(value) ? quoted : [value, ...quoted]).find(
     form => dotenv.parse(`${key}=${form}`)[key] === value,
   );
 }
