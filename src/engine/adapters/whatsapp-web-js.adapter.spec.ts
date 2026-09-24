@@ -19,6 +19,7 @@ import {
   NAVIGATION_EPISODE_CAP_MS,
 } from './whatsapp-web-js.adapter';
 import { getEffectiveWebVersionInfo, resolveWebVersionPin, __resetWebVersionCache } from '../wa-web-version';
+import { resolveEngineInitTimeoutMs } from '../engine-init-timeout';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as qrcode from 'qrcode';
@@ -3126,6 +3127,17 @@ describe('resolveAuthTimeoutMs (#353 — configurable first-boot init wait)', ()
   it('accepts large but safe integer millisecond values', () => {
     process.env.WWEBJS_AUTH_TIMEOUT_MS = '600000';
     expect(resolveAuthTimeoutMs()).toBe(600000);
+  });
+
+  // The outer init deadline is a setTimeout, and Node fires any delay above 2^31-1 after 1 ms: every
+  // start on either engine was then a 504. whatsapp-web.js times its own wait with Date.now, so the
+  // auth value itself is kept.
+  it('keeps the derived init deadline within what a Node timer can hold', () => {
+    process.env.WWEBJS_AUTH_TIMEOUT_MS = '3000000000';
+    expect(resolveAuthTimeoutMs()).toBe(3000000000);
+    expect(resolveEngineInitTimeoutMs()).toBe(2_147_483_647);
+    process.env.WWEBJS_AUTH_TIMEOUT_MS = '600000';
+    expect(resolveEngineInitTimeoutMs()).toBe(630000);
   });
 });
 

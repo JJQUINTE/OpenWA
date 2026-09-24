@@ -42,5 +42,7 @@ export function resolveAuthTimeoutMs(): number | undefined {
  * behaviour change, not part of moving this out of the adapter.
  */
 export function resolveEngineInitTimeoutMs(): number {
-  return Math.max(60_000, (resolveAuthTimeoutMs() ?? 30_000) + 30_000);
+  // Capped at the largest delay a Node timer holds: above it setTimeout fires after 1 ms, so a huge
+  // WWEBJS_AUTH_TIMEOUT_MS failed every start at once instead of waiting longer.
+  return Math.min(2_147_483_647, Math.max(60_000, (resolveAuthTimeoutMs() ?? 30_000) + 30_000));
 }
