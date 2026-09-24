@@ -7,6 +7,7 @@ namespace OpenWA\Tests;
 use OpenWA\Exceptions\OpenWAApiException;
 use OpenWA\Exceptions\OpenWAAuthException;
 use OpenWA\Exceptions\OpenWANotFoundException;
+use OpenWA\Exceptions\OpenWAServiceUnavailableException;
 use OpenWA\Exceptions\OpenWATimeoutException;
 use PHPUnit\Framework\TestCase;
 
@@ -147,6 +148,23 @@ class ClientTest extends TestCase
             $this->assertSame(404, $e->getStatus());
             $this->assertSame('Not Found', $e->getErrorKind());
             $this->assertIsArray($e->getBody());
+        }
+    }
+
+    public function testNonEnvelopeErrorBodyMapsToTypedException(): void
+    {
+        // The readiness probe answers 503 with {status, details}: no statusCode/message, and a
+        // nested array that strval() cannot convert.
+        $backend = (new MockBackend())->on(503, [
+            'status' => 'error',
+            'details' => ['mainDatabase' => ['status' => 'down']],
+        ]);
+        try {
+            $backend->makeClient()->health->ready();
+            $this->fail('Expected exception');
+        } catch (OpenWAServiceUnavailableException $e) {
+            $this->assertSame(503, $e->getStatus());
+            $this->assertStringContainsString('{"mainDatabase":{"status":"down"}}', $e->getMessage());
         }
     }
 

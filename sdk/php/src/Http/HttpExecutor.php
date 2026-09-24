@@ -188,7 +188,12 @@ class HttpExecutor
         $envelope = is_array($data) && isset($data['statusCode'], $data['message']) ? $data : null;
         $rawMessage = $envelope['message'] ?? $data;
         if (is_array($rawMessage)) {
-            $messageText = implode(', ', array_map('strval', $rawMessage));
+            // A body without the envelope (the readiness 503's {status, details}) can nest arrays,
+            // which strval() cannot convert; render those as JSON.
+            $messageText = implode(', ', array_map(
+                fn ($v) => is_array($v) ? json_encode($v) : (string) $v,
+                $rawMessage,
+            ));
         } elseif (is_string($rawMessage)) {
             $messageText = $rawMessage;
         } else {
