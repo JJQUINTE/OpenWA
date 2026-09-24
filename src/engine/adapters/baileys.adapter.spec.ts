@@ -82,7 +82,7 @@ class FakeSock extends EventEmitter {
     creds: { accountSyncCounter: 0 },
     keys: { set: jest.fn().mockResolvedValue(undefined) },
   };
-  public signalRepository: { lidMapping: { getLIDForPN: jest.Mock } } | undefined;
+  public signalRepository: { lidMapping: { getLIDForPN: jest.Mock; getPNForLID?: jest.Mock } } | undefined;
   fire(event: string, arg: unknown): void {
     this.emitter.emit(event, arg);
   }
@@ -290,6 +290,36 @@ describe('BaileysAdapter lifecycle & status', () => {
     await expect(getMessage({ remoteJid: '120363000@g.us', id: 'M1' })).resolves.toBeUndefined();
     // A lid the session cannot map may be that same chat, so the retry is still answered.
     await expect(getMessage({ remoteJid: '99887766@lid', id: 'M1' })).resolves.toBe(content);
+  });
+
+  it("compares a retry from a lid the session cannot map through Baileys' own lid mapping", async () => {
+    await newAdapter().initialize(noopCallbacks({}));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const makeWASocket = jest.requireMock('@whiskeysockets/baileys').default as jest.Mock;
+    const [[{ getMessage }]] = makeWASocket.mock.calls as Array<
+      [{ getMessage: (key: { remoteJid?: string; id?: string }) => Promise<unknown> }]
+    >;
+    const content = { conversation: 'hi' };
+    fakeStore.getMessage.mockResolvedValue({
+      key: { remoteJid: '628111@s.whatsapp.net', fromMe: true, id: 'M1' },
+      message: content,
+    });
+    // Baileys answers with a device-qualified phone jid, or null when it has no mapping either.
+    const known: Record<string, string> = {
+      '99887766': '628222:0@s.whatsapp.net',
+      '11223344': '628111:3@s.whatsapp.net',
+    };
+    const getPNForLID = jest.fn((lid: string) => Promise.resolve(known[lid.split(/[:@]/)[0]] ?? null));
+    fakeSock.signalRepository = { lidMapping: { getLIDForPN: jest.fn(), getPNForLID } };
+    try {
+      await expect(getMessage({ remoteJid: '99887766:3@lid', id: 'M1' })).resolves.toBeUndefined();
+      expect(getPNForLID).toHaveBeenCalledWith('99887766:3@lid');
+      await expect(getMessage({ remoteJid: '11223344@lid', id: 'M1' })).resolves.toBe(content);
+      // Neither the session nor Baileys can map it: it may be the same chat, so it is still answered.
+      await expect(getMessage({ remoteJid: '55667788@lid', id: 'M1' })).resolves.toBe(content);
+    } finally {
+      fakeSock.signalRepository = undefined;
+    }
   });
 
   it('on a logged-out close: DISCONNECTED, onDisconnected, and NO reconnect', async () => {

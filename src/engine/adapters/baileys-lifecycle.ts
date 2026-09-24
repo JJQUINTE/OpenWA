@@ -384,11 +384,25 @@ export class BaileysLifecycle {
           return undefined;
         }
         const stored = await this.host.config.messageStore?.getMessage(this.host.config.dbSessionId, key.id);
-        const neutral = (jid: string): string => this.host.toNeutralJid(jid);
-        if (stored && differentWaIds([stored.key.remoteJid, stored.key.remoteJidAlt], [key.remoteJid], neutral)) {
+        if (!stored) {
           return undefined;
         }
-        return stored?.message ?? undefined;
+        const neutral = (jid: string): string => this.host.toNeutralJid(jid);
+        const chat = [stored.key.remoteJid, stored.key.remoteJidAlt];
+        if (differentWaIds(chat, [key.remoteJid], neutral)) {
+          return undefined;
+        }
+        // A lid the session cannot map cannot be compared with a phone-number chat, so ask Baileys'
+        // own mapping (a local store read) for its phone number too. When neither knows it, the retry
+        // is still answered: refusing then would leave a real recipient waiting for good.
+        const lid = key.remoteJid;
+        if (lid?.endsWith('@lid') && neutral(lid).endsWith('@lid')) {
+          const pn = await this.sock?.signalRepository?.lidMapping?.getPNForLID(lid).catch(() => null);
+          if (pn && differentWaIds(chat, [pn], neutral)) {
+            return undefined;
+          }
+        }
+        return stored.message ?? undefined;
       },
       logger: baileysLogger,
     });
