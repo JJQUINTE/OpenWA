@@ -970,6 +970,9 @@ adapter boundary — none silently stubs.
 - **`deleteContact` addressing.** wwjs addresses by phone number
   (`deleteAddressbookContact`), Baileys by JID (`removeContact`) — the adapter converts.
 - **`deleteMessage` (baileys, `forEveryone=false`).** Wired via `chatModify({deleteForMe})`.
+  `forEveryone=true` on a message the account cannot revoke (not its own, and not in a group it
+  administers) falls back to that same delete-for-me, as whatsapp-web.js does. WhatsApp ignores such
+  a revoke while the send still resolves, so sending it would report a deletion that never happened.
 
 ## 29.8 Snapshot summary
 
