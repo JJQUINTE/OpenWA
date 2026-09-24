@@ -197,6 +197,14 @@ export class BaileysEvents {
    */
   private readonly deletedForEveryone = new Set<string>();
 
+  /**
+   * The latest edit of a message still being processed, by id, with the key it was sent under. The
+   * edit is announced first and finds no row or preview to change, and a repeat delivery can be stored
+   * after the edit was applied, so the original is stored and announced with this text instead.
+   * Bounded like deletedForEveryone, which wins over it.
+   */
+  private readonly editedWhileInFlight = new Map<string, { envelope: WAMessageKey; body: string }>();
+
   constructor(private readonly host: BaileysEventsHost) {}
 
   /** Whether a delete for everyone of this message was accepted (see deletedForEveryone). */
@@ -403,6 +411,15 @@ export class BaileysEvents {
             editedContentType === 'stickerMessage';
           const edited: EditedMessage = buildEditedMessage(base, hasMedia);
           this.host.recordMessageEdit(remoteJid, edited.messageId, edited.body);
+          const target = this.inboundInFlight.get(edited.messageId);
+          if (target && this.mayChange(target.key, msg.key, false)) {
+            this.editedWhileInFlight.delete(edited.messageId); // re-inserted as the newest
+            this.editedWhileInFlight.set(edited.messageId, { envelope: msg.key, body: edited.body });
+            if (this.editedWhileInFlight.size > BaileysEvents.DELETED_FOR_EVERYONE_LIMIT) {
+              const [oldest] = this.editedWhileInFlight.keys();
+              this.editedWhileInFlight.delete(oldest);
+            }
+          }
           this.changeStoredMessage(edited.messageId, stored => {
             const content = this.mayChange(stored.key, msg.key, false)
               ? b.normalizeMessageContent(stored.message ?? undefined)
@@ -484,15 +501,27 @@ export class BaileysEvents {
       });
       // Stored before it is announced: whoever hears about this message may act on it at once (a quoted
       // reply, a reaction, a read receipt), and the store holds a read of an id until its write lands.
-      // A message deleted for everyone while it was being processed is stored as the delete leaves it.
+      // A message deleted for everyone or edited while it was being processed is stored as the change
+      // leaves it, and a delete wins over an edit.
       const deleted = storedId !== null && this.deletedForEveryone.has(storedId);
-      void this.host.putStoredMessage(deleted ? { ...msg, message: null } : msg)?.catch(err =>
+      const edit = storedId !== null && !deleted ? this.editedWhileInFlight.get(storedId) : undefined;
+      const editedBody = edit && this.mayChange(msg.key, edit.envelope, false) ? edit.body : undefined;
+      let toStore = deleted ? { ...msg, message: null } : msg;
+      if (editedBody !== undefined) {
+        // A copy, so the edit reaches neither Baileys' object nor anyone else holding it.
+        toStore = JSON.parse(JSON.stringify(msg, b.BufferJSON.replacer), b.BufferJSON.reviver) as WAMessage;
+        const content = b.normalizeMessageContent(toStore.message ?? undefined);
+        if (content) setBaileysText(content, editedBody);
+        incoming.body = editedBody;
+      }
+      void this.host.putStoredMessage(toStore)?.catch(err =>
         this.host.logger.warn('Failed to persist message to store', {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
       // Its delete was announced first and found nothing to clear, so announcing the message now, or
-      // leaving its text as the chat preview, would publish what the sender took back.
+      // leaving its text as the chat preview, would publish what the sender took back. An edit announced
+      // first found nothing to change either, so the message carries it here and in the preview.
       if (!deleted) {
         if (msg.key.fromMe === true) {
           this.host.getOnMessageCreate()?.(incoming);
@@ -501,7 +530,11 @@ export class BaileysEvents {
         }
       }
       this.host.recordMessage(msg);
-      if (deleted) this.host.recordMessageEdit(remoteJid, storedId, '');
+      if (deleted) {
+        this.host.recordMessageEdit(remoteJid, storedId, '');
+      } else if (editedBody !== undefined && storedId !== null) {
+        this.host.recordMessageEdit(remoteJid, storedId, editedBody);
+      }
     } catch (err) {
       this.host.logger.error(
         `Unhandled error processing inbound message (id=${msg.key?.id ?? 'unknown'}); dropping`,
