@@ -60,6 +60,14 @@
 > which is exactly how a takeover begins. Without `NODE_URL` the whole path is inert and
 > single-node deployments pay nothing.
 >
+> **List and stats routes answer from the node that received them.** `GET /api/sessions` and
+> `GET /api/sessions/stats/overview` name no session, so they are never forwarded. `lastError`,
+> `restriction`, the stats `active` count and `memoryUsage` are that node's own view, not the owner's:
+> the first two come from what this node's engines recorded, `active` counts only this node's engines,
+> and `memoryUsage` is this process's. `engineLoaded` is the exception, since it also counts a live
+> claim by another node. With routing on, `GET /api/sessions/:sessionId` is forwarded to the owner, so
+> its answer is the owner's.
+>
 > **A failed forward says whether the owner could have acted.** When the owner cannot be
 > reached at all (connection refused, unresolvable or unusable `NODE_URL`), the answer is
 > `503` and the request was not carried out, so it is safe to retry. A timeout answers `504`
