@@ -368,6 +368,14 @@ describe('DockerService managed specs ↔ docker-compose.yml parity', () => {
     }
   });
 
+  // .env.example documents API_PORT as the host port Docker Compose publishes, and the README quick
+  // start runs the dev file, so a hardcoded 2785 there ignores the knob when that port is taken.
+  it.each(['docker-compose.yml', 'docker-compose.dev.yml'])('%s publishes the API on the API_PORT host port', file => {
+    const parsed = yaml.load(readFileSync(join(__dirname, '../../..', file), 'utf8')) as ComposeFile;
+    const api = Object.values(parsed.services).find(service => service.container_name === 'openwa-api');
+    expect(api?.ports).toEqual([expect.stringMatching(/:\$\{API_PORT:-2785\}:2785$/)]);
+  });
+
   it('redis: sets the noeviction maxmemory policy BullMQ requires, on both launch paths', async () => {
     const cfg = await capture('redis');
     // The parity assertion above only proves the two launch paths AGREE — dropping the flag from
