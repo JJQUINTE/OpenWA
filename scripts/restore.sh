@@ -168,9 +168,16 @@ replace_tree() {
     return
   fi
   log "Restoring $label"
-  rm -rf -- "$target_dir"
-  mkdir -p "$(dirname "$target_dir")"
-  cp -pR "$source_dir" "$target_dir"
+  if [ -d "$target_dir" ] && [ ! -L "$target_dir" ]; then
+    # Empty the directory and refill it rather than remove it: it may be a mount point (a volume under
+    # the container's read-only root), which can be neither removed nor re-created.
+    find "$target_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -pR "$source_dir/." "$target_dir"
+  else
+    rm -rf -- "$target_dir"
+    mkdir -p "$(dirname "$target_dir")"
+    cp -pR "$source_dir" "$target_dir"
+  fi
 }
 
 # The data-dir safety snapshot below cannot cover a target that lives OUTSIDE it (a custom

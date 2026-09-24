@@ -19,6 +19,8 @@
 #   (m) OPENWA_RESTORE_SNAPSHOT_DIR takes the data-dir snapshot off a read-only parent (skipped as root)
 #   (n) a state dir outside the data dir is snapshotted before any database is written, and under
 #       OPENWA_RESTORE_SNAPSHOT_DIR when that is set (skipped as root)
+#   (o) such a state dir under a read-only parent, a mount point in the container, is restored in
+#       place (skipped as root)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -592,8 +594,30 @@ if [ "$(id -u)" -ne 0 ]; then
     fail "(n) the archived sessions were not restored"
   fi
   pass "(n) external state snapshotted before the databases are written, under OPENWA_RESTORE_SNAPSHOT_DIR"
+
+  echo ""
+  echo "==> (o) a state dir whose parent is read-only is restored in place"
+  # A volume mounted at /sessions can be emptied but not removed or re-created: its parent is the
+  # read-only root. The unwritable parent stands in for that here.
+  printf 'oscar-stale\n' >"$N/ro/sessions/stale"
+  chmod a-w "$N/ro"
+  restore_n "$N/ro/sessions" "$N/snapshots-o"
+  chmod u+w "$N/ro"
+  if [ "$RC" -ne 0 ]; then
+    fail "(o) restore into a state dir under a read-only parent failed: $OUT"
+  fi
+  if [ "$(cat "$N/ro/sessions/session-s1/marker")" != "november-archive" ]; then
+    fail "(o) the archived sessions were not restored into the directory"
+  fi
+  if [ -e "$N/ro/sessions/stale" ]; then
+    fail "(o) a file the archive does not carry survived the restore"
+  fi
+  if [ "$(cat "$N"/snapshots-o/sessions.pre-restore-*/session-s1/marker 2>/dev/null || true)" != "november-live" ]; then
+    fail "(o) the sessions snapshot is not under OPENWA_RESTORE_SNAPSHOT_DIR"
+  fi
+  pass "(o) a state dir under a read-only parent is emptied and refilled in place"
 else
-  echo "SKIP: (n) running as root, which ignores the permission bits this case relies on"
+  echo "SKIP: (n) and (o) running as root, which ignores the permission bits these cases rely on"
 fi
 
 echo ""
