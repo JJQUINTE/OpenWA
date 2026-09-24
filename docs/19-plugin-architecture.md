@@ -414,6 +414,13 @@ On a **pre-action** event it is a veto, because the action has not been taken ye
 `message:sending` blocks the send (the caller gets a `400`), and on `webhook:before` it cancels that one
 delivery.
 
+A bulk send (`POST /api/sessions/:sessionId/messages/send-bulk`) runs `message:sending` once per item,
+and fires `message:failed` for an item that fails for any reason other than a plugin block or a pacing
+refusal. Both carry the item's content with its recipient `chatId` added as `input`, so a handler that
+reads `input.chatId` on a single send reads it here too. A handler may rewrite the content, but a
+rewritten `chatId` is ignored: the item always goes to its own recipient. On a single send the rewritten
+`input` is what gets sent, `chatId` included.
+
 > **`message:sending` does not see every attempted send.** With send pacing enabled
 > (`SEND_PACING_ENABLED`), the pacing governor runs _before_ this hook, so a send it refuses never
 > fires `message:sending` — plugins are not asked to moderate, and cannot rewrite, traffic that
