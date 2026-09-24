@@ -191,9 +191,9 @@ docker compose exec openwa-api printenv NODE_ENV CSP_UPGRADE_INSECURE_REQUESTS
 A production boot that serves the dashboard with the opt-out unset prints a warning naming this
 setting. If you are behind a TLS proxy, ignore that warning — the directive is doing its job.
 
-> The alternative is to front OpenWA with a TLS-terminating reverse proxy (the shipped
-> `docker-compose.yml` topology), which serves the dashboard over HTTPS and makes the upgrade a
-> no-op.
+> The alternative is to front OpenWA with your own TLS-terminating reverse proxy (the shipped
+> `docker-compose.yml` has none; see the nginx example in 12.8), which serves the dashboard over
+> HTTPS and makes the upgrade a no-op.
 
 ### Issue: Session Won't Connect
 
