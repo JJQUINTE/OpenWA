@@ -149,8 +149,8 @@ describe('IntegrationModule queue wiring (QUEUE_ENABLED conditional)', () => {
       const enqueue = moduleRef.get(IngressEnqueueService, { strict: false });
       expect(() => enqueue.onApplicationBootstrap()).not.toThrow();
 
-      // ...and the full queued-dispatch contract holds: enqueue() hands the job to BullMQ (with the
-      // deliveryId as jobId) instead of falling back to inline dispatch.
+      // ...and the full queued-dispatch contract holds: enqueue() hands the job to BullMQ (keyed by the
+      // namespaced deliveryId hash) instead of falling back to inline dispatch.
       const outcome = await enqueue.enqueue(
         {
           pluginId: 'chatwoot',
@@ -165,8 +165,10 @@ describe('IntegrationModule queue wiring (QUEUE_ENABLED conditional)', () => {
       expect(queue.add).toHaveBeenCalledWith(
         'ingress',
         expect.objectContaining({ deliveryId: 'd1' }),
-        expect.objectContaining({ jobId: 'd1' }),
+        expect.anything(),
       );
+      const [, , opts] = queue.add.mock.calls[0] as [string, unknown, { jobId: string }];
+      expect(opts.jobId).toMatch(/^ing-[0-9a-f]{40}$/);
     } finally {
       await moduleRef.close();
     }
