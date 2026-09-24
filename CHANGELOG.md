@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Hindi (हिन्दी) dashboard locale, selectable from the language picker. Thanks @probably-ABHINAV.
+- `PATCH /api/integration/plugins/:pluginId/instances/:instanceId` accepts `sessionScope: null` to return an instance to all sessions; the dashboard sends it when the scope field is cleared.
 
 ### Fixed
 
@@ -19,10 +20,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard Plugins page shows a plugin's status and type in the selected language; they rendered as raw English values (`installed`, `extension`) in every locale.
 - On Baileys, quoting, reacting to, forwarding, editing or deleting a message the moment it arrives or is sent no longer fails intermittently with `Message <id> not found`: a lookup of a message whose store write is still in flight now waits for that write.
 - On Baileys, a message WhatsApp re-delivers while its first copy is still being stored is no longer dispatched twice.
+- Baileys: an edit, revoke or reaction that WhatsApp delivers inside a wrapper message is no longer dropped, so `message.edited`, `message.revoked` and `message.reaction` fire for it.
+- Baileys: a WhatsApp-side unlink clears the session's stored messages and its persisted chat mute, archive and pin state, and an API logout now clears that state too, so a re-linked account no longer inherits the previous account's flags.
+- Baileys: a failed chat-state read no longer resets a chat's persisted mute and archive flags, and a chat list no longer queries the database once for every chat that has no stored state.
+- Baileys: a chat muted "Always" reads as muted indefinitely instead of unmuted.
+- Baileys: delete for everyone on a message the account cannot revoke (another sender's message in a 1:1 chat, or in a group it does not administer) deletes it for the account only, as on whatsapp-web.js, instead of reporting success and deleting nothing.
+- Baileys: a message sent through the API becomes the chat's last message, so chat lists sort and preview by it.
+- Baileys: `DELETE /api/sessions/:sessionId/status/:id` revokes the status for the recipients it was posted to; the revoke reached nobody before.
+- Baileys: `BAILEYS_LOG_LEVEL` diagnostics keep an error's message and stack instead of logging `err: {}`.
+- Baileys: a catalog product listed without a price or currency omits `price`, `priceFormatted` and `currency` instead of returning `null` or a `NaN` price, and a product card for it no longer sends `NaN`.
+- whatsapp-web.js: stopping, deleting or logging out a session while Chromium is still launching no longer leaves a logged-in browser running that nothing owns.
+- whatsapp-web.js: a session that reported connected keeps its credentials when the readiness deadline fires right after the event-bridge reload, instead of being forced to pair again.
+- whatsapp-web.js: a chat history read with a zero, negative or non-numeric limit returns the default 50 messages instead of every loaded message, and a plugin's `ctx.engine.getChatHistory` coerces a non-numeric limit the same way.
+- whatsapp-web.js: button, list and template-button replies arrive as type `text`, as on Baileys, instead of `unknown`, and rows stored with the old tokens are backfilled at boot.
+- whatsapp-web.js: posting a status no longer downloads its own media a second time from the echo event.
+- whatsapp-web.js: the auto-resolved WhatsApp Web pin is refreshed daily instead of held for the life of the process, where it eventually pointed at a build the registry had deleted.
+- A `WWEBJS_AUTH_TIMEOUT_MS` above about 24.8 days no longer fails every session start with `504`.
+- The lid-to-phone cache keeps the most recently written mappings after a restart instead of evicting them first.
+- `GET /api/infra/engines` lists channels, status updates and catalog among the Baileys features.
+- A session named after another session's id no longer deletes that session's WhatsApp credentials when it is deleted, or moves them onto itself at boot.
+- A session with a reconnect base delay above about two minutes now reconnects while the liveness watchdog keeps reporting its wedged engine, instead of having the reconnect pushed back on every report.
+- On a multi-node deployment, `GET /api/sessions` and the MCP session tools report `engineLoaded: true` for a session another live node runs, so the dashboard offers Stop, Logout and Force-kill for it instead of Start.
+- With `RESOLVE_LID_TO_PHONE=true`, one transient lookup failure no longer stops a sender's phone from ever being resolved again.
+- Bulk media sent as base64 without a mimetype is stored with the mimetype it was sent with, so the media endpoint serves it, and a bulk media URL without a mimetype takes the fetched Content-Type instead of a hardcoded one.
+- Bulk sends pass the recipient `chatId` in the `message:sending` and `message:failed` hook input, as single sends do.
+- Deleting a session during a large history sync no longer leaves orphan message rows, and deleting a session removes its stored statuses and chat mute, archive and pin state at once.
+- `GET /api/sessions/:sessionId/presence/:chatId` answers JSON `null` when nothing is reported, as documented, instead of an empty body.
+- Forwarding to a node whose `NODE_URL` has a path prefix keeps the prefix.
+- Product sends count toward the send failure breaker like every other send.
+- `GET /api/plugins/:id/health` reports a sandboxed plugin whose worker crashed, failed to enable or is disabled as unhealthy.
+- Removing a row from a plugin config array of masked secrets restores the remaining secrets to the right rows, and a removal the gateway cannot resolve is refused with a request to re-enter them, instead of keeping the removed secret and dropping a kept one.
+- With `QUEUE_ENABLED=true`, ingress deliveries that share a provider delivery id across instances or plugins are no longer dropped as duplicates.
+- The ingress reconciler no longer stalls on pending rows of a disabled or deleted instance, and an ingress job failed by BullMQ stall exhaustion writes a dead-letter row and fires `ingress:error` instead of being lost.
+- An integration instance created without a `verifyToken` gets a generated one, as documented, so a GET verification handshake can succeed; the dashboard shows it once when the instance is created.
+- `ctx.storage.list()` no longer returns the plugin package's own files as storage keys, and an in-place plugin update keeps legacy (pre-encoding) storage files.
+- `GET /api/plugins/catalog` answers `400` instead of `500` for a catalog with a non-object entry.
+- A plugin instance PATCH whose config is rejected, or whose save fails, changes nothing, instead of leaving `enabled` changed.
+- `PUT /api/sessions/:sessionId/webhooks/:id` answers `400` instead of `500` when `url`, `events`, `headers`, `active` or `retryCount` is null.
+- Webhook deliveries drop connection-level custom headers (`Connection`, `Content-Length`, `Expect`, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`), which made every delivery fail.
+- Values saved from Dashboard > Infrastructure that contain `#`, quotes or leading or trailing spaces are written so the next boot reads them unchanged; a database, Redis or S3 password with a `#` was truncated, which could keep the gateway from starting.
+- Restoring a data backup reloads the cached chat mute, archive and pin state instead of serving and later rewriting the pre-restore values.
+- Switching from external S3 to built-in MinIO creates MinIO with the credentials the restarted gateway uses.
+- With Redis-backed rate limiting, `Retry-After` reports when the block lifts instead of the full block duration.
+- The REST API, Bull Board, `GET /api/health` and MCP accept the `Bearer` scheme in any letter case.
+- PostgreSQL boot migrations no longer inherit `DATABASE_STATEMENT_TIMEOUT_MS`, so a long migration during an upgrade is not cancelled at 30 seconds.
+- `PUPPETEER_ARGS` keeps a comma inside a flag value, such as `--window-size=1280,720`.
+- Boot validation catches `MAIN_DATABASE_NAME` pointing at the data database's default SQLite file.
+- `scripts/restore.sh` works on the compose named volume and the Helm PVC: `OPENWA_RESTORE_SNAPSHOT_DIR` moves the pre-restore snapshot off the read-only container root, and the restore runbook gives the in-image commands.
+- The bundled compose files forward `DATABASE_SSL` and `DATABASE_SSL_REJECT_UNAUTHORIZED`, so TLS to a managed PostgreSQL set in `.env` takes effect.
+- `docker-compose.dev.yml` publishes the API on `API_PORT`, as `.env.example` documents.
+- Dashboard Chats no longer shows the previous session's chat list when that list arrives after a session switch, and changing the UI language no longer resets Chats to the first session or closes the open chat.
+- Dashboard Chats: a message sent or received while a chat's first page is loading no longer disappears when the page lands, and text typed next to an audio attachment stays in the input instead of showing as sent, since audio carries no caption.
+- Dashboard Chats offers no reply, react or delete on a message that is not sent yet, which could only fail.
+- Dashboard: message types and chat kinds read as words in the selected language in the reply banner and quote, the chat list, the messages-by-type chart, and the webhook filter tags and summary; a chat whose newest message is media no longer reads "No messages yet".
+- Dashboard: the media viewer saves an image under its file name instead of its caption, and the chat header shows the right country code for three-digit codes and for +7 numbers.
+- Dashboard: the audit CSV export retries throttled pages, exports the newest 18,000 rows with a warning when there are more, and shows an error instead of quietly downloading only the current page.
+- Dashboard: Infrastructure holds its form until the saved config has loaded, so Save can no longer overwrite the stored database, S3 and engine settings with defaults, and saving a built-in Postgres or Redis no longer stores a password the bundled container never receives.
+- Dashboard: clearing a plugin instance's session scope returns it to all sessions instead of silently keeping the old scope, and a per-session plugin override the gateway rejects shows the error instead of "Saved".
+- Dashboard: a newly linked session's card shows its phone and last-active time without a reload, and a slow QR answer no longer reopens a closed QR modal or replaces another session's QR.
+- Dashboard: a failed background refresh keeps the last overview on screen instead of replacing the page with an error, and cancelling a bulk batch in Message Tester no longer flips back to Processing when a progress poll answers late.
+- Dashboard: the new-session form refuses names shorter than 3 characters, and pressing Enter twice no longer sends two create requests.
+- Dashboard: clearing an optional plugin config field clears the stored value, and the API Keys page shows a load or permission error instead of an empty list when the keys cannot be read.
+- Dashboard: the page search boxes show keyboard focus, the Infrastructure storage badge is translated, and the signed-in role is kept per browser tab with its API key instead of in storage shared by every tab.
+- Dashboard: the session proxy settings and the partial-export media warning are translated in 11 locales, the Telugu status composer and channel messages are translated, and counts that are exact multiples of a million render in the plural in French, Spanish, Italian and Portuguese.
+- JavaScript SDK: requests no longer fail with "Illegal invocation" in browsers and Workers, with or without an injected fetch; `timeoutMs` 0 or `Infinity` turns the timeout off instead of aborting every request after 1 ms; and an error body without the usual envelope is shown as JSON instead of `[object Object]`.
+- SDKs: a caller header that differs only in letter case from `X-API-Key` or `Content-Type` no longer goes out next to the SDK's own value.
+- PHP SDK: the readiness `503` throws `OpenWAServiceUnavailableException` instead of an "Array to string conversion" error, and an `http://` base URL is logged with `error_log()` instead of raising a PHP warning; `allowInsecureHttp` silences it.
+- Java SDK: `CatalogProduct.price` is a nullable `Double`, so a product without a price no longer breaks `catalog.products()`.
+- Go SDK: a `429` or `503` whose `Retry-After` outlasts the remaining timeout is returned at once instead of sleeping into a `TimeoutError`.
 
 ### Documentation
 
 - An n8n example forwards incoming WhatsApp messages to a Discord channel with n8n's built-in Webhook and HTTP Request nodes, without the OpenWA community node. Thanks @probably-ABHINAV.
+- The API reference covers `engineLoaded` on multi-node deployments, the new `403`, `404`, `429` and `501` answers, the connection headers dropped from webhook deliveries, the WebSocket subscribe limits, `sessionScope: null` on instance PATCH, optional product price and currency, the production validation error body, the webhook delivery id and idempotency key shapes, node-local stats, and pinned install and catalog URLs.
+- The webhook signature snippets return `false` on a missing or malformed signature header instead of throwing.
+- README and the migration guide say a compose profile only starts its container and list the settings that point OpenWA at it, and the migration guide's permission advice, legacy PostgreSQL steps and rollback pointer are corrected.
+- The troubleshooting guide no longer suggests running the container as a non-root user, maps a session that is not ready to `400` or `409`, and no longer says the shipped compose file includes a TLS proxy; the n8n guide reads delivery-failure rows correctly.
+- The engine capability matrix says `ENGINE_TYPE` selects one engine for the whole deployment and records the Baileys delete fallback, the Baileys status revoke `403` and the whatsapp-web.js `501` refusals.
+- The scaling guide says which session list and stats fields reflect the answering node, and the plugin guide documents the recipient `chatId` in bulk send hook input and the install pin rule.
+- The SDK READMEs and SDK reference create a session and pass its id, not its name, and `.env.example` says a malformed or non-positive value for a boot-validated setting stops the gateway.
+
+### Upgrade notes (behavior changes)
+
+- Baileys: `DELETE /api/sessions/:sessionId/status/:id` answers `403` for a status this session did not post in the last 24 hours (one posted before a restart, from the phone or from another node), because its recipients are unknown; it answered `200` without revoking anything.
+- whatsapp-web.js: a reply, location or contact card to a channel or a status/broadcast list, and a poll or sticker to a status/broadcast list, answer `501` where they answered `500`; nothing is sent, and the send breaker no longer counts them.
+- whatsapp-web.js: adding a label id the account does not have answers `404` where it answered `200`.
+- `POST /api/sessions` refuses a `config` that is not a JSON object with `400`.
+- Boot fails on a `DATABASE_TYPE`, `ENGINE_TYPE` or `STORAGE_TYPE` with surrounding whitespace, and on a malformed, zero or negative value, or a timer above 2147483647 ms, for the chat-media, status and S3 re-probe settings; `migration:run` applies the same `DATABASE_TYPE` rule.
+- Compose installs whose `.env` came from a template older than 0.18 may still carry uncommented `DATABASE_SSL=false` and `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Compose now forwards both, so they override TLS settings saved in the dashboard; comment them out or delete them.
+- A WebSocket `subscribe` whose `sessionId` is not `*` or a session id of at most 128 safe characters answers `INVALID_SESSION`, and a connection can hold at most 4096 subscriptions (`TOO_MANY_SUBSCRIPTIONS`).
+- `GET /api/metrics` answers `429` after 10 failed token attempts from one client within a minute.
+
+### Security
+
+- Baileys: an inbound edit, revoke or reaction that targets a stored message from another chat, or an edit or 1:1 revoke from someone other than the author, is dropped. Any contact who knew a message id could rewrite or erase the stored copy of any message in the session and trigger `message.edited` or `message.revoked` for it.
+- Baileys: a message retry request is answered only for the chat the stored message belongs to.
+- A WebSocket `subscribe` with an oversized `sessionId` retained about 20 MB of room names per frame, so any valid API key could exhaust the gateway's memory; the id is now validated and subscriptions per connection are capped.
+- Link previews scan the fetched page in linear time; a crafted page could stall the whole process for over a minute.
+- `GET /api/metrics` bounds failed `METRICS_TOKEN` attempts per client, so the token can no longer be guessed at full speed.
+- Plugin log metadata can no longer overwrite a log line's level, context, message, timestamp or trace.
+- Backup archives under `./backups` and restore snapshots (`*.pre-restore-*`) are ignored by git and kept out of the Docker build context; they hold the admin API key, WhatsApp credentials and database copies.
 
 ## [0.23.6] - 2026-09-23
 
