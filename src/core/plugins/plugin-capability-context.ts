@@ -268,8 +268,9 @@ export class PluginCapabilityContext {
         this.resolveEngineRead(plugin, sessionId).getChatHistory(
           chatId,
           // Clamp to the REST non-deep ceiling (MessageService.MAX_CHAT_HISTORY_LIMIT = 100) so an
-          // untrusted plugin can't request an unbounded history fetch.
-          Math.min(Math.max(Math.trunc(limit ?? 50), 1), 100),
+          // untrusted plugin can't request an unbounded history fetch. A non-finite limit (a sandboxed
+          // caller's arg is unvalidated) takes the default: NaN would reach the engine as "no limit".
+          Math.min(Math.max(typeof limit === 'number' && Number.isFinite(limit) ? Math.trunc(limit) : 50, 1), 100),
           includeMedia ?? false,
         ),
       canonicalChatId: (sessionId, chatId) => {
