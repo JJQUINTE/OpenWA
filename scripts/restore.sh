@@ -187,6 +187,7 @@ replace_tree() {
 # own mount under a read-only root has no writable place next to it.
 snapshot_external() {
   target="$1"
+  external_snapshot=""
   case "$(resolve_path "$target")" in
     "$RESOLVED_DATA_DIR"/*) return 0 ;;
   esac
@@ -208,13 +209,29 @@ snapshot_external() {
 }
 
 # restore_db <staged file> <target> <label>
+# SQLite keeps un-checkpointed transactions in <db>-wal (and a crashed transaction in <db>-journal),
+# named after the symlink-resolved file, and replays them over whatever main file it finds next to
+# them. Those sidecars belong to the database being replaced: they go into its snapshot and are
+# removed before the copy, or the restored file reads back the old install's rows.
 restore_db() {
+  resolved_db="$(resolve_path "$2")"
   if [ "$PHASE" = snapshot ]; then
     snapshot_external "$2"
+    # Empty when the target lives in the data dir, whose own snapshot already holds the sidecars.
+    if [ -n "$external_snapshot" ]; then
+      for sfx in -wal -shm -journal; do
+        for db in "$2" "$resolved_db"; do
+          if [ -f "$db$sfx" ]; then
+            cp -p "$db$sfx" "$external_snapshot$sfx"
+          fi
+        done
+      done
+    fi
     return
   fi
   log "Restoring $3 -> $2"
   mkdir -p "$(dirname "$2")"
+  rm -f -- "$2-wal" "$2-shm" "$2-journal" "$resolved_db-wal" "$resolved_db-shm" "$resolved_db-journal"
   cp "$1" "$2"
   # Owner-only, matching what the app re-tightens on every boot (sqlite-file-permissions.ts);
   # cp preserves the staged mode, and a foreign-umask extraction may leave it broader.

@@ -22,6 +22,8 @@
 #   (o) such a state dir under a read-only parent, a mount point in the container, is restored in
 #       place (skipped as root)
 #   (p) a symlinked database target or data dir is snapshotted as a copy of what the link points at
+#   (q) a leftover -wal is cleared before a database is restored and kept in its snapshot (skipped
+#       without sqlite3)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -664,6 +666,52 @@ if [ "$(db_fingerprint "$P/live/openwa.sqlite")" != "papa-archive-data" ]; then
   fail "(p) the archived data store was not restored"
 fi
 pass "(p) a symlinked database target and data dir are snapshotted as copies"
+
+echo ""
+if [ "$HAS_SQLITE3" -eq 1 ]; then
+  echo "==> (q) a leftover -wal is neither replayed over the restored database nor lost from the snapshot"
+  # An unclean stop of a WAL-mode database leaves committed transactions in <db>-wal. SQLite replays
+  # that file over whatever main file sits next to it at the next open, so a restore that copies only
+  # the main file reads back the old install's rows, and a snapshot without it misses those rows.
+  Q="$WORK/q"
+  mkdir -p "$Q/src/data" "$Q/live" "$Q/ext"
+  make_fixture "$Q/src/data/main.sqlite" "quebec-archive-main"
+  make_fixture "$Q/src/data/openwa.sqlite" "quebec-archive-data"
+  (
+    cd "$Q/src"
+    BACKUP_DIR="$Q/out" "$BACKUP" >/dev/null
+  )
+  ARCHIVE_Q="$(ls "$Q"/out/openwa-backup-*.tar.gz)"
+  # wal_fixture <db> <payload>: a WAL-mode database whose main file still says 'stale' and whose
+  # un-checkpointed -wal, as an unclean stop leaves it, says <payload>.
+  wal_fixture() {
+    sqlite3 "$1" "PRAGMA journal_mode=WAL; CREATE TABLE sentinel(payload TEXT); INSERT INTO sentinel VALUES('stale');" >/dev/null
+    cp "$1" "$1.base"
+    sqlite3 "$1" "PRAGMA wal_autocheckpoint=0; UPDATE sentinel SET payload='$2';" ".system cp '$1-wal' '$1.wal'" >/dev/null
+    mv "$1.base" "$1"
+    mv "$1.wal" "$1-wal"
+  }
+  wal_fixture "$Q/live/main.sqlite" "quebec-live-main"
+  wal_fixture "$Q/ext/openwa.sqlite" "quebec-live-data"
+  (
+    cd "$Q"
+    MAIN_DATABASE_NAME="$Q/live/main.sqlite" DATABASE_NAME="$Q/ext/openwa.sqlite" OPENWA_DATA_DIR="$Q/live" \
+      "$RESTORE" "$ARCHIVE_Q" --force >/dev/null
+  )
+  if [ "$(db_fingerprint "$Q/live/main.sqlite")" != "quebec-archive-main" ]; then
+    fail "(q) the old install's -wal was replayed over the restored main DB"
+  fi
+  if [ "$(db_fingerprint "$Q/ext/openwa.sqlite")" != "quebec-archive-data" ]; then
+    fail "(q) the old install's -wal was replayed over the restored data store"
+  fi
+  # The snapshot name ends in the timestamp; its sidecars end in -wal and -shm.
+  if [ "$(db_fingerprint "$(ls -d "$Q"/ext/openwa.sqlite.pre-restore-*[0-9])")" != "quebec-live-data" ]; then
+    fail "(q) the snapshot of a database outside the data dir lost the transactions in its -wal"
+  fi
+  pass "(q) stale -wal files are cleared before the copy and kept in the snapshot"
+else
+  echo "SKIP: (q) sqlite3 not found on this host, so there is no WAL-mode database to build"
+fi
 
 echo ""
 echo "All smoke tests passed!"
