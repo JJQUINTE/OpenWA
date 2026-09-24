@@ -247,6 +247,24 @@ describe('LidMappingStoreService — deterministic preload + repository fallback
     expect(repo.find).toHaveBeenCalledWith({ order: { updatedAt: 'DESC' }, take: 3 });
   });
 
+  // The query answers newest first; indexed in that order the newest row sat at the LRU's eviction
+  // end, so the first mapping learned after boot evicted the most recently written one.
+  it('keeps the newest preloaded row when a new mapping evicts', async () => {
+    process.env.LID_MAPPING_CACHE_MAX = '2';
+    const repo = makeFakeRepo();
+    repo.find.mockResolvedValueOnce([
+      { lid: 'lid-new', phone: '620002', sessionId: null, updatedAt: new Date(2000) },
+      { lid: 'lid-old', phone: '620001', sessionId: null, updatedAt: new Date(1000) },
+    ]);
+    const store = await newStore(repo);
+
+    await store.remember('lid-fresh', '620003');
+
+    expect(store.getCached('lid-new')).toBe('620002');
+    expect(store.getCached('lid-fresh')).toBe('620003');
+    expect(store.getCached('lid-old')).toBeUndefined();
+  });
+
   it('preloads without a take when the cap is disabled (0)', async () => {
     process.env.LID_MAPPING_CACHE_MAX = '0';
     const repo = makeFakeRepo();
