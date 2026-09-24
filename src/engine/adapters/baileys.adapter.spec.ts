@@ -3268,6 +3268,73 @@ describe('BaileysAdapter inbound fan-out', () => {
     expect(onMessageReaction).toHaveBeenCalledWith(expect.objectContaining({ senderId: '628777@c.us' }));
   });
 
+  describe('an edit, revoke or reaction checked against the stored original', () => {
+    type Key = { remoteJid: string; fromMe: boolean; participant?: string };
+    const edit = { protocolMessage: { key: { id: 'TARGET' }, type: 14, editedMessage: { conversation: 'forged' } } };
+    const revoke = { protocolMessage: { key: { id: 'TARGET' }, type: 0 } };
+    const reaction = { reactionMessage: { key: { id: 'TARGET' }, text: 'ok' } };
+
+    /** Deliver one message whose target, TARGET, is stored under `original`; report which callbacks fired. */
+    const deliver = async (original: Key, key: Key, message: Record<string, unknown>) => {
+      baileys.getContentType.mockImplementation(realGetContentType);
+      fakeStore.getMessage.mockResolvedValue({ key: { ...original, id: 'TARGET' }, message: { conversation: 'x' } });
+      const onMessageEdited = jest.fn();
+      const onMessageRevoked = jest.fn();
+      const onMessageReaction = jest.fn();
+      const adapter = newAdapter();
+      await adapter.initialize({ onMessageEdited, onMessageRevoked, onMessageReaction });
+      fakeSock.fire('messages.upsert', {
+        type: 'notify',
+        messages: [{ key: { ...key, id: 'INCOMING' }, message, messageTimestamp: 1700000060 }],
+      });
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+      return (
+        onMessageEdited.mock.calls.length + onMessageRevoked.mock.calls.length + onMessageReaction.mock.calls.length
+      );
+    };
+
+    const alice = '628111@s.whatsapp.net';
+    const bob = '628222@s.whatsapp.net';
+    const group = '120363000@g.us';
+
+    it.each([
+      ['edit', edit],
+      ['revoke', revoke],
+    ])('drops a contact %s of a message the account sent them', async (_label, message) => {
+      expect(await deliver({ remoteJid: alice, fromMe: true }, { remoteJid: alice, fromMe: false }, message)).toBe(0);
+    });
+
+    it.each([
+      ['edit', edit],
+      ['revoke', revoke],
+      ['reaction', reaction],
+    ])('drops a %s that targets a message stored in another chat', async (_label, message) => {
+      expect(await deliver({ remoteJid: bob, fromMe: false }, { remoteJid: alice, fromMe: false }, message)).toBe(0);
+    });
+
+    it('drops a group edit of a message another member sent but keeps a group revoke of it (an admin may revoke)', async () => {
+      const original = { remoteJid: group, fromMe: false, participant: bob };
+      const key = { remoteJid: group, fromMe: false, participant: alice };
+      expect(await deliver(original, key, edit)).toBe(0);
+      expect(await deliver(original, key, revoke)).toBe(1);
+    });
+
+    it.each([
+      ['edit', edit],
+      ['revoke', revoke],
+      ['reaction', reaction],
+    ])('keeps a %s by the original author in the same chat', async (_label, message) => {
+      expect(await deliver({ remoteJid: alice, fromMe: false }, { remoteJid: alice, fromMe: false }, message)).toBe(1);
+    });
+
+    it('keeps an edit whose chat is an unresolved lid, since it may be the stored phone-number chat', async () => {
+      expect(
+        await deliver({ remoteJid: alice, fromMe: false }, { remoteJid: '99887766@lid', fromMe: false }, edit),
+      ).toBe(1);
+    });
+  });
+
   describe('contentless protocol traffic on the live path (#1568)', () => {
     /** Push one group message through the live upsert handler with Baileys' real content-type resolution. */
     const fireLive = async (
