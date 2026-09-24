@@ -28,6 +28,11 @@ const logger = createLogger('SendingGate');
  * `source` names the caller in the hook context so a plugin can tell a chat send from a status
  * post without inspecting the payload shape — which matters because the shapes differ: a
  * MessageService `input` is a send DTO carrying `chatId`, a StatusService `input` is not.
+ *
+ * A bulk item's `message:sending` and `message:failed` input carries that item's recipient `chatId`
+ * as well, so a plugin reads the recipient of a bulk item the same way as a single send's. The
+ * difference is on the way back: a single send goes to whatever `chatId` the gate returns, while a
+ * `chatId` rewritten by the gate is ignored for a bulk item, which is always sent to its own recipient.
  */
 export async function applySendingGate<T extends object>(
   hookManager: HookManager,
