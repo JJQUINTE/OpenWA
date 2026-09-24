@@ -352,7 +352,7 @@ export class BaileysEvents {
       // --- reactionMessage: don't emit onMessage ---
       if (contentType === 'reactionMessage') {
         const rm = normalizedRoot?.reactionMessage;
-        if (await this.targetsForeignMessage(rm?.key?.id, msg.key, false)) return;
+        if (await this.targetsForeignMessage(rm?.key?.id, msg.key, false, 'reaction')) return;
         const event: ReactionEvent = {
           messageId: rm?.key?.id ?? '',
           chatId: this.host.toNeutralJid(remoteJid),
@@ -465,16 +465,22 @@ export class BaileysEvents {
    * emits it as-is and the projector updates the stored row by id alone, so a contact who knows an id
    * could rewrite or erase that message. Fails open: with no stored original, or ids that cannot be
    * compared (see {@link differentWaIds}), the event goes through as it always has.
+   *
+   * A reaction to a message the account sent to a broadcast list is exempt: Baileys files the
+   * own-device copy under the list jid (`<id>@broadcast`), while each recipient reacts from their 1:1
+   * chat, so no chat can ever match it. Edits and revokes stay strict.
    */
   private async targetsForeignMessage(
     targetId: string | null | undefined,
     key: WAMessageKey,
     checkAuthor: boolean,
+    kind?: 'reaction',
   ): Promise<boolean> {
     const original = targetId
       ? (await this.readStoredMessage(targetId, 'checking what an edit, revoke or reaction targets'))?.key
       : undefined;
     if (!original) return false;
+    if (kind === 'reaction' && original.fromMe === true && original.remoteJid?.endsWith('@broadcast')) return false;
     const neutral = (jid: string): string => this.host.toNeutralJid(jid);
     const foreign =
       differentWaIds([original.remoteJid, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
