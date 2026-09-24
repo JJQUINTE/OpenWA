@@ -9,7 +9,7 @@
 #   (d) the cp fallback writes a CONSISTENCY-WARNING marker into the archive, restore warns
 #       but continues, and restore --strict refuses
 #   (e) the archive min-content check rejects (and deletes) an archive missing a required DB
-#   (f) data/.env.generated supplies paths the environment does not
+#   (f) data/.env.generated supplies paths the environment does not, and restore reads the archive's copy
 #   (g) PLUGIN_STATE_DIR plugin state is archived and restored at the configured root
 #   (h) restore refuses a live target without --force, before touching anything
 #   (i) the data-store half of that guard refuses on its own
@@ -26,6 +26,7 @@
 #       without sqlite3)
 #   (r) a symlinked state dir is archived by content and restored through the link, and an archive
 #       member that is itself a symlink is refused
+#   (s) restored state lands where the restored data/.env.generated points, below ./.env
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -290,18 +291,25 @@ fi
 if [ "$(db_fingerprint "$F/extract/openwa.sqlite")" != "foxtrot-live-data" ]; then
   fail "(f) backup archived the stale default data DB instead of the one data/.env.generated names"
 fi
-# restore.sh must read the SAME layer, or it writes the databases somewhere backup.sh never looked.
+# restore.sh must read the same layer, from the file in effect AFTER the restore: the archive's
+# .env.generated replaces the target's, so databases placed where the target's old file pointed
+# would be ones the restored app never opens. Here the live databases are gone, as in a disaster
+# recovery, and the target's own file still names other paths.
+rm -f "$F/live/auth.sqlite" "$F/live/store.sqlite"
 printf 'DATABASE_TYPE=sqlite\nMAIN_DATABASE_NAME=%s\nDATABASE_NAME=%s\n' \
   "$F/restore/auth.sqlite" "$F/restore/store.sqlite" >"$F/restore/state/.env.generated"
 (
   cd "$F/restore"
   OPENWA_DATA_DIR="$F/restore/state" "$RESTORE" "$ARCHIVE_F" >/dev/null
 )
-if [ "$(db_fingerprint "$F/restore/auth.sqlite")" != "foxtrot-live-main" ]; then
-  fail "(f) restore ignored the MAIN_DATABASE_NAME in data/.env.generated"
+if [ "$(db_fingerprint "$F/live/auth.sqlite")" != "foxtrot-live-main" ]; then
+  fail "(f) restore ignored the MAIN_DATABASE_NAME in the archive's data/.env.generated"
 fi
-if [ "$(db_fingerprint "$F/restore/store.sqlite")" != "foxtrot-live-data" ]; then
-  fail "(f) restore ignored the DATABASE_NAME in data/.env.generated"
+if [ "$(db_fingerprint "$F/live/store.sqlite")" != "foxtrot-live-data" ]; then
+  fail "(f) restore ignored the DATABASE_NAME in the archive's data/.env.generated"
+fi
+if [ -e "$F/restore/auth.sqlite" ] || [ -e "$F/restore/store.sqlite" ]; then
+  fail "(f) restore wrote the databases where the replaced data/.env.generated pointed"
 fi
 # An explicit environment value must still win — that is the app's precedence, not ours to change.
 (
@@ -777,6 +785,47 @@ if [ "$(db_fingerprint "$R/live/main.sqlite")" != "romeo-live-main" ] || [ ! -f 
   fail "(r) the refused restore changed the install"
 fi
 pass "(r) a symlinked media dir is archived by content, refilled through the link, and a linked member is refused"
+
+echo ""
+echo "==> (s) state lands where the restored data/.env.generated points"
+# Dashboard > Infrastructure writes SESSION_DATA_PATH and STORAGE_LOCAL_PATH to data/.env.generated.
+# The restore installs the archive's copy of that file, so the state has to go where it points, not
+# to the defaults a fresh target would otherwise resolve.
+S="$WORK/s"
+mkdir -p "$S/src/data/custom-sessions/session-s1" "$S/src/data/custom-media" "$S/dst" "$S/dst-env"
+make_fixture "$S/src/data/main.sqlite" "sierra-main"
+make_fixture "$S/src/data/openwa.sqlite" "sierra-data"
+printf 'sierra-session\n' >"$S/src/data/custom-sessions/session-s1/marker"
+printf 'sierra-media\n' >"$S/src/data/custom-media/a.jpg"
+printf 'SESSION_DATA_PATH=./data/custom-sessions\nSTORAGE_LOCAL_PATH=./data/custom-media\n' >"$S/src/data/.env.generated"
+(
+  cd "$S/src"
+  BACKUP_DIR="$S/out" "$BACKUP" >/dev/null
+)
+ARCHIVE_S="$(ls "$S"/out/openwa-backup-*.tar.gz)"
+(
+  cd "$S/dst"
+  "$RESTORE" "$ARCHIVE_S" >/dev/null
+)
+if [ "$(cat "$S/dst/data/custom-sessions/session-s1/marker" 2>/dev/null || true)" != "sierra-session" ]; then
+  fail "(s) the sessions did not land at the SESSION_DATA_PATH the restored data/.env.generated names"
+fi
+if [ "$(cat "$S/dst/data/custom-media/a.jpg" 2>/dev/null || true)" != "sierra-media" ]; then
+  fail "(s) the media did not land at the STORAGE_LOCAL_PATH the restored data/.env.generated names"
+fi
+if [ -e "$S/dst/data/sessions" ] || [ -e "$S/dst/data/media" ]; then
+  fail "(s) state was restored to the default paths as well"
+fi
+# ./.env still wins over the restored file, as it does in the app.
+printf 'SESSION_DATA_PATH=./data/env-sessions\n' >"$S/dst-env/.env"
+(
+  cd "$S/dst-env"
+  "$RESTORE" "$ARCHIVE_S" >/dev/null
+)
+if [ "$(cat "$S/dst-env/data/env-sessions/session-s1/marker" 2>/dev/null || true)" != "sierra-session" ]; then
+  fail "(s) a SESSION_DATA_PATH in ./.env lost to the restored data/.env.generated"
+fi
+pass "(s) restored state follows the restored data/.env.generated, and ./.env still wins"
 
 echo ""
 echo "All smoke tests passed!"

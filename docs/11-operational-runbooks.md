@@ -631,7 +631,9 @@ OPENWA_DATA_DIR=/srv/openwa/data \
 >
 > The scripts resolve every other path the way the application does: an explicit environment value
 > first, then `./.env`, then `<data dir>/.env.generated`. Settings made through Dashboard >
-> Infrastructure therefore apply without being restated on the command line. Two caveats when
+> Infrastructure therefore apply without being restated on the command line. A restore reads that
+> third layer from the archive's `.env.generated` when the archive carries one, because that copy
+> replaces the target's and is the one the restored app reads. Two caveats when
 > operating directly on the host mount: a path recorded inside the container (`/app/data/...`) is not
 > host-visible, so override it in the environment; and a value written with quotes or a trailing `#`
 > comment is reported and skipped rather than guessed at, so pass those explicitly too.

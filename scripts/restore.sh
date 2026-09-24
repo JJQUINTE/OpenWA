@@ -70,27 +70,6 @@ done
 DATA_DIR="${OPENWA_DATA_DIR:-./data}"
 # shellcheck source=scripts/lib-env.sh
 . "$(dirname "$0")/lib-env.sh"
-# Database targets resolve exactly like the app: an explicit environment value, then ./.env, then the
-# dashboard's <data dir>/.env.generated, else the fixed ./data defaults. They may legitimately live
-# outside OPENWA_DATA_DIR. This reads the config of the install being restored INTO, which is why it
-# happens here rather than after the archive's own .env.generated is written over it further down.
-MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
-DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
-SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
-BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
-# Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
-# registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
-# too, or the archive silently omits the plugin packages.
-PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
-# Plugin registry + every plugin's persisted ctx.storage. The app puts them at <dataDir>/plugins,
-# where dataDir is PLUGIN_STATE_DIR when that is set and ./data otherwise, so the knob has to be
-# resolved here exactly like PLUGINS_DIR above. Hardcoding $DATA_DIR/plugins meant an operator who
-# moved plugin state got an archive with neither the registry nor any plugin's storage in it, and
-# a restore that put nothing back. Resolved under its own name because the knob names the ROOT,
-# not the plugins directory inside it.
-PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
-PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 RESTORE_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RESOLVED_CWD="$(pwd -P)"
 
@@ -286,6 +265,32 @@ while IFS= read -r entry; do
   esac
 done < <(tar -tzf "$ARCHIVE")
 tar -xzf "$ARCHIVE" -C "$STAGE"
+
+# Targets resolve exactly like the app: an explicit environment value, then ./.env, then the
+# dashboard's .env.generated, else the fixed ./data defaults. They may legitimately live outside
+# OPENWA_DATA_DIR. The archive's .env.generated replaces the target's further down, so when it carries
+# one, that copy is the third layer: the restored app reads its paths, and state placed where the
+# replaced file pointed would never be opened. Resolved before anything is validated or written.
+if [ -f "$STAGE/.env.generated" ]; then
+  OPENWA_GENERATED_ENV="$STAGE/.env.generated"
+fi
+MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
+DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
+SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
+BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
+MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+# Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
+# registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
+# too, or the archive silently omits the plugin packages.
+PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
+# Plugin registry + every plugin's persisted ctx.storage. The app puts them at <dataDir>/plugins,
+# where dataDir is PLUGIN_STATE_DIR when that is set and ./data otherwise, so the knob has to be
+# resolved here exactly like PLUGINS_DIR above. Hardcoding $DATA_DIR/plugins meant an operator who
+# moved plugin state got an archive with neither the registry nor any plugin's storage in it, and
+# a restore that put nothing back. Resolved under its own name because the knob names the ROOT,
+# not the plugins directory inside it.
+PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
+PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 
 # backup.sh archives state directories by content. An archive from before it followed symlinks
 # carries a link instead, which on this host may point at the very directory the restore empties
