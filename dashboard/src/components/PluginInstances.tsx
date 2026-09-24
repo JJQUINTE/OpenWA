@@ -108,17 +108,11 @@ export function PluginInstances({ pluginId }: { pluginId: string }) {
       setEditError(t('plugins.instances.errors.invalidJson'));
       return;
     }
-    const scope = parseEditScope(editing.sessionScope, editForm.sessionScope);
-    if (!scope.ok) {
-      setEditError(t('plugins.instances.errors.scopeNotClearable'));
-      return;
-    }
     try {
       await updateM.mutateAsync({
         instanceId: editing.instanceId,
-        // Blank → omit (leave scope unchanged); mirrors create. Sending '' would corrupt an
-        // all-sessions (null) instance into a literal empty scope the backend never clears.
-        body: { sessionScope: scope.value, config: parsed.value ?? {} },
+        // Blank means all sessions (null, or omitted when already unscoped). Never '': the API rejects it.
+        body: { sessionScope: parseEditScope(editing.sessionScope, editForm.sessionScope), config: parsed.value ?? {} },
       });
       setEditing(null);
       toast.success(t('plugins.instances.toasts.updated'), editing.instanceId);

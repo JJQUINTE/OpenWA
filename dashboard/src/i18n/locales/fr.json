@@ -1071,8 +1071,7 @@
         "invalidId": "L'ID de l'instance doit contenir des lettres, des chiffres, des tirets ou des underscores (64 max).",
         "invalidJson": "La configuration doit être un JSON valide.",
         "invalidSecret": "Le secret doit contenir au moins 16 caractères, ou laissez vide pour le générer automatiquement.",
-        "duplicateId": "Une instance avec cet ID existe déjà.",
-        "scopeNotClearable": "La portée de session ne peut pas être effacée ici. Pour couvrir toutes les sessions, supprimez cette instance et recréez-la sans portée."
+        "duplicateId": "Une instance avec cet ID existe déjà."
       },
       "toasts": {
         "created": "Instance créée",

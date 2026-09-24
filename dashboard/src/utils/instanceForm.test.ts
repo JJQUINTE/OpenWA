@@ -26,13 +26,13 @@ test('parseInstanceConfig: blank → undefined, object → parsed, invalid → n
   assert.equal(parseInstanceConfig('[1,2]').ok, false); // array is not a config object
 });
 
-test('parseEditScope: a bound scope cannot be blanked, since the API would keep it', () => {
-  assert.deepEqual(parseEditScope('sess-a', ' sess-b '), { ok: true, value: 'sess-b' });
-  assert.deepEqual(parseEditScope('sess-a', 'sess-a'), { ok: true, value: 'sess-a' });
-  assert.deepEqual(parseEditScope(null, 'sess-b'), { ok: true, value: 'sess-b' });
+test('parseEditScope: a blank field resets a bound scope to all sessions', () => {
+  assert.equal(parseEditScope('sess-a', ' sess-b '), 'sess-b');
+  assert.equal(parseEditScope('sess-a', 'sess-a'), 'sess-a');
+  assert.equal(parseEditScope(null, 'sess-b'), 'sess-b');
   // Blank on an all-sessions instance: omit, nothing changes.
-  assert.deepEqual(parseEditScope(null, '  '), { ok: true, value: undefined });
-  assert.deepEqual(parseEditScope('*', ''), { ok: true, value: undefined });
-  // Blank on a bound instance: an omitted field leaves the binding in place, so refuse it.
-  assert.equal(parseEditScope('sess-a', '').ok, false);
+  assert.equal(parseEditScope(null, '  '), undefined);
+  // Blank on a scoped instance: null, which PATCH reads as all sessions (an omitted field would keep it).
+  assert.equal(parseEditScope('sess-a', ''), null);
+  assert.equal(parseEditScope('*', ''), null);
 });

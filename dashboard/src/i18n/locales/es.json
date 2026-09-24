@@ -1071,8 +1071,7 @@
         "invalidId": "El ID de instancia debe contener letras, números, guiones o guiones bajos (máx. 64).",
         "invalidJson": "La configuración debe ser JSON válido.",
         "invalidSecret": "El secreto debe tener al menos 16 caracteres, o déjalo en blanco para generarlo automáticamente.",
-        "duplicateId": "Ya existe una instancia con ese ID.",
-        "scopeNotClearable": "El ámbito de sesión no se puede borrar aquí. Para atender todas las sesiones, elimina esta instancia y créala de nuevo sin ámbito."
+        "duplicateId": "Ya existe una instancia con ese ID."
       },
       "toasts": {
         "created": "Instancia creada",

@@ -1066,8 +1066,7 @@
         "invalidId": "Instance ID must be letters, numbers, hyphens or underscores (max 64).",
         "invalidJson": "Config must be valid JSON.",
         "invalidSecret": "Secret must be at least 16 characters, or leave blank to auto-generate.",
-        "duplicateId": "An instance with that ID already exists.",
-        "scopeNotClearable": "A session scope cannot be cleared here. To serve all sessions, delete this instance and create it again without a scope."
+        "duplicateId": "An instance with that ID already exists."
       },
       "toasts": {
         "created": "Instance created",

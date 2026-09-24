@@ -23,15 +23,12 @@ export function parseInstanceConfig(raw: string): ParseResult {
   }
 }
 
-type ScopeResult = { ok: true; value: string | undefined } | { ok: false };
-
 /**
- * The edit form's session scope. Blank → omit (leave the scope unchanged), which is right for an
- * all-sessions instance. A bound scope cannot be blanked: PATCH reads an omitted field as unchanged
- * and rejects '', so the save would keep the old binding while reporting success.
+ * The edit form's session scope. Blank means all sessions: omitted when the instance already serves
+ * all sessions, and null when it is scoped, because PATCH reads an omitted field as unchanged.
  */
-export function parseEditScope(current: string | null, raw: string): ScopeResult {
+export function parseEditScope(current: string | null, raw: string): string | null | undefined {
   const value = raw.trim();
-  if (value) return { ok: true, value };
-  return current && current !== '*' ? { ok: false } : { ok: true, value: undefined };
+  if (value) return value;
+  return current ? null : undefined;
 }
