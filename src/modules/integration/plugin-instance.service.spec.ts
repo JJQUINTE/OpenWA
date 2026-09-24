@@ -171,4 +171,18 @@ describe('PluginInstanceService provisioning', () => {
     const patched = await service.update('chatwoot', 'acct1', { sessionScope: '' });
     expect(patched?.sessionScope).toBeNull();
   });
+
+  // PATCH sessionScope:null is how an operator returns a bound instance to all sessions. It must land
+  // as the same null an unscoped create stores, since ingress and the sandbox bridge pass a stored
+  // '*' on as a literal session id.
+  it('update clears a bound sessionScope to null, the value an unscoped create stores', async () => {
+    const unscoped = await service.create('chatwoot', 'acct0', {});
+    await service.create('chatwoot', 'acct1', { sessionScope: 'sess-1' });
+
+    const cleared = await service.update('chatwoot', 'acct1', { sessionScope: null });
+
+    expect(cleared?.sessionScope).toBeNull();
+    expect(unscoped.sessionScope).toBeNull();
+    expect((await service.resolve('chatwoot', 'acct1'))?.sessionScope).toBeNull();
+  });
 });

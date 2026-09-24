@@ -197,6 +197,43 @@ describe('IntegrationInstanceController provisioning bridge', () => {
     expect(setPluginSessionConfig).toHaveBeenCalledWith('chatwoot-adapter', 'sess-2', { baseUrl: 'https://y' }); // new bound
   });
 
+  it('returns a bound instance to all sessions on PATCH sessionScope:null', async () => {
+    const { loader, audit, setPluginSessionConfig, setPluginSessions, updatePluginConfig } = build();
+    (loader.getPlugin as jest.Mock).mockReturnValue({
+      manifest: { id: 'chatwoot-adapter', ingress: [{ route: 'chatwoot' }], permissions: ['webhook:ingress'] },
+      activeSessions: ['sess-1'],
+    });
+    const base = { pluginId: 'chatwoot-adapter', instanceId: 'acct1', config: { baseUrl: 'https://x' }, enabled: true };
+    const update = jest.fn().mockResolvedValue({ ...base, sessionScope: null });
+    const instances = {
+      resolve: jest.fn().mockResolvedValue({ ...base, sessionScope: 'sess-1' }),
+      setEnabled: jest.fn(),
+      update,
+      // The row is already unscoped when the old scope's teardown lists instances.
+      list: jest.fn().mockResolvedValue([{ ...base, sessionScope: null }]),
+      maskedView: (i: unknown) => i,
+    } as unknown as PluginInstanceService;
+    const controller = new IntegrationInstanceController(
+      instances,
+      loader,
+      audit,
+      new ScopeBindingService(instances, loader, audit, sessions),
+    );
+
+    const view = await controller.patch('chatwoot-adapter', 'acct1', { sessionScope: null });
+
+    expect(update).toHaveBeenCalledWith(
+      'chatwoot-adapter',
+      'acct1',
+      { sessionScope: null, config: undefined },
+      undefined,
+    );
+    expect(view.sessionScope).toBeNull();
+    expect(setPluginSessionConfig).toHaveBeenCalledWith('chatwoot-adapter', 'sess-1', {}); // old scope torn down
+    expect(updatePluginConfig).toHaveBeenCalledWith('chatwoot-adapter', { baseUrl: 'https://x' });
+    expect(setPluginSessions).toHaveBeenLastCalledWith('chatwoot-adapter', ['*']);
+  });
+
   it('keeps the session but CLEARS its config when a disabled instance shares its scope with a sibling', async () => {
     const { loader, audit, setPluginSessionConfig, setPluginSessions } = build();
     (loader.getPlugin as jest.Mock).mockReturnValue({
@@ -541,9 +578,9 @@ describe('IntegrationInstanceController session-scope fence', () => {
       ForbiddenException,
     );
     // An explicit null (all sessions) is likewise outside a scoped key's fence.
-    await expect(
-      controller.patch('chatwoot-adapter', 'acct1', { sessionScope: null as unknown as string }, scopedKey),
-    ).rejects.toThrow(ForbiddenException);
+    await expect(controller.patch('chatwoot-adapter', 'acct1', { sessionScope: null }, scopedKey)).rejects.toThrow(
+      ForbiddenException,
+    );
     expect(update).not.toHaveBeenCalled();
   });
 

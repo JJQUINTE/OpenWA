@@ -113,7 +113,7 @@ export class PluginInstanceService implements PluginInstancePort {
   async update(
     pluginId: string,
     instanceId: string,
-    patch: { sessionScope?: string; config?: Record<string, unknown> },
+    patch: { sessionScope?: string | null; config?: Record<string, unknown> },
     schema?: PluginConfigSchema,
   ): Promise<PluginInstance | null> {
     const inst = await this.resolve(pluginId, instanceId);
