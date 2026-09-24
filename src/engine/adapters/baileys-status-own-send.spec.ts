@@ -1,5 +1,6 @@
 import { BaileysStatus, type BaileysStatusHost } from './baileys-status';
 import type { WASocket } from '@whiskeysockets/baileys';
+import { EngineRefusedError } from '../../common/errors/engine-refused.error';
 
 /**
  * A status post and a status revoke both go through `sock.sendMessage` directly rather than the
@@ -39,22 +40,64 @@ describe('BaileysStatus records the ids of the statuses this session sends', () 
   });
 
   it('remembers the id of a status revoke', async () => {
-    const sendMessage = jest.fn().mockResolvedValue({ key: { id: 'REVOKE-1' } });
+    const sendMessage = jest
+      .fn()
+      .mockResolvedValueOnce({ key: { id: 'STATUS-1' } })
+      .mockResolvedValueOnce({ key: { id: 'REVOKE-1' } });
     const { status, remembered } = makeStatus(sendMessage);
+    await status.postTextStatus('hello', { recipients: ['628111@s.whatsapp.net'] });
 
     await status.deleteStatus('STATUS-1');
 
-    expect(remembered).toEqual(['REVOKE-1']);
+    expect(remembered).toEqual(['STATUS-1', 'REVOKE-1']);
   });
 
   it('survives a send that echoes nothing back, and hands on the nothing it found', async () => {
     // The library can resolve a send with no message object at all. Reading the id off it must not
     // throw, and the registry is what decides that an absent id is not worth remembering.
-    const sendMessage = jest.fn().mockResolvedValue(undefined);
+    const sendMessage = jest
+      .fn()
+      .mockResolvedValueOnce({ key: { id: 'STATUS-1' } })
+      .mockResolvedValue(undefined);
     const { status, remembered } = makeStatus(sendMessage);
+    await status.postTextStatus('hello', { recipients: ['628111@s.whatsapp.net'] });
 
     await expect(status.deleteStatus('STATUS-1')).resolves.not.toThrow();
 
-    expect(remembered).toEqual([undefined]);
+    expect(remembered).toEqual(['STATUS-1', undefined]);
+  });
+});
+
+describe('BaileysStatus addresses a status revoke to the status recipients', () => {
+  // Baileys sends a status stanza to exactly its statusJidList, the revoke included: without one the
+  // revoke reaches nobody, the send still resolves, and the status stays up for every viewer.
+  it('sends the revoke to the recipients the status was posted to', async () => {
+    const sendMessage = jest.fn().mockResolvedValue({ key: { id: 'STATUS-1' } });
+    const { status } = makeStatus(sendMessage);
+    await status.postTextStatus('hello', { recipients: ['628111@s.whatsapp.net', '628222@s.whatsapp.net'] });
+
+    await status.deleteStatus('STATUS-1');
+
+    expect(sendMessage).toHaveBeenLastCalledWith(
+      'status@broadcast',
+      { delete: { remoteJid: 'status@broadcast', fromMe: true, id: 'STATUS-1', participant: '628999@s.whatsapp.net' } },
+      { statusJidList: ['628111@s.whatsapp.net', '628222@s.whatsapp.net'] },
+    );
+  });
+
+  it('refuses a status whose recipients it does not know rather than revoke it for nobody', async () => {
+    const sendMessage = jest.fn().mockResolvedValue({ key: { id: 'STATUS-1' } });
+    const { status } = makeStatus(sendMessage);
+    await status.postTextStatus('hello', { recipients: ['628111@s.whatsapp.net'] });
+    const now = Date.now();
+    const clock = jest.spyOn(Date, 'now');
+    try {
+      await expect(status.deleteStatus('POSTED-ELSEWHERE')).rejects.toBeInstanceOf(EngineRefusedError);
+      clock.mockReturnValue(now + 25 * 3_600_000); // the posted one has expired by now
+      await expect(status.deleteStatus('STATUS-1')).rejects.toBeInstanceOf(EngineRefusedError);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(sendMessage).toHaveBeenCalledTimes(1); // the post alone
   });
 });
