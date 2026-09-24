@@ -142,15 +142,22 @@ async function toWebpSticker(data: Buffer, mimetype: string): Promise<Buffer> {
   }
 }
 
+/** Fetched Content-Types that say nothing about the bytes (a missing header reads as ''). */
+const GENERIC_FETCHED_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
+
 /**
  * Resolve a MediaInput's data (Buffer | base64 string | http(s) URL) to bytes + mimetype.
  *
  * `sessionProxyUrl` is this session's egress proxy, which the URL fetch leaves through (#1626). It
  * is required, not optional, so a new call site cannot fetch direct on a proxied session by omission.
+ *
+ * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg), used for a URL whose type
+ * neither the caller nor the host names. A document send passes none and keeps what it was given.
  */
 export async function resolveMediaBuffer(
   media: MediaInput,
   sessionProxyUrl: string | undefined,
+  fallbackType?: string,
 ): Promise<{ data: Buffer; mimetype: string }> {
   if (Buffer.isBuffer(media.data)) {
     return { data: media.data, mimetype: media.mimetype };
@@ -158,11 +165,14 @@ export async function resolveMediaBuffer(
   if (/^https?:\/\//i.test(media.data)) {
     const fetched = await loadRemoteMediaBuffer(media.data, sessionProxyUrl);
     // A generic placeholder mimetype (buildMediaInput's 'application/octet-stream' default when the
-    // caller supplied none) carries no real signal — defer to the fetched response content-type,
-    // which was sniffed from the actual bytes. This fixes URL-based sends where the caller has no
-    // mimetype to pass through the conversation-send facade (e.g. chatwoot-adapter outbound relay).
+    // caller supplied none) carries no real signal, so the fetched Content-Type decides. That header
+    // is taken as the host sent it, not sniffed from the bytes, so a missing or generic one is no
+    // better than the placeholder and the kind's default stands in. This serves URL-based sends where
+    // the caller has no mimetype to pass through the conversation-send facade (e.g. chatwoot-adapter
+    // outbound relay).
     const callerMimetype = media.mimetype && media.mimetype !== 'application/octet-stream' ? media.mimetype : null;
-    return { data: fetched.data, mimetype: callerMimetype ?? fetched.mimetype };
+    const unknown = fallbackType !== undefined && GENERIC_FETCHED_TYPES.has(fetched.mimetype.toLowerCase());
+    return { data: fetched.data, mimetype: callerMimetype ?? (unknown ? fallbackType : fetched.mimetype) };
   }
   return { data: Buffer.from(media.data, 'base64'), mimetype: media.mimetype };
 }
@@ -333,7 +343,7 @@ export class BaileysMessaging {
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'image/jpeg');
     return this.sendContent(
       chatId,
       {
@@ -348,7 +358,7 @@ export class BaileysMessaging {
 
   async sendVideoMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'video/mp4');
     return this.sendContent(
       chatId,
       {
@@ -363,7 +373,7 @@ export class BaileysMessaging {
 
   async sendAudioMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'audio/mpeg');
     return this.sendContent(
       chatId,
       // Audio carries no caption, so a mention here tags the recipient through contextInfo without

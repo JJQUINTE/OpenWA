@@ -3776,6 +3776,52 @@ describe('BaileysAdapter media sends', () => {
     expect(loadRemoteMediaBuffer).toHaveBeenCalledWith('https://cdn.example/v.mp4', 'socks5://proxy.invalid:1080');
   });
 
+  // The placeholder a send without a declared type carries; the fetched Content-Type is then the only
+  // signal, and a generic or missing one says nothing about what the bytes are.
+  const PLACEHOLDER = 'application/octet-stream';
+  const sendByKind = {
+    image: (a: BaileysAdapter, url: string) =>
+      a.sendImageMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
+    video: (a: BaileysAdapter, url: string) =>
+      a.sendVideoMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
+    audio: (a: BaileysAdapter, url: string) =>
+      a.sendAudioMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
+  };
+  const sentMimetype = (): unknown =>
+    (fakeSock.sendMessage.mock.calls[0] as [string, { mimetype?: string }])[1].mimetype;
+
+  it.each([
+    ['image', 'image/jpeg', ''],
+    ['image', 'image/jpeg', 'application/octet-stream'],
+    ['video', 'video/mp4', 'binary/octet-stream'],
+    ['video', 'video/mp4', 'Application/Octet-Stream'],
+    ['audio', 'audio/mpeg', ''],
+    ['audio', 'audio/mpeg', 'binary/octet-stream'],
+  ] as const)('labels an undeclared %s URL as %s when the host answers %j', async (kind, fallback, fetchedType) => {
+    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: fetchedType });
+    const adapter = await ready();
+    await sendByKind[kind](adapter, 'https://cdn.example/m');
+    expect(sentMimetype()).toBe(fallback);
+  });
+
+  it('keeps a specific fetched type for an undeclared media URL', async () => {
+    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: 'image/png' });
+    const adapter = await ready();
+    await sendByKind.image(adapter, 'https://cdn.example/m');
+    expect(sentMimetype()).toBe('image/png');
+  });
+
+  it('leaves a document with the type it was fetched with', async () => {
+    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: PLACEHOLDER });
+    const adapter = await ready();
+    await adapter.sendDocumentMessage('628111@s.whatsapp.net', {
+      mimetype: PLACEHOLDER,
+      data: 'https://cdn.example/m',
+      filename: 'm.bin',
+    });
+    expect(sentMimetype()).toBe(PLACEHOLDER);
+  });
+
   it('uses the caller-declared mimetype over the fetched content-type for a URL', async () => {
     (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({
       data: Buffer.from([1]),
