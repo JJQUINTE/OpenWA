@@ -1625,13 +1625,14 @@ curl -X PUT "$BASE/api/plugins/chat-flow/sessions" \
 
 #### POST /api/plugins/:id/update
 
-Update an installed plugin in place from a URL.
+Update an installed plugin in place from a URL. The URL follows the same pin rule as `install-url`; the
+digest below is a placeholder for the SHA-256 of the `.zip`.
 
 ```bash
 curl -X POST "$BASE/api/plugins/chat-flow/update" \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "url": "https://example.com/plugins/chat-flow-1.1.0.zip" }'
+  -d '{ "url": "https://example.com/plugins/chat-flow-1.1.0.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }'
 ```
 
 #### DELETE /api/plugins/:id
