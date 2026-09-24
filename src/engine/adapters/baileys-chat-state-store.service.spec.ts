@@ -172,6 +172,21 @@ describe('ChatStateStoreService', () => {
     expect(repo.findOne).toHaveBeenCalledTimes(3); // 't' is still skipped
   });
 
+  it('keeps both of two concurrent patches for a chat that is not cached yet', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    await Promise.all([svc.remember('s', 'c', { archived: true }), svc.remember('s', 'c', { pinned: true })]);
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: true });
+    expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ archived: true, pinned: true });
+  });
+
+  it('does not let a concurrent no-op patch reset the cached state of an uncached chat', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    await Promise.all([svc.remember('s', 'c', { pinned: true }), svc.remember('s', 'c', { archived: false })]);
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: false, pinned: true });
+  });
+
   it('swallows a repo error on reload and remember (table may not exist yet)', async () => {
     const repo = {
       find: jest.fn(() => Promise.reject(new Error('no such table'))),
