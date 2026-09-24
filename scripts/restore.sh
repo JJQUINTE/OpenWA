@@ -413,8 +413,10 @@ fi
 
 if [ -f "$STAGE/database.sql" ]; then
   cp "$STAGE/database.sql" "$DATA_DIR/database.sql"
-  log "Postgres dump present — import it manually into your Postgres instance:"
-  log "  psql \"\$DATABASE_URL\" < $DATA_DIR/database.sql"
+  log "Postgres dump present: load it into an EMPTY database, as docs/11-operational-runbooks.md"
+  log "(Restore from Backup, step 3) shows for the built-in openwa-postgres container. For an external"
+  log "server, with DATABASE_URL set to your own URL for that database:"
+  log "  psql -v ON_ERROR_STOP=1 \"\$DATABASE_URL\" < $DATA_DIR/database.sql"
 fi
 
 log "Restore complete. Start the app and confirm an existing API key still authenticates."

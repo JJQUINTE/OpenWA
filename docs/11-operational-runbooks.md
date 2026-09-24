@@ -525,8 +525,25 @@ docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
 
 # On a PostgreSQL data store, step 2 leaves the upgraded database in place. Load the pre-upgrade dump
 # into an empty database: replayed over the upgraded tables, its CREATE statements fail and its rows
-# mix with theirs
-tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | psql "$DATABASE_URL"
+# mix with theirs. With the built-in PostgreSQL (the compose `postgres` service, or the
+# openwa-postgres container Dashboard > Infrastructure created), start only the database; openwa-api
+# stays stopped, or the rename below fails on its open connections. The upgraded database is kept
+# under a new name, as the SQLite path keeps data.pre-restore-<ts>, and an empty one takes its place.
+# The container's own POSTGRES_USER and POSTGRES_DB name the role and database the app uses
+docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
+docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
+docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
+  -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
+  -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql |
+  docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+# An external PostgreSQL server: rename the upgraded database and create an empty one under the
+# DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
+# OpenWA setting: fill in your own URL for that database, such as
+# postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql |
+  psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 3. Check out the previous release and rebuild the image
 git checkout v<old-version>
@@ -686,9 +703,27 @@ docker compose down
 #    refuses to overwrite them)
 ./scripts/restore.sh ./backups/openwa-backup-<timestamp>.tar.gz
 
-# 3. (Postgres only) the archive contains database.sql — import it manually into an empty
-#    database (its CREATE statements fail against tables that already exist):
-#    psql "$DATABASE_URL" < ./data/database.sql
+# 3. (Postgres only) the archive contains database.sql. Load it into an empty database: its CREATE
+#    statements fail against tables that already exist. With the built-in PostgreSQL (the compose
+#    `postgres` service, or the openwa-postgres container Dashboard > Infrastructure created), start
+#    only the database; the app stays stopped, or the rename below fails on its open connections.
+#    The current database is kept under a new name, as the data dir is kept in data.pre-restore-<ts>,
+#    and an empty one takes its place. The container's own POSTGRES_USER and POSTGRES_DB name the
+#    role and database the app uses
+docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
+docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
+docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
+  -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
+  -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql |
+  docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+#    An external PostgreSQL server: rename the current database and create an empty one under the
+#    DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
+#    OpenWA setting: fill in your own URL for that database, such as
+#    postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql |
+  psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 4. Start the app and CONFIRM an existing API key still authenticates
 docker compose up -d
@@ -753,8 +788,9 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 > kubectl scale statefulset/openwa --replicas=1
 > ```
 >
-> The PostgreSQL import in step 3 then reads the dump from the archive, because `./data` on the host
-> is not the volume: `tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | psql "$DATABASE_URL"`.
+> The PostgreSQL import in step 3 reads the dump from the archive, not from `./data` on the host, so
+> it works unchanged after either command. The Helm chart ships no PostgreSQL, so on Helm use the
+> external-server form of step 3 against the database the release's `DATABASE_*` settings name.
 > On Helm, run the step 4 check through `kubectl port-forward` to the release's Service.
 
 > **PostgreSQL restores are read as UTC.** From 0.23.6 the data connection binds, parses and defaults
