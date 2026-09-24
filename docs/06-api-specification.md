@@ -4161,7 +4161,7 @@ Get all contact status updates (stories) visible to the session, read from the s
       "contact": { "id": "6281234567890@c.us", "name": "Alice", "pushName": "Alice" },
       "type": "image",
       "caption": "On the road",
-      "mediaUrl": "/api/sessions/my-session/status/false_6281234567890@c.us_3A1F.../media",
+      "mediaUrl": "/api/sessions/0a941dac-a965-45e7-b318-74ae8be134f0/status/false_6281234567890@c.us_3A1F.../media",
       "backgroundColor": "#25D366",
       "font": 2,
       "timestamp": "2026-06-25T08:30:00.000Z",
