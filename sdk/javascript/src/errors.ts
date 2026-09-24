@@ -84,7 +84,8 @@ export class OpenWANotImplementedError extends OpenWAApiError {}
 /**
  * 503 Service Unavailable — a transport failure, not a refusal. The gateway answers this when the
  * engine did not confirm the operation in time: WhatsApp never replied, the socket was down, or the
- * request budget ran out. **Retryable**, unlike every other typed error here.
+ * request budget ran out. **Retryable**, as is a 429 (honor its `Retry-After`), but a catalog 503 can
+ * persist because WhatsApp may never answer that query, so bound any retry.
  *
  * Not every 503 is safe to repeat blindly: the non-idempotent sends (group create, channel create,
  * media send) are deliberately left unbounded by the gateway so a slow WhatsApp reply never answers

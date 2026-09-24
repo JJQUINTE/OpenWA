@@ -102,7 +102,9 @@ case err != nil:
 
 Sentinels: `ErrUnauthorized` (401), `ErrForbidden` (403), `ErrNotFound` (404),
 `ErrConflict` (409), `ErrRateLimited` (429), `ErrNotImplemented` (501),
-`ErrServiceUnavailable` (503 — the only retryable one). A timeout
+`ErrServiceUnavailable` (503). 429 (honor `Retry-After`) and 503 are the
+transient statuses, but a catalog 503 can persist because WhatsApp may never
+answer that query, so bound any retry. A timeout
 surfaces as `*openwa.TimeoutError`. In a routed deployment only 503 proves
 the request was never carried out: a forward that fails after the request
 reached the owner node answers 502 or 504.

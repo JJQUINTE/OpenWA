@@ -35,13 +35,15 @@ var (
 	ErrNotImplemented = errors.New("openwa: not implemented")
 	// ErrServiceUnavailable is returned for a 503 — a transport failure rather
 	// than a refusal: WhatsApp never replied, the socket was down, or the
-	// request budget ran out. Unlike every other sentinel here it is
-	// RETRYABLE. The non-idempotent sends are deliberately left unbounded by
-	// the gateway so a slow WhatsApp reply never answers one, and in a
-	// multi-node deployment a forwarded request answers 503 only when the
-	// owner node was never reached. A forward that fails after the request
-	// was sent answers 502 or 504 instead: the owner may already have carried
-	// it out, so do not repeat a non-idempotent send on those unchecked.
+	// request budget ran out. It is retryable, as is ErrRateLimited (honor
+	// its Retry-After), but a catalog 503 can persist because WhatsApp may
+	// never answer that query, so bound any retry. The non-idempotent sends
+	// are deliberately left unbounded by the gateway so a slow WhatsApp reply
+	// never answers one, and in a multi-node deployment a forwarded request
+	// answers 503 only when the owner node was never reached. A forward that
+	// fails after the request was sent answers 502 or 504 instead: the owner
+	// may already have carried it out, so do not repeat a non-idempotent send
+	// on those unchecked.
 	ErrServiceUnavailable = errors.New("openwa: service unavailable")
 )
 

@@ -45,10 +45,12 @@ CommonJS consumers use `require('@rmyndharis/openwa')` identically.
 Non-2xx responses throw a typed `OpenWAApiError` subclass
 (`OpenWAAuthError`, `OpenWAForbiddenError`, `OpenWANotFoundError`,
 `OpenWAConflictError`, `OpenWARateLimitError`, `OpenWANotImplementedError`,
-`OpenWAServiceUnavailableError` — 503, the only retryable one),
+`OpenWAServiceUnavailableError` for 503),
 each carrying `.status` and the parsed `.body`. Timeouts throw
 `OpenWATimeoutError`. The SDK does **not** retry — wrap calls with your own
-backoff if needed. In a routed deployment only 503 proves the request was
+backoff if needed. 429 (honor `Retry-After`) and 503 are the transient
+statuses, but a catalog 503 can persist because WhatsApp may never answer
+that query, so bound any retry. In a routed deployment only 503 proves the request was
 never carried out: a forward that fails after the request reached the owner
 node answers 502 or 504.
 

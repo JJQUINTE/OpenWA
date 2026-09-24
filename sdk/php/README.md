@@ -56,9 +56,11 @@ $client = new Client([
 A non-2xx response throws a typed `OpenWA\Exceptions\OpenWAApiException` subclass —
 `OpenWAAuthException` (401), `OpenWAForbiddenException` (403), `OpenWANotFoundException` (404),
 `OpenWAConflictException` (409), `OpenWARateLimitException` (429),
-`OpenWANotImplementedException` (501), `OpenWAServiceUnavailableException` (503 — the only
-retryable one) — each exposing `getStatus()` and the parsed `getBody()`.
-A timeout throws `OpenWATimeoutException`. In a routed deployment only 503 proves the request
+`OpenWANotImplementedException` (501), `OpenWAServiceUnavailableException` (503) — each
+exposing `getStatus()` and the parsed `getBody()`.
+A timeout throws `OpenWATimeoutException`. 429 (honor `Retry-After`) and 503 are the transient
+statuses, but a catalog 503 can persist because WhatsApp may never answer that query, so bound
+any retry. In a routed deployment only 503 proves the request
 was never carried out: a forward that fails after the request reached the owner node answers
 502 or 504.
 

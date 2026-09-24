@@ -96,19 +96,19 @@ try {
 }
 ```
 
-| Class                           | HTTP | Meaning                                                 |
-| ------------------------------- | ---- | ------------------------------------------------------- |
-| `OpenWAAuthError`               | 401  | Missing or invalid API key                              |
-| `OpenWAForbiddenError`          | 403  | API key role insufficient                               |
-| `OpenWANotFoundError`           | 404  | Resource not found                                      |
-| `OpenWAConflictError`           | 409  | Engine not ready                                        |
-| `OpenWARateLimitError`          | 429  | Rate limited                                            |
-| `OpenWANotImplementedError`     | 501  | Active engine does not support the call                 |
-| `OpenWAServiceUnavailableError` | 503  | Engine did not confirm in time — the only retryable one |
-| `OpenWAApiError`                | —    | Any other non-2xx (carries `.status()`)                 |
-| `OpenWATimeoutError`            | —    | Request exceeded the configured timeout                 |
+| Class                           | HTTP | Meaning                                 |
+| ------------------------------- | ---- | --------------------------------------- |
+| `OpenWAAuthError`               | 401  | Missing or invalid API key              |
+| `OpenWAForbiddenError`          | 403  | API key role insufficient               |
+| `OpenWANotFoundError`           | 404  | Resource not found                      |
+| `OpenWAConflictError`           | 409  | Engine not ready                        |
+| `OpenWARateLimitError`          | 429  | Rate limited                            |
+| `OpenWANotImplementedError`     | 501  | Active engine does not support the call |
+| `OpenWAServiceUnavailableError` | 503  | Engine did not confirm in time          |
+| `OpenWAApiError`                | —    | Any other non-2xx (carries `.status()`) |
+| `OpenWATimeoutError`            | —    | Request exceeded the configured timeout |
 
-All extend `OpenWAError` (a `RuntimeException`). In a routed deployment only 503 proves the request was never carried out: a forward that fails after the request reached the owner node answers 502 or 504.
+All extend `OpenWAError` (a `RuntimeException`). 429 (honor `Retry-After`) and 503 are the transient statuses, but a catalog 503 can persist because WhatsApp may never answer that query, so bound any retry. In a routed deployment only 503 proves the request was never carried out: a forward that fails after the request reached the owner node answers 502 or 504.
 
 ## Reliability & security
 
