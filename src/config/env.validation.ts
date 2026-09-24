@@ -210,6 +210,7 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'WEBHOOK_MEDIA_INLINE_MAX_BYTES', // 0 = never inline media
     'EXPORT_INLINE_MEDIA_BUDGET_BYTES', // 0 = a data export carries no inline media at all
     'MESSAGE_LIST_INLINE_MEDIA_BUDGET_BYTES', // 0 = a message list carries no inline media at all
+    'CHAT_MEDIA_ARCHIVE_TTL_DAYS', // 0 = keep archived chat media forever
   ]) {
     checkNonNegativeInt(key);
   }
@@ -315,6 +316,14 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'MEDIA_DOWNLOAD_TIMEOUT_MS',
     'INBOUND_MEDIA_CONCURRENCY',
     'CHAT_HISTORY_MEDIA_BUDGET_BYTES',
+    // Same parseInt read: `1h` became a 1 ms orphan sweep, re-walking all stored media every tick.
+    'CHAT_MEDIA_ARCHIVE_MAX_BYTES',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'CHAT_MEDIA_ORPHAN_GRACE_MS',
+    'STATUS_MEDIA_MAX_BYTES',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_GRACE_MS',
+    'S3_REPROBE_INTERVAL_MS',
   ]) {
     checkPositiveInt(key);
   }
@@ -322,13 +331,20 @@ export function validateEnv(config: EnvConfig): EnvConfig {
   // The ceiling matters for the same reason from the other side: the docs forbid 0, so an operator
   // who wants an effectively unlimited budget reaches for a row of nines. Rejected at boot rather
   // than clamped, so they learn the value they wrote is not the value they would have got.
-  {
-    const raw = str('PUPPETEER_PROTOCOL_TIMEOUT_MS');
+  // Every knob below becomes a timer delay, where Node's overflow turns a long wait into a 1 ms spin.
+  for (const [key, consequence] of [
+    ['PUPPETEER_PROTOCOL_TIMEOUT_MS', 'the browser never finishes launching'],
+    ['MEDIA_CONVERSION_TIMEOUT_MS', 'every conversion is killed as timed out'],
+    ['CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
+    ['STATUS_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
+    ['S3_REPROBE_INTERVAL_MS', 'S3 is re-probed every millisecond while it is down'],
+  ]) {
+    const raw = str(key);
     const n = raw !== undefined && DECIMAL_INTEGER.test(raw) ? Number(raw) : NaN;
     if (Number.isInteger(n) && n > MAX_TIMER_MS) {
       errors.push(
-        `PUPPETEER_PROTOCOL_TIMEOUT_MS must not exceed ${MAX_TIMER_MS} ms (got "${raw}"): Node's ` +
-          `timers overflow above that and fire after 1 ms, so the browser never finishes launching`,
+        `${key} must not exceed ${MAX_TIMER_MS} ms (got "${raw}"): Node's ` +
+          `timers overflow above that and fire after 1 ms, so ${consequence}`,
       );
     }
   }

@@ -499,4 +499,35 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ MEDIA_CONVERSION_TIMEOUT_MS: 'abc' })).toThrow(/positive integer/);
     expect(() => validateEnv({ MEDIA_CONVERSION_MAX_OUTPUT_BYTES: '52428800' })).not.toThrow();
   });
+
+  // Read with parseInt and a `> 0` guard, so `1h` became a 1 ms sweep interval rather than the default.
+  it.each([
+    'CHAT_MEDIA_ARCHIVE_MAX_BYTES',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'CHAT_MEDIA_ORPHAN_GRACE_MS',
+    'STATUS_MEDIA_MAX_BYTES',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_GRACE_MS',
+    'S3_REPROBE_INTERVAL_MS',
+  ])('rejects a unit-suffixed or non-positive %s and accepts a plain count', key => {
+    expect(() => validateEnv({ [key]: '1h' })).toThrow(new RegExp(`${key} must be a positive integer`));
+    expect(() => validateEnv({ [key]: '0' })).toThrow(new RegExp(`${key} must be a positive integer`));
+    expect(() => validateEnv({ [key]: '3600000' })).not.toThrow();
+  });
+
+  it('rejects a unit-suffixed CHAT_MEDIA_ARCHIVE_TTL_DAYS but keeps 0 (keep forever)', () => {
+    expect(() => validateEnv({ CHAT_MEDIA_ARCHIVE_TTL_DAYS: '30d' })).toThrow(/CHAT_MEDIA_ARCHIVE_TTL_DAYS/);
+    expect(() => validateEnv({ CHAT_MEDIA_ARCHIVE_TTL_DAYS: '0' })).not.toThrow();
+  });
+
+  // Node fires a timer delay above 2^31-1 ms after 1 ms, so these would spin instead of waiting.
+  it.each([
+    'MEDIA_CONVERSION_TIMEOUT_MS',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'S3_REPROBE_INTERVAL_MS',
+  ])('rejects a %s above the Node timer ceiling', key => {
+    expect(() => validateEnv({ [key]: '2147483648' })).toThrow(new RegExp(`${key} must not exceed 2147483647 ms`));
+    expect(() => validateEnv({ [key]: '2147483647' })).not.toThrow();
+  });
 });
