@@ -678,10 +678,10 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 > file keeps the data in the **named volume** `openwa-data` and the Helm chart in a PVC, so a host run
 > there fills a directory the container never reads and still reports success. Run the script from the
 > image against the volume instead, in place of step 2. Both mount the container root read-only, so
-> `OPENWA_RESTORE_SNAPSHOT_DIR` (0.23.7 or later) puts the pre-restore snapshot of the data dir on a
-> writable, persistent path, and `TMPDIR` keeps the extracted archive there too; allow free space for
-> about twice the data plus the archive. `--force` is included because the volume of an existing
-> install still holds its databases:
+> `OPENWA_RESTORE_SNAPSHOT_DIR` (0.23.7 or later) puts the pre-restore snapshots, of the data dir and of
+> any state directory mounted outside it, on a writable, persistent path, and `TMPDIR` keeps the
+> extracted archive there too; allow free space for about twice the data plus the archive. `--force` is
+> included because the volume of an existing install still holds its databases:
 >
 > ```bash
 > # Compose: the entrypoint override runs the script as root, which can read the archive and write
@@ -724,7 +724,7 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 > # HOME is moved off it here (the compose files already set HOME=/tmp).
 > kubectl exec openwa-restore -- env HOME=/tmp OPENWA_RESTORE_SNAPSHOT_DIR=/restore TMPDIR=/restore \
 >   ./scripts/restore.sh /restore/backup.tar.gz --force
-> # The emptyDir goes away with the pod: copy off the snapshot the script named first.
+> # The emptyDir goes away with the pod: copy off every snapshot the script named first.
 > kubectl cp openwa-restore:/restore/data.pre-restore-<ts> ./backups/data.pre-restore-<ts>
 > kubectl delete pod openwa-restore
 > kubectl scale statefulset/openwa --replicas=1
