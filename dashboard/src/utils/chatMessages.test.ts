@@ -609,3 +609,12 @@ test('a push name carrying the span delimiters cannot close its own mention earl
   ]);
   assert.equal(resolveMentions('hi @6281112345', names), `hi ${wrap('@Xbit.ly/free')}`);
 });
+
+test('resolveMentions does not fire after "_" or "(" inside a URL, only when the opener run follows whitespace', () => {
+  const names = buildMentionNameMap([msg({ author: '6281234567@c.us', chatName: 'Ann' })]);
+  for (const body of ['https://x.example/p_@6281234567/doc', 'https://x.example/wiki/A_(@6281234567)']) {
+    assert.equal(resolveMentions(body, names), body);
+  }
+  assert.equal(resolveMentions('hi _(@6281234567)_', names), `hi _(${wrap('@Ann')})_`);
+  assert.equal(resolveMentions('`x`*@6281234567*', names), `\`x\`*${wrap('@Ann')}*`);
+});

@@ -147,9 +147,10 @@ function blankMentionName(name: string): boolean {
   return name.replace(INVISIBLE, '').trim() === '';
 }
 
-// The left boundary is the start of the text, whitespace, opening punctuation, or a format opener
-// (`*_~`), so `*@digits*` resolves into a bold mention the way WhatsApp renders it.
-const MENTION_TOKEN = /(^|[\s([{"'*_~])@(\d{7,})/gu;
+// The left boundary is the start of the text or whitespace, optionally followed by a run of opening
+// punctuation or format openers (`*_~`), so `*@digits*` resolves into a bold mention the way
+// WhatsApp renders it while a `_@digits` or `(@digits` inside a URL does not.
+const MENTION_TOKEN = /((?:^|\s)[([{"'*_~]*)@(\d{7,})/gu;
 
 // parseMessageBody peels code after this runs, so a mention inside a code span or block is left as
 // digits here: rewriting it would split the span and render its backticks literally.
@@ -169,10 +170,10 @@ const CODE_SEGMENT = /(```[\s\S]*?```|`[^`]*`)/;
  * clickable link (character-stripping alone does not stop linkify-react auto-linking a bare word
  * like "localhost").
  *
- * The left boundary only fires at the start of the text, after whitespace, or after opening
- * punctuation — not after `/` or a backtick — so a URL path segment or an inline-code span with
- * the same digits is left untouched (this runs on the raw body, before parseMessageBody splits
- * out code spans).
+ * The left boundary only fires at the start of the text or after whitespace, optionally through
+ * a run of opening punctuation or format markers. It never fires after `/`, a backtick, or a word,
+ * so a URL or an inline-code span with the same digits is left untouched (this runs on the raw
+ * body, before parseMessageBody splits out code spans).
  */
 export function resolveMentions(text: string, names: Map<string, string>): string {
   if (names.size === 0 || !text.includes('@')) return text;
