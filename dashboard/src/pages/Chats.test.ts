@@ -658,6 +658,37 @@ test('a writer key opening a chat clears its unread badge', async () => {
   await waitFor(() => assert.ok(!screen.queryByLabelText('2 unread messages'), 'opening the chat kept its badge'));
 });
 
+test('a chat whose newest message has no text does not claim to have no messages', async () => {
+  const { screen, waitFor } = rtl;
+  renderChats();
+  await screen.findByText('Main (15551234567)');
+  const row = (await screen.findByText('Alice')).closest('.chat-item-card') as HTMLElement;
+
+  // A voice note or an uncaptioned photo arrives with an empty body on both engines.
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  socket.receive('message', {
+    type: 'event',
+    timestamp: new Date(1_700_002_000_000).toISOString(),
+    payload: {
+      event: 'message.received',
+      sessionId: SESSION.id,
+      data: {
+        id: 'wamid.live.voice',
+        chatId: CHAT.id,
+        from: CHAT.id,
+        to: 'me',
+        body: '',
+        type: 'audio',
+        fromMe: false,
+        timestamp: 1_700_001_700,
+      },
+    },
+  });
+  await waitFor(() => assert.ok(screen.queryByLabelText('3 unread messages'), 'the arrival did not reach the row'));
+  assert.equal(row.querySelector('.no-message')?.textContent ?? null, null, 'the row reads "No messages yet"');
+});
+
 test('a read-only key opening a chat sends no mark-as-read', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
