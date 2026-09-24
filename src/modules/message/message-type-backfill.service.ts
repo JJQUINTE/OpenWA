@@ -32,6 +32,7 @@ export class MessageTypeBackfillService implements OnApplicationBootstrap {
     // [legacy wwebjs token(s)] -> neutral MessageType. Kept in sync with mapWwebjsMessageType.
     const conversions: Array<{ from: string[]; to: string }> = [
       { from: ['chat'], to: 'text' },
+      { from: ['buttons_response', 'list_response', 'template_button_reply'], to: 'text' },
       { from: ['ptt'], to: 'voice' },
       { from: ['vcard', 'multi_vcard'], to: 'contact' },
     ];
