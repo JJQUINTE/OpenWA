@@ -641,7 +641,7 @@ URL / catalog), not an npm/github source descriptor.
 | `GET /plugins/catalog`               | List the remote plugin catalog, annotated with install state                                               |
 | `GET /plugins/:id`                   | Get a single plugin                                                                                        |
 | `POST /plugins/install`              | Install from an uploaded `.zip` (`multipart/form-data`, field `file`, ≤ 5 MB)                              |
-| `POST /plugins/install-url`          | Install by downloading a `.zip` from an https URL (SSRF-guarded; optional `#sha256=` digest pin)           |
+| `POST /plugins/install-url`          | Install by downloading a `.zip` from an https URL (SSRF-guarded; `#sha256=` pin required in production)    |
 | `POST /plugins/:id/update`           | Update an installed plugin in place from a URL (staged swap, crash-safe; preserves config + enabled state) |
 | `POST /plugins/:id/enable`           | Enable a plugin                                                                                            |
 | `POST /plugins/:id/disable`          | Disable a plugin                                                                                           |
