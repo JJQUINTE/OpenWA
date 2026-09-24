@@ -346,3 +346,9 @@ test('the webhook filter chat-kind field is translated in every locale', () => {
     assert.notEqual(label, 'Chat kind', `${lng} webhooks.filters.fields.kind is still English`);
   }
 });
+
+test('the Templates nav item reads the same as the page it opens in every locale', () => {
+  for (const lng of LOCALE_IDS) {
+    assert.equal(i18n.t('nav.templates', { lng }), i18n.t('templates.title', { lng }), `${lng} nav.templates`);
+  }
+});
