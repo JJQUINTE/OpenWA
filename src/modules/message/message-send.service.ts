@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository, QueryDeepPartialEntity } from 'typeorm';
 import { SessionService } from '../session/session.service';
+import { MessageProjector } from '../session/message-projector.service';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { SendTextMessageDto, SendMediaMessageDto, SendAudioMessageDto, MessageResponseDto } from './dto';
 import { SendTemplateMessageDto } from './dto/send-template.dto';
@@ -95,6 +96,10 @@ export class MessageSendService {
     // literal forms only, never on its lid.
     @Optional()
     private readonly lidMappingStore?: LidMappingStoreService,
+    // Optional for the same reason; absent means a quote is read from stored rows only, so a reply
+    // sent while the quoted message's `message:received` hooks still run stores an empty quote.
+    @Optional()
+    private readonly messageProjector?: MessageProjector,
   ) {}
 
   async sendText(sessionId: string, dto: SendTextMessageDto): Promise<MessageResponseDto> {
@@ -599,7 +604,9 @@ export class MessageSendService {
    * to that chat (any of its phone, lid or group forms): the pending row is saved before the engine
    * refuses a cross-chat quote, and copying a foreign body would store it under a chat a
    * chat-restricted key may use. The send routes may quote across chats, and the guard refuses a
-   * chat-restricted key any quotedMessageId there, so they pass no chat.
+   * chat-restricted key any quotedMessageId there, so they pass no chat. While the quoted message's
+   * `message:received` hooks are still running it has no row yet, so the copy that hook chain
+   * carries answers instead, under the same chat restriction.
    */
   private async resolveQuotedBody(sessionId: string, quotedMessageId: string, chatId?: string): Promise<string> {
     try {
@@ -613,6 +620,12 @@ export class MessageSendService {
             },
           )
         : [];
+      // A `message:received` hook that answers the message runs before its row is written. A hook
+      // rewrite is checked for its id and chatId only, so a body that is not text quotes as ''.
+      const inFlight = this.messageProjector?.inFlightInbound(sessionId, quotedMessageId);
+      if (inFlight && (!chatId || inFlight.chatId === chatId || expanded.includes(inFlight.chatId))) {
+        return typeof inFlight.body === 'string' ? inFlight.body : '';
+      }
       const quoted = await this.messageRepository.findOne({
         where: chatId
           ? { sessionId, chatId: In([...new Set([chatId, ...expanded])]), waMessageId: quotedMessageId }

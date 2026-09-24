@@ -488,6 +488,47 @@ describe('MessageProjector (inbound projection)', () => {
       expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.received', rewritten);
     });
 
+    it('exposes the message its hook chain carries, rewrites included, until the row is written', async () => {
+      // A handler that replies to the message runs before the insert, so the reply's quote preview
+      // has no row to read. The chain's copy stands in, and must be the redacted one when an earlier
+      // handler rewrote it: the quote is stored next to the rewritten row.
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+      const seen: unknown[] = [];
+      hookManager.execute.mockImplementationOnce(
+        (_event: string, data: IncomingMessage, options: { accept: (d: unknown) => boolean }) => {
+          seen.push(projector.inFlightInbound(SESSION_ID, 'wamid.1'));
+          const rewritten = { ...data, body: '[redacted]' };
+          options.accept(rewritten);
+          seen.push(projector.inFlightInbound(SESSION_ID, 'wamid.1'));
+          return Promise.resolve({ continue: true, data: rewritten });
+        },
+      );
+      let finishInsert: () => void = () => undefined;
+      messageRepository.insert.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishInsert = () => resolve({ identifiers: [{ id: 1 }], generatedMaps: [{}] });
+          }),
+      );
+
+      projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(seen).toEqual([
+        expect.objectContaining({ chatId: '15550001111@c.us', body: 'hello' }),
+        expect.objectContaining({ chatId: '15550001111@c.us', body: '[redacted]' }),
+      ]);
+      // Still in flight while the insert is pending: a reply the handler did not await lands here.
+      expect(projector.inFlightInbound(SESSION_ID, 'wamid.1')).toMatchObject({ body: '[redacted]' });
+
+      finishInsert();
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(projector.inFlightInbound(SESSION_ID, 'wamid.1')).toBeUndefined();
+      expect(projector.inFlightInbound('other-session', 'wamid.1')).toBeUndefined();
+    });
+
     it('routes a status broadcast to the status store instead of the message table', async () => {
       const engine = makeEngine();
       engines.set(SESSION_ID, engine);
