@@ -804,6 +804,27 @@ test('a failed status push closes that session QR modal', async () => {
   await waitFor(() => assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open after its session failed'));
 });
 
+// The gateway writes the linked phone and lastActive when a session reaches READY; the push carries
+// only the status, so the card needs a re-read to show them.
+test('a ready push re-reads the list so a newly linked card shows its phone', async () => {
+  const { screen, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-linking-1', name: 'linking', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('linking')).closest('.session-card') as HTMLElement;
+
+    Object.assign(row, { status: 'ready', phone: '15550003333', lastActive: new Date().toISOString() });
+    pushSessionStatus(row.id, 'ready');
+
+    await waitFor(() => within(card).getByText('15550003333'));
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
 // `disconnected` covers both an engine inside its reconnect backoff and one that is gone, so the modal
 // closes only once the re-read says there is no engine.
 test('a disconnected push closes the QR modal once the re-read shows no engine', async () => {

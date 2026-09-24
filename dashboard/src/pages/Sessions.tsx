@@ -245,6 +245,8 @@ export function Sessions() {
         // does not re-invalidate on duplicate envelopes).
         void invalidateSessionQueries(queryClient, queryKeys.sessions);
         if (event.status === 'ready') {
+          // Refresh so the card picks up the phone and lastActive the gateway writes on READY.
+          void fetchSessions();
           toast.success(t('sessions.toasts.readyTitle'), t('sessions.toasts.readyDesc'));
         } else if (event.status === 'disconnected') {
           // Refresh so the card picks up `engineLoaded` from the API. `disconnected` is the one status
