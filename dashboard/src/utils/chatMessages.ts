@@ -193,7 +193,12 @@ export function resolveMentions(raw: string, names: Map<string, string>): string
         : part.replace(MENTION_TOKEN, (full: string, prefix: string, digits: string) => {
             // `^` only counts at the start of the whole text, not right after a closing backtick.
             if (i > 0 && prefix === '') return full;
-            const first = names.get(digits)?.split(' ')[0];
+            // The first word that renders as something: a name like "\u3164 Bob" is not blank as a
+            // whole, but its first word alone would show as a bare "@".
+            const first = names
+              .get(digits)
+              ?.split(' ')
+              .find(word => !blankMentionName(word));
             return first ? `${prefix}${MENTION_OPEN}@${first}${MENTION_CLOSE}` : full;
           }),
     )
