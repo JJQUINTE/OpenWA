@@ -69,8 +69,8 @@ export class OpenWAClient {
       apiKey: options.apiKey,
       timeoutMs: options.timeoutMs ?? 30000,
       defaultHeaders: options.defaultHeaders ?? {},
-      // Wrapped, not stored bare: `config.fetch(...)` would call it with `config` as `this`, which
-      // browsers and Workers reject with "Illegal invocation".
+      // Looked up on each call rather than captured here, so a fetch installed on globalThis after
+      // the client is built (a polyfill or a test stub) is the one used.
       fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
     };
 
