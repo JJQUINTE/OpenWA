@@ -146,7 +146,9 @@ export class CreateWebhookDto {
   @ApiPropertyOptional({
     description:
       'Custom headers to include in webhook requests. Never returned by any webhook route. At delivery, ' +
-      '`content-type` and `x-openwa-*` names are stripped so a custom header cannot shadow a system one.',
+      '`content-type` and `x-openwa-*` names are stripped so a custom header cannot shadow a system one, ' +
+      'and so are the connection-level names the HTTP client owns (`connection`, `content-length`, ' +
+      '`expect`, `keep-alive`, `te`, `trailer`, `transfer-encoding`, `upgrade`).',
     example: { 'X-Custom-Header': 'value' },
   })
   @IsOptional()

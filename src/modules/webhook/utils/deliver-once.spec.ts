@@ -1,4 +1,4 @@
-import { postWebhookPayload } from './deliver-once';
+import { postWebhookPayload, sanitizeCustomHeaders } from './deliver-once';
 
 /**
  * Direct coverage for the shared delivery core both paths (direct and queued processor) now route
@@ -44,5 +44,36 @@ describe('postWebhookPayload', () => {
     await expect(postWebhookPayload('https://r/hook', '{}', {}, 5000, mock as never)).rejects.toThrow(
       'HTTP 502: Bad Gateway',
     );
+  });
+});
+
+describe('sanitizeCustomHeaders', () => {
+  it('keeps ordinary custom headers and drops reserved system names', () => {
+    expect(
+      sanitizeCustomHeaders({
+        'X-Custom': 'v',
+        Authorization: 'Bearer t',
+        'Content-Type': 'text/plain',
+        'X-OpenWA-Event': 'x',
+      }),
+    ).toEqual({ 'X-Custom': 'v', Authorization: 'Bearer t' });
+  });
+
+  // undici throws on several of these (every delivery then fails with "fetch failed") and a wrong
+  // Content-Length breaks the request framing; the HTTP client owns all of them.
+  it('drops connection-level and framing headers the HTTP client owns', () => {
+    expect(
+      sanitizeCustomHeaders({
+        Connection: 'close',
+        'Content-Length': '1',
+        Expect: '100-continue',
+        'Keep-Alive': 'timeout=5',
+        TE: 'trailers',
+        Trailer: 'X-Sum',
+        'Transfer-Encoding': 'chunked',
+        Upgrade: 'h2c',
+        'X-Keep': 'v',
+      }),
+    ).toEqual({ 'X-Keep': 'v' });
   });
 });
