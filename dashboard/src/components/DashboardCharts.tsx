@@ -68,8 +68,9 @@ export function DashboardCharts() {
   if (isError && forbidden) return null;
 
   const timeSeries = (data?.timeSeries ?? []).map(p => ({ ...p, label: formatTick(p.timestamp, period) }));
+  // `name` keys the slice color; `label` is what the legend and tooltip show.
   const byType = Object.entries(data?.byType ?? {})
-    .map(([name, value]) => ({ name, value }))
+    .map(([name, value]) => ({ name, label: t(`chats.messageType.${name}`, { defaultValue: name }), value }))
     .sort((a, b) => b.value - a.value);
   const topChats = (data?.topChats ?? [])
     .slice(0, 8)
@@ -152,7 +153,7 @@ export function DashboardCharts() {
             ) : (
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
-                  <Pie data={byType} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
+                  <Pie data={byType} dataKey="value" nameKey="label" innerRadius={55} outerRadius={90} paddingAngle={2}>
                     {byType.map(entry => (
                       <Cell key={entry.name} fill={colorForType(entry.name)} />
                     ))}
