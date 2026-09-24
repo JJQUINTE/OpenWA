@@ -167,7 +167,9 @@ function scheduleReplayOnSettle(queryClient: QueryClient, key: MessagesQueryKey)
  * Apply one change to a chat's paged cache, recording it for replay when a page is in flight.
  *
  * Never seeds a slice: an entry created here would be "fresh" under staleTime: Infinity, so opening
- * the chat would skip the queryFn and show this write alone.
+ * the chat would skip the queryFn and show this write alone. A write while the FIRST page is in
+ * flight has no data to land on, so it is only queued, then replayed onto that page when it
+ * settles; the composer is live before the thread loads, and dropping the write lost the message.
  *
  * `apply` must be idempotent: a replay can re-run it against a cache that already reflects it.
  */
@@ -177,7 +179,7 @@ function writeMessagesCache(
   apply: (data: MessagesData) => MessagesData,
 ): void {
   const state = queryClient.getQueryState<MessagesData>(key);
-  if (state?.data === undefined) return;
+  if (state === undefined || (state.data === undefined && state.fetchStatus === 'idle')) return;
   queryClient.setQueryData<MessagesData>(key, old => (old === undefined ? undefined : apply(old)));
   // Anything but `idle` still has a page coming that will overwrite this write when it lands, so
   // it has to be queued. `paused` is the case a bare `=== 'fetching'` test misses: the browser

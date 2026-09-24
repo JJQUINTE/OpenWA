@@ -155,6 +155,9 @@ function holdOlderPage(): () => void {
 // Hold a text send open, so a test can land it at a chosen moment relative to an older-page fetch.
 let sendGate: Promise<void> | null = null;
 
+// Hold Alice's first page open, so a test can write to the thread before it has any data.
+let firstPageGate: Promise<void> | null = null;
+
 function holdSend(): () => void {
   let release!: () => void;
   sendGate = new Promise<void>(resolve => {
@@ -294,9 +297,9 @@ function installFetchStub(): void {
         const gate = isFirstPage ? null : olderPageGate;
         return gate ? gate.then(answer) : Promise.resolve(answer());
       }
-      return Promise.resolve(
-        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 }),
-      );
+      const firstPage = () =>
+        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 });
+      return firstPageGate ? firstPageGate.then(firstPage) : Promise.resolve(firstPage());
     }
     // The media route answers bytes, not JSON — Content-Disposition: attachment.
     if (method === 'GET' && (path === MEDIA_PATH || path === MEDIA_PATH_2)) {
@@ -373,6 +376,7 @@ afterEach(() => {
   mediaGates.clear();
   olderPageGate = null;
   sendGate = null;
+  firstPageGate = null;
   olderPageFails = false;
   chatsResponder = null;
 });
@@ -1307,4 +1311,29 @@ test('a send that reconciles after the older page has already settled does not r
   assert.equal(bubbles.length, 1, 'expected exactly one bubble — a resurrected placeholder would show a second');
   const icon = bubbles[0].closest('.message-bubble')?.querySelector('.message-status-icon');
   assert.ok(icon?.classList.contains('sent'), 'expected the reconciled (sent) row, not a reverted pending ghost');
+});
+
+test('a message sent while the first page is still loading survives the page landing', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  let releaseFirstPage!: () => void;
+  firstPageGate = new Promise<void>(resolve => {
+    releaseFirstPage = resolve;
+  });
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  // The composer is live before the thread has loaded, so a send can land in a cache with no data.
+  fireEvent.change(await screen.findByPlaceholderText('Type a message...'), {
+    target: { value: 'sent while loading' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => assert.ok(findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-text`)));
+  await flush();
+
+  releaseFirstPage();
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await waitFor(() => assert.equal(within(thread).queryAllByText('sent while loading').length, 1));
 });
