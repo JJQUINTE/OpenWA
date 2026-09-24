@@ -7021,10 +7021,16 @@ The hex is an HMAC-SHA256 computed over the **raw JSON request body** (exactly t
 const crypto = require('crypto');
 
 function verify(rawBody, header, secret) {
+  if (typeof header !== 'string') return false;
   const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  // timingSafeEqual throws on a length mismatch, so a short or forged header must return false first.
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 ```
+
+Complete Express and FastAPI receivers are in [`examples/webhook-signature-verification.md`](examples/webhook-signature-verification.md).
 
 If no `secret` is configured the `X-OpenWA-Signature` header is omitted entirely.
 
