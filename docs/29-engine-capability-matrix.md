@@ -934,8 +934,11 @@ adapter boundary — none silently stubs.
 - **`deleteStatus` (baileys).** Baileys sends a status stanza, the revoke included, to exactly its
   `statusJidList`, so the revoke is addressed to the recipients the adapter remembered when it posted
   the status. It keeps them in memory for 24 hours, so a status this session did not post in the last
-  24 hours (one posted from the phone or from another node, or posted before a restart) is refused
-  with `403` (`EngineRefusedError`) instead of a revoke that reaches nobody while the status stays up.
+  24 hours (one posted from the phone or from another node, or before the session's engine was last
+  created: a process restart, a session stop and start, or a reconnect the gateway runs itself, such
+  as after a failed liveness check) is refused with `403` (`EngineRefusedError`) instead of a revoke
+  that reaches nobody while the status stays up. The transient reconnects Baileys runs on its own keep
+  the same engine, and the list with it.
   The `sendMessage(status@broadcast, {delete})` revoke shape is _empirically unverified_: only posting
   was live-spiked. On wwjs it calls `revokeStatusMessage(statusId)` (own status only).
 - **`getContactStatus` / `getContactStatuses` (wwjs).** `Status.type` is the `text|image|video`
