@@ -101,6 +101,7 @@ function resetFetchCalls(): void {
   startGate = null;
   startResult = null;
   stopFailure = null;
+  qrGate = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -129,6 +130,8 @@ let startResult: { answer: Partial<Session>; leaves?: Partial<Session> } | null 
 let stopFailure: { status: number; message: string } | null = null;
 // When set, POST .../start answers, whichever way it answers, only once this settles.
 let startGate: Promise<void> | null = null;
+// When set, GET .../qr for that one session answers only once `until` settles.
+let qrGate: { sessionId: string; until: Promise<void> } | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -226,7 +229,9 @@ function installFetchStub(): void {
     if (method === 'GET' && qrMatch) {
       const found = SESSIONS.find(s => s.id === qrMatch[1]);
       if (!found) return Promise.resolve(jsonResponse({ message: 'not found' }, 404));
-      return Promise.resolve(jsonResponse({ qrCode: 'data:image/png;base64,FAKE', status: found.status }));
+      const answer = () => jsonResponse({ qrCode: 'data:image/png;base64,FAKE', status: found.status });
+      if (qrGate?.sessionId === found.id) return qrGate.until.then(answer);
+      return Promise.resolve(answer());
     }
 
     const pairingMatch = path.match(/^\/api\/sessions\/([^/]+)\/pairing-code$/);
@@ -537,6 +542,44 @@ test('stopping a session dismisses its own open QR modal', async () => {
     // instead of failing fast. Reduce to a boolean first.
     assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open after its session stopped');
   });
+});
+
+// Closing the modal does not cancel a GET .../qr already in flight. Its late answer must not reopen
+// the closed modal, nor replace the modal the operator has since opened for another session.
+test('a QR answer that lands after its modal closed changes nothing', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const other: Session = { ...SESSION_QR, id: 'sess-qr-2', name: 'second-device' };
+  SESSIONS.push(other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const otherCard = screen.getByText('second-device').closest('.session-card') as HTMLElement;
+    const closeModal = () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+
+    let release: () => void = () => {};
+    qrGate = { sessionId: SESSION_QR.id, until: new Promise<void>(resolve => (release = resolve)) };
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByRole('dialog');
+    closeModal();
+    release();
+    await waitFor(() => assert.ok(findFetchCall('GET', `/api/sessions/${SESSION_QR.id}/qr`)));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(!screen.queryByRole('dialog'), 'a late QR answer reopened the closed modal');
+
+    qrGate = { sessionId: SESSION_QR.id, until: new Promise<void>(resolve => (release = resolve)) };
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByRole('dialog');
+    closeModal();
+    fireEvent.click(within(otherCard).getByRole('button', { name: 'Show QR' }));
+    await screen.findByAltText('QR');
+    release();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const dialog = screen.getByRole('dialog');
+    assert.ok(within(dialog).queryByText('second-device'), "a late QR answer replaced another session's modal");
+  } finally {
+    SESSIONS.pop();
+  }
 });
 
 // A node that died mid-pairing leaves a row reading `qr_ready` with no engine behind it. Reconnect on
