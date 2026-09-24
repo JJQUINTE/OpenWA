@@ -55,14 +55,17 @@ export class SessionLidResolver {
     } catch {
       phone = null;
     }
-    // Bounded FIFO eviction: Map preserves insertion order, so the first key is the oldest.
-    if (this.cache.size >= SessionLidResolver.CACHE_MAX) {
-      for (const oldest of this.cache.keys()) {
-        this.cache.delete(oldest);
-        break;
+    // Only a definitive answer is cached: a transient null would otherwise stick for the process life.
+    if (resolved) {
+      // Bounded FIFO eviction: Map preserves insertion order, so the first key is the oldest.
+      if (this.cache.size >= SessionLidResolver.CACHE_MAX) {
+        for (const oldest of this.cache.keys()) {
+          this.cache.delete(oldest);
+          break;
+        }
       }
+      this.cache.set(key, phone);
     }
-    this.cache.set(key, phone);
     // Persist the resolution so the read-path can bridge this contact's `@lid` and `@c.us` rows even
     // when the operator never sent to them (#583 R3 Phase 2). A definitive null is persisted too, so
     // a phone that later becomes hidden overwrites its stale mapping instead of being served forever
