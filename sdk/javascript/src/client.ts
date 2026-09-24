@@ -47,7 +47,7 @@ export interface OpenWAClientOptions {
   baseUrl: string;
   /** API key sent as `X-API-Key`. */
   apiKey: string;
-  /** Per-request timeout in milliseconds (default 30000). */
+  /** Per-request timeout in milliseconds (default 30000); `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Default headers applied to every request. */
   defaultHeaders?: Record<string, string>;

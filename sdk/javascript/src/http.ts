@@ -25,7 +25,7 @@ export interface RequestOptions {
   query?: object;
   /** JSON-serializable request body. */
   body?: unknown;
-  /** Override the per-client timeout (ms) for this single request. */
+  /** Override the per-client timeout (ms) for this single request; `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Extra headers merged on top of the client defaults (auth/JSON win). */
   headers?: Record<string, string>;
@@ -36,7 +36,7 @@ export interface ClientConfig {
   baseUrl: string;
   /** API key sent as `X-API-Key`. */
   apiKey: string;
-  /** Per-request timeout in milliseconds (default 30000). */
+  /** Per-request timeout in milliseconds (default 30000); `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Default headers applied to every request. */
   defaultHeaders?: Record<string, string>;
@@ -128,7 +128,12 @@ async function send<T>(
   const timeoutMs = options.timeoutMs ?? config.timeoutMs;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // 0 or Infinity means no client timeout. setTimeout fires after 1 ms for a delay that is not finite
+  // or exceeds 2^31-1, so cap it rather than abort every request.
+  const timer =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), Math.min(timeoutMs, 2_147_483_647))
+      : undefined;
 
   // Auth and JSON content-type WIN over caller-supplied defaults/per-request headers — the SDK only
   // ever sends a JSON body, and this matches the Python and PHP SDKs (which force JSON) and the

@@ -241,6 +241,24 @@ describe('OpenWAClient', () => {
     await expect(c.sessions.list()).rejects.toBeInstanceOf(OpenWATimeoutError);
   });
 
+  it('turns the timeout off for 0 or Infinity, and caps a delay setTimeout cannot hold', async () => {
+    // setTimeout fires after 1 ms for a delay that is not finite or exceeds 2^31-1, which would
+    // abort every request instead of waiting longer.
+    const slowFetch: FetchLike = async (_url, init) => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      if (init?.signal?.aborted) {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return new Response('[]', { status: 200 });
+    };
+    for (const timeoutMs of [0, Infinity, 2 ** 31]) {
+      const c = new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs, fetch: slowFetch });
+      await expect(c.sessions.list()).resolves.toEqual([]);
+    }
+  });
+
   it('keeps X-API-Key winning over defaultHeaders', async () => {
     const t = new MockTransport().on('GET', '/api/sessions', { body: [] });
     const c = new OpenWAClient({
