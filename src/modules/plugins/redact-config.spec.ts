@@ -320,6 +320,17 @@ describe('restoreSecretConfig (scalar-secret array)', () => {
     ).toThrow(/re-enter/);
   });
 
+  // Adding keys in the same save grows the array, so the removal must not slip past the check.
+  it('rejects a removal paired with additions that leaves masked keys it cannot tell apart', () => {
+    expect(() =>
+      restoreSecretConfig(
+        { keys: [SECRET_SENTINEL, 'new-1', 'new-2'] },
+        { keys: ['old', 'keep'] },
+        scalarSecretArraySchema,
+      ),
+    ).toThrow(/re-enter/);
+  });
+
   it('accepts a removal once the remaining keys are re-entered', () => {
     expect(restoreSecretConfig({ keys: ['k2', 'k3'] }, { keys: ['k1', 'k2', 'k3'] }, scalarSecretArraySchema)).toEqual({
       keys: ['k2', 'k3'],
@@ -365,6 +376,29 @@ describe('restoreSecretConfig (row removal among rows that differ only by secret
       ),
     ).toEqual({
       endpoints: [
+        { url: 'a', token: 't-a' },
+        { url: 'a', token: 't-b' },
+      ],
+    });
+  });
+
+  // The typed row carries no mask, so it must not take a stored row's slot or shift the survivors.
+  it('restores every secret when a typed row is prepended before identical masked rows', () => {
+    expect(
+      restoreSecretConfig(
+        {
+          endpoints: [
+            { url: 'a', token: 't-z' },
+            { url: 'a', token: SECRET_SENTINEL },
+            { url: 'a', token: SECRET_SENTINEL },
+          ],
+        },
+        { endpoints: stored.endpoints.slice(0, 2) },
+        nestedSchema,
+      ),
+    ).toEqual({
+      endpoints: [
+        { url: 'a', token: 't-z' },
         { url: 'a', token: 't-a' },
         { url: 'a', token: 't-b' },
       ],

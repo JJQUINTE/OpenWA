@@ -126,8 +126,16 @@ function restoreValue(
     }
     const sameLength = incoming.length === existingArr.length;
     const sigs = incoming.map(item => elementSignature(item, itemField));
+    // Only an element that still carries a mask needs a stored counterpart; one whose secrets were all
+    // typed in is stored as provided, so it must not count toward, or take the slot of, a stored row.
+    const masked = incoming.map(
+      (item: unknown) =>
+        stableStringify(restoreValue(item, undefined, itemField)) !== stableStringify({ keep: true, value: item }),
+    );
     const inCount = new Map<string, number>();
-    for (const s of sigs) inCount.set(s, (inCount.get(s) ?? 0) + 1);
+    sigs.forEach((s, i) => {
+      if (masked[i]) inCount.set(s, (inCount.get(s) ?? 0) + 1);
+    });
     const seen = new Map<string, number>();
     return {
       keep: true,
@@ -137,12 +145,13 @@ function restoreValue(
           const group = bySig.get(s) ?? [];
           const storedCount = group.length;
           const k = seen.get(s) ?? 0;
-          seen.set(s, k + 1);
-          // A removal among stored rows that share this signature (scalar secrets, or rows that differ
-          // only by a secret) sends the same payload whichever row went, so no binding is safe: position
-          // would keep the removed secret and drop a kept one. An element that carries a masked secret
-          // there is rejected; one whose secrets were all re-entered is stored as provided.
-          if (incoming.length < existingArr.length && storedCount > 1 && (inCount.get(s) ?? 0) < storedCount) {
+          if (masked[i]) seen.set(s, k + 1);
+          // Fewer masked elements than stored rows sharing this signature (scalar secrets, or rows that
+          // differ only by a secret) means one was removed, and the payload is the same whichever row
+          // went, even when the same save adds new ones. No binding is safe: position would keep the
+          // removed secret and drop a kept one. An element that carries a masked secret there is
+          // rejected; one whose secrets were all re-entered is stored as provided.
+          if (!sameLength && storedCount > 1 && (inCount.get(s) ?? 0) < storedCount) {
             const unbound = restoreValue(item, undefined, itemField);
             if (stableStringify(unbound) !== stableStringify(restoreValue(item, group[0], itemField))) {
               throw new BadRequestException(
@@ -154,8 +163,8 @@ function restoreValue(
           // Resolution order: (1) an unambiguous content match keeps a row's secret across
           // reorder/insert/removal; (2) on an unchanged length, fall back to the positional twin (an
           // in-place edit — position i is the same logical row, incl. a non-secret-field rename); (3) on a
-          // length change that kept every stored element with this signature, bind the k-th incoming one
-          // to the k-th stored one, since a removal before or between them shifts their positions; (4)
+          // length change that kept every stored element with this signature, bind the k-th masked incoming
+          // one to the k-th stored one, since a removal before or between them shifts their positions; (4)
           // otherwise bind the positional twin ONLY when its masked signature still equals this element's,
           // so an append keeps each surviving sentinel's stored secret while a genuinely-new or
           // signature-changed row at that position is never grafted with a stored secret.
