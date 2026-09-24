@@ -954,6 +954,50 @@ test('a chat list that answers after the user switched sessions does not replace
   }
 });
 
+test('a chat list refetch lands while a newer one is out, and an older answer never overwrites a newer', async () => {
+  const { screen, waitFor } = rtl;
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  // Edits to a chat that was never opened refetch the list each, and they arrive faster than it answers.
+  const answers: Array<() => void> = [];
+  chatsResponder = () =>
+    new Promise<Response>(resolve => {
+      const version = answers.length + 1;
+      answers.push(() => resolve(jsonResponse([{ ...CHAT_2, lastMessage: `carol v${version}` }, CHAT])));
+    });
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  const edit = (messageId: string): void =>
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.edited',
+        sessionId: SESSION.id,
+        data: { messageId, chatId: CHAT_2.id, body: 'edited', timestamp: 1_700_003_000 },
+      },
+    });
+  edit('wamid.carol.1');
+  edit('wamid.carol.2');
+  edit('wamid.carol.3');
+  await waitFor(() => assert.equal(answers.length, 3));
+  assert.ok(screen.queryByText('Alice'), 'a background refetch hid the chat list behind the loading spinner');
+
+  // The first answer is the newest one applied so far, so it lands although newer calls are still out.
+  answers[0]();
+  await screen.findByText('carol v1');
+  assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
+
+  answers[2]();
+  await screen.findByText('carol v3');
+  answers[1]();
+  await flush();
+  await flush();
+  assert.ok(screen.queryByText('carol v3'), 'an older answer replaced the newer list');
+  assert.ok(!screen.queryByText('carol v2'), 'an older answer replaced the newer list');
+});
+
 test('changing the UI language keeps the selected session and the open chat', async () => {
   const { screen, fireEvent, within, waitFor, act } = rtl;
   const { default: i18n } = await import('../i18n/index.ts');

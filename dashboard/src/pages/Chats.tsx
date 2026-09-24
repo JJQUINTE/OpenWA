@@ -307,26 +307,34 @@ export function Chats() {
     void loadSessions();
   }, [showLoadError]);
 
-  // 2. Fetch chats when active session changes. Only the newest call may write: a session switch
-  // does not cancel the list still loading for the session left behind, and a list that lands
-  // late would put that account's chats under the selected session.
+  // 2. Fetch chats when active session changes. A session switch does not cancel the list still
+  // loading for the session left behind, so an answer for any session but the latest call's is
+  // dropped, or it would put that account's chats under the selected session. Within one session an
+  // answer is dropped only once a newer one has landed: dropping every answer a newer call overtook
+  // left a burst of realtime refetches with no list at all, each miss firing the next refetch.
+  // A realtime refetch runs in the background, keeping the current list on screen.
   const chatsRequestRef = useRef(0);
+  const chatsAppliedRef = useRef(0);
+  const chatsSessionRef = useRef('');
   const loadChats = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, { background = false } = {}) => {
       if (!sessionId) return;
       const request = ++chatsRequestRef.current;
+      chatsSessionRef.current = sessionId;
+      const stale = () => sessionId !== chatsSessionRef.current || request < chatsAppliedRef.current;
       try {
-        setLoadingChats(true);
+        if (!background) setLoadingChats(true);
         const data = await sessionApi.getChats(sessionId);
-        if (request !== chatsRequestRef.current) return;
+        if (stale()) return;
+        chatsAppliedRef.current = request;
         const sorted = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setChats(sorted);
       } catch (err) {
-        if (request !== chatsRequestRef.current) return;
+        if (stale()) return;
         showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {
-        if (request === chatsRequestRef.current) setLoadingChats(false);
+        if (sessionId === chatsSessionRef.current) setLoadingChats(false);
       }
     },
     [showLoadError],
@@ -429,7 +437,7 @@ export function Chats() {
         return result.chats;
       });
       if (needsSidebarRefetch) {
-        void loadChats(selectedSessionId);
+        void loadChats(selectedSessionId, { background: true });
       }
     },
     [selectedSessionId, activeChat, canWrite, loadChats, markChatRead, appendMessage, onMessageAppended, t],
@@ -527,7 +535,7 @@ export function Chats() {
         // The chat may never have been opened, so there is no message cache from which to prove
         // whether this was its latest row. Refresh summaries instead of guessing and overwriting the
         // sidebar with the body of an older edited message.
-        void loadChats(selectedSessionId);
+        void loadChats(selectedSessionId, { background: true });
       }
     },
     [selectedSessionId, queryClient, loadChats],
