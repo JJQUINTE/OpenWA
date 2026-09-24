@@ -114,6 +114,21 @@ export async function requestBytes(
 }
 
 /**
+ * A timeout in milliseconds, coerced once: untyped JS config can pass a numeric string (process.env).
+ * `0` or `Infinity` turns the timeout off, so any other value that is not a non-negative number (an
+ * empty variable, `30s`) is refused rather than read as "off", which would let a request hang forever.
+ */
+export function toTimeoutMs(value: unknown): number {
+  const ms = typeof value === 'string' && value.trim() === '' ? NaN : Number(value);
+  if (Number.isNaN(ms) || ms < 0) {
+    throw new TypeError(
+      `OpenWA: timeoutMs must be a non-negative number of milliseconds, got ${JSON.stringify(value)}`,
+    );
+  }
+  return ms;
+}
+
+/**
  * Shared transport for {@link request} and {@link requestBytes}: builds the
  * URL/headers, performs the fetch under the per-request timeout, translates a
  * non-2xx into a typed error, then hands the response to `consume` — still
@@ -125,12 +140,10 @@ async function send<T>(
   consume: (res: Response) => Promise<T>,
 ): Promise<T> {
   const url = buildUrl(config.baseUrl, options.path, options.query);
-  // Coerced once: untyped JS config can pass a numeric string (process.env), which Number.isFinite
-  // below would otherwise read as "no timeout".
-  const timeoutMs = Number(options.timeoutMs ?? config.timeoutMs);
+  const timeoutMs = toTimeoutMs(options.timeoutMs ?? config.timeoutMs);
 
   const controller = new AbortController();
-  // 0, Infinity or NaN means no client timeout. setTimeout fires after 1 ms for a delay that is not
+  // 0 or Infinity means no client timeout. setTimeout fires after 1 ms for a delay that is not
   // finite or exceeds 2^31-1, so cap it rather than abort every request.
   const timer =
     Number.isFinite(timeoutMs) && timeoutMs > 0

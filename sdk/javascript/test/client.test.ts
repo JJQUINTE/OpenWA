@@ -290,6 +290,16 @@ describe('OpenWAClient', () => {
     await expect(c.sessions.list()).rejects.toThrow(new OpenWATimeoutError(5));
   });
 
+  it('refuses a timeout that is not a number of milliseconds instead of turning it off', () => {
+    // An environment variable that is set but empty, or carries a unit, would otherwise let a
+    // stalled request hang forever.
+    for (const timeoutMs of ['', ' ', '30s', 'abc', -1]) {
+      expect(
+        () => new OpenWAClient({ baseUrl: 'http://localhost', apiKey: 'k', timeoutMs: timeoutMs as unknown as number }),
+      ).toThrow(TypeError);
+    }
+  });
+
   it('keeps X-API-Key winning over defaultHeaders', async () => {
     const t = new MockTransport().on('GET', '/api/sessions', { body: [] });
     const c = new OpenWAClient({

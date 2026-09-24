@@ -25,7 +25,7 @@
  * @packageDocumentation
  */
 
-import { request, requestBytes, encodeSegment, warnIfInsecureHttpUrl, type BinaryResponse, type ClientConfig, type FetchLike, type RequestOptions } from './http.js';
+import { request, requestBytes, encodeSegment, toTimeoutMs, warnIfInsecureHttpUrl, type BinaryResponse, type ClientConfig, type FetchLike, type RequestOptions } from './http.js';
 import { CallsResource } from './resources/calls.js';
 import { MediaResource } from './resources/media.js';
 import { CatalogResource } from './resources/catalog.js';
@@ -67,7 +67,7 @@ export class OpenWAClient {
     this.config = {
       baseUrl: options.baseUrl,
       apiKey: options.apiKey,
-      timeoutMs: options.timeoutMs ?? 30000,
+      timeoutMs: toTimeoutMs(options.timeoutMs ?? 30000),
       defaultHeaders: options.defaultHeaders ?? {},
       // Looked up on each call rather than captured here, so a fetch installed on globalThis after
       // the client is built (a polyfill or a test stub) is the one used.
