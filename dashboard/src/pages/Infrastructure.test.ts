@@ -355,6 +355,39 @@ test('editing a database field and saving PUTs the edited value in the request b
   });
 });
 
+test('a password typed before switching to a built-in container is not saved', async () => {
+  const { screen, waitFor, fireEvent } = rtl;
+  resetFetchCalls();
+  const { container } = renderInfrastructure();
+
+  await screen.findByText('Database Configuration');
+  await waitFor(() => assert.equal(fieldInput(container, 'Username').value, 'openwa_admin'));
+
+  // Typed while external, then the field is hidden by the built-in toggle but its state survives.
+  fireEvent.change(container.querySelector('#infra-4')!, { target: { value: 'typed-db-secret' } });
+  fireEvent.click(toggleInput(container, 'Use Built-in PostgreSQL Container'));
+
+  fireEvent.click(toggleInput(container, 'Enable Redis'));
+  fireEvent.change(container.querySelector('#infra-12')!, { target: { value: 'typed-redis-secret' } });
+  fireEvent.click(toggleInput(container, 'Use Built-in Redis Container'));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+
+  // The bundled containers never receive a typed password, so '' (unchanged) is what must be sent.
+  await waitFor(() => {
+    const call = findFetchCall('PUT', '/api/infra/config');
+    assert.ok(call, 'expected a PUT to /infra/config');
+    const body = call!.body as {
+      database?: { builtIn?: boolean; password?: string };
+      redis?: { builtIn?: boolean; password?: string };
+    };
+    assert.equal(body.database?.builtIn, true);
+    assert.equal(body.database?.password, '');
+    assert.equal(body.redis?.builtIn, true);
+    assert.equal(body.redis?.password, '');
+  });
+});
+
 test('a successful save opens the restart modal', async () => {
   const { screen, waitFor, fireEvent, within } = rtl;
   resetFetchCalls();
