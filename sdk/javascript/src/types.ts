@@ -1292,7 +1292,7 @@ export interface CatalogProduct {
   description?: string | null;
   /** Absent when the product has no price. */
   price?: number;
-  currency: string;
+  currency?: string;
   /** Absent when `price` is. */
   priceFormatted?: string;
   imageUrl?: string | null;

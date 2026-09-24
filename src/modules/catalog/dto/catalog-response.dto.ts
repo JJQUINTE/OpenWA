@@ -44,13 +44,17 @@ export class ProductDto {
   })
   price?: number;
 
-  @ApiProperty({ description: 'ISO currency code.', example: 'IDR' })
-  currency!: string;
+  @ApiPropertyOptional({
+    description: 'ISO currency code. Absent when the product carries no currency.',
+    example: 'IDR',
+  })
+  currency?: string;
 
   @ApiPropertyOptional({
     description:
       'Price rendered for display. Synthesized by the gateway from price + currency, so an ' +
-      'unrecognised currency code falls back to a plain "CODE amount" pair. Absent when price is.',
+      'unrecognised currency code falls back to a plain "CODE amount" pair, and a product with no ' +
+      'currency shows the bare amount. Present only when price is.',
     example: 'IDR 85,000.00',
   })
   priceFormatted?: string;

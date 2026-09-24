@@ -137,7 +137,8 @@ function mapProduct(p: BaileysProduct): Product {
     description: p.description || undefined,
     // A catalog item without a price parses as NaN, which would reach clients as "price":null.
     ...(Number.isFinite(p.price) && { price: p.price, priceFormatted: formatPrice(p.price, p.currency) }),
-    currency: p.currency,
+    // Read from the <currency> child the same way, so an item without one has none to report.
+    ...(p.currency && { currency: p.currency }),
     imageUrl: Object.values(p.imageUrls ?? {})[0],
     url: p.url ?? '',
     isAvailable: p.availability === 'in stock',
@@ -145,7 +146,8 @@ function mapProduct(p: BaileysProduct): Product {
   };
 }
 
-function formatPrice(price: number, currency: string): string {
+function formatPrice(price: number, currency: string | undefined): string {
+  if (!currency) return new Intl.NumberFormat('en').format(price);
   try {
     return new Intl.NumberFormat('en', { style: 'currency', currency }).format(price);
   } catch {

@@ -6339,6 +6339,26 @@ describe('BaileysAdapter catalog (#905)', () => {
     expect(JSON.parse(JSON.stringify(products[0]))).not.toHaveProperty('price');
   });
 
+  // The <currency> child is read the same way, so an item without one arrives with currency undefined.
+  it('getProducts omits currency and formats a bare price for a product without a currency', async () => {
+    const adapter = await ready();
+    fakeSock.getCatalog.mockResolvedValue({
+      products: [
+        baileysProduct({ price: 85000, currency: undefined }),
+        baileysProduct({ id: 'p2', price: NaN, currency: undefined }),
+      ],
+      nextPageCursor: undefined,
+    });
+
+    const { products } = await adapter.getProducts({ page: 1, limit: 10 });
+
+    expect(products[0]).not.toHaveProperty('currency');
+    expect(products[0].price).toBe(85000);
+    expect(products[0].priceFormatted).toBe('85,000');
+    expect(products[1]).not.toHaveProperty('currency');
+    expect(products[1]).not.toHaveProperty('priceFormatted');
+  });
+
   it('getProduct returns the product with the matching id', async () => {
     const adapter = await ready();
     fakeSock.getCatalog.mockResolvedValue({

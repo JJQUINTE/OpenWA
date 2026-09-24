@@ -509,7 +509,8 @@ export interface Product {
   description?: string;
   /** Absent when the catalog item carries no price. */
   price?: number;
-  currency: string;
+  /** Absent when the catalog item carries no currency. */
+  currency?: string;
   /** Present only when price is. */
   priceFormatted?: string;
   imageUrl?: string;
