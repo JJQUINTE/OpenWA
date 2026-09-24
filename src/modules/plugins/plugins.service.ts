@@ -574,12 +574,20 @@ export class PluginsService {
     });
 
     try {
-      // ctx.storage files share the package directory under shipped defaults. Restore service-owned
-      // state from the backup unless the new package explicitly supplied that exact path. Copy (rather
-      // than move) so the rollback below still has a complete original directory.
+      // ctx.storage files share the package directory under shipped defaults. Restore state from the
+      // backup unless the new package explicitly supplied that exact path: encoded key-* files and the
+      // legacy <key>.json files the storage service still reads (every top-level *.json except the
+      // package's manifest.json/package.json). Copy (rather than move) so the rollback below still has
+      // a complete original directory.
       const packagePaths = new Set(entries.map(entry => entry.relPath));
       for (const entry of fs.readdirSync(backup, { withFileTypes: true })) {
-        if (!entry.isFile() || !/^key-[A-Za-z0-9_-]+\.json$/.test(entry.name) || packagePaths.has(entry.name)) {
+        if (
+          !entry.isFile() ||
+          !entry.name.endsWith('.json') ||
+          entry.name === 'manifest.json' ||
+          entry.name === 'package.json' ||
+          packagePaths.has(entry.name)
+        ) {
           continue;
         }
         const stateFile = path.join(dir, entry.name);
