@@ -205,16 +205,20 @@ function ChatComposer({
     setSending(true);
 
     const tempId = `temp_${Date.now()}`;
+    // The body the gateway stores for each type: image and video keep only the caption, a document its
+    // caption or else its filename, and audio its filename (the thread hides a body equal to it).
     const tempMessage: ChatMessageView = {
       id: tempId,
       chatId: activeChat.id,
       from: 'me',
       to: activeChat.id,
-      body: attachment
-        ? attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')
+      body: !attachment
+        ? textToSend
+        : attachment.mimetype.startsWith('image/') || attachment.mimetype.startsWith('video/')
           ? textToSend
-          : attachment.filename
-        : textToSend,
+          : attachment.mimetype.startsWith('audio/')
+            ? attachment.filename
+            : textToSend || attachment.filename,
       type: attachment ? messageTypeFromMime(attachment.mimetype) : 'text',
       direction: 'outgoing',
       status: 'pending',

@@ -802,6 +802,31 @@ test('text typed with an audio attachment stays in the input instead of showing 
   assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
 });
 
+test('a caption sent with a document shows in its bubble', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await stageAttachment(container, 'contract.pdf');
+
+  const input = screen.getByPlaceholderText('Add a caption...') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'please sign' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-document`);
+    assert.ok(call, 'expected a POST to the send-document endpoint');
+    assert.equal((call.body as { caption?: string }).caption, 'please sign');
+  });
+  await flush();
+
+  assert.equal(input.value, '');
+  assert.ok(within(thread).queryByText('please sign'), 'the caption that was sent is missing from the bubble');
+});
+
 test('the reply banner and the sent snippet name a media type in words, not as a raw token', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
