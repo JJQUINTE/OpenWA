@@ -220,8 +220,10 @@ export function assertNoDefaultSecretsInProduction(env: SecretCheckEnv): void {
   }
   const s3Exempt = env.minioBuiltIn === 'true' && isInternalS3Endpoint(env.s3Endpoint);
   if (env.storageType === 's3' && !s3Exempt) {
-    if (isWeak(env.s3AccessKey)) problems.push('S3_ACCESS_KEY');
-    if (isWeak(env.s3SecretKey)) problems.push('S3_SECRET_KEY');
+    // Name the canonical variables even when the value came from the legacy S3_ACCESS_KEY /
+    // S3_SECRET_KEY fallback: they are what the docs and .env.example tell an operator to set.
+    if (isWeak(env.s3AccessKey)) problems.push('S3_ACCESS_KEY_ID');
+    if (isWeak(env.s3SecretKey)) problems.push('S3_SECRET_ACCESS_KEY');
   }
   // API_MASTER_KEY is optional, but if provided it must neither be a known default nor fall below
   // the length floor — both are refused the same way, like the other weak secrets above. Unset stays

@@ -823,7 +823,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       BUILTIN_MINIO_ENV,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -840,7 +840,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       undefined,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
