@@ -422,10 +422,14 @@ curl -H "X-API-Key: $API_KEY" \
 # 1. Review release notes
 # Check for breaking changes, migration requirements
 
-# 2. Create backup (BACKUP_DIR must be set BEFORE the script runs — it defaults to ./backups
-#    and the archive is written as $BACKUP_DIR/openwa-backup-<timestamp>.tar.gz)
+# 2. Create a backup in the running container, where the data is mounted, then copy it to
+#    $BACKUP_DIR as openwa-backup-<timestamp>.tar.gz, where the Rollback block reads it. Both compose
+#    files name the container openwa-api. Running ./scripts/backup.sh on the host instead archives
+#    ./data in the checkout, which the production compose never reads (see Runbook: Database Backup)
 export BACKUP_DIR="/backups/openwa"
-./scripts/backup.sh
+mkdir -p "$BACKUP_DIR"
+docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
+docker cp openwa-api:/app/data/backups/. "$BACKUP_DIR"/
 
 # 3. Export the Data DB as JSON alongside the archive (admin key)
 curl -H "X-API-Key: $API_KEY" \
@@ -477,11 +481,11 @@ curl -X POST http://localhost:2785/api/sessions/{sessionId}/messages/send-text \
 > `image: ghcr.io/rmyndharis/openwa:<tag>` — replace steps 5-6 with editing that tag and running
 > `docker compose pull`.
 
-> On Kubernetes with the chart in `charts/openwa`, back up the persistent volume and take the step 3
-> export first, then replace steps 4-8 with checking out the new release and running
-> `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults to the chart's
-> `appVersion`, so the checkout moves it, unless `image.tag` was set at install: `--reuse-values` keeps
-> that value, so pass `--set image.tag=<new-version>` in that case.
+> On Kubernetes with the chart in `charts/openwa`, take the step 2 backup with the Helm lines in
+> Runbook: Database Backup and the step 3 export first, then replace steps 4-8 with checking out the
+> new release and running `helm upgrade openwa ./charts/openwa --reuse-values`. The image tag defaults
+> to the chart's `appVersion`, so the checkout moves it, unless `image.tag` was set at install:
+> `--reuse-values` keeps that value, so pass `--set image.tag=<new-version>` in that case.
 > Run steps 9-12 through `kubectl port-forward` to the release's Service. `helm rollback` keeps the
 > volume, so read the notes on restoring `sessions/` below before relying on it.
 
@@ -505,7 +509,8 @@ docker compose down
 
 # 2. Restore from the pre-upgrade backup (both DBs + sessions). The archive upgrade step 2 produced is
 #    "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz". The databases in place still hold the failed
-#    upgrade's data, so the restore refuses to touch them without --force. It runs in the image
+#    upgrade's data, so the restore refuses to touch them without --force. That state is not lost: it
+#    is kept in "$BACKUP_DIR/data.pre-restore-<ts>", the path the script prints. It runs in the image
 #    because the data lives in the openwa-data volume (see Runbook: Restore from Backup), and before
 #    the checkout below because an image older than 0.23.7 cannot move its safety snapshot off the
 #    read-only container root
