@@ -15,6 +15,7 @@ import {
 import { webhookApi, type Webhook, type WebhookFilters, type WebhookFilterCondition } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { availableEventNames } from '../utils/webhookEvents';
+import { filterValueLabel } from '../utils/enumLabels';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../hooks/useToast';
 import {
@@ -43,7 +44,7 @@ function conditionSummary(c: WebhookFilterCondition, t: TFn): string {
   if (typeof c.value === 'boolean') {
     value = c.value ? t('webhooks.filters.yes') : t('webhooks.filters.no');
   } else if (Array.isArray(c.value)) {
-    value = c.value.join(', ');
+    value = c.value.map(v => filterValueLabel(t, c.field, v)).join(', ');
   } else {
     value = `"${c.value}"`;
   }
