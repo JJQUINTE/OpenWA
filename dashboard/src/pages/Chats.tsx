@@ -386,6 +386,10 @@ export function Chats() {
   );
 
   // 3. WebSocket integration for real-time messages
+  const chatsRef = useRef(chats);
+  useEffect(() => {
+    chatsRef.current = chats;
+  });
   const handleIncomingMessage = useCallback(
     (event: { sessionId: string; message: Record<string, unknown> }) => {
       if (event.sessionId !== selectedSessionId) return;
@@ -422,20 +426,18 @@ export function Chats() {
         if (!newMsg.fromMe) onMessageAppended('incoming');
       }
 
-      // Update sidebar chat list. The refetch is REPORTED by the reducer and fired below, never from
-      // inside the updater: React double-invokes updaters under StrictMode, so a side effect in there
-      // ran twice for every message arriving in a chat the sidebar does not have.
-      let needsSidebarRefetch = false;
-      setChats(prevChats => {
-        const result = applyIncomingToChatList(prevChats, newMsg, {
-          // Only a chat this key marks read is exempt from the unread count (see markChatRead).
-          activeChatId: canWrite ? activeChat?.id : undefined,
-          // A location message's body is the (multi-KB) base64 map thumbnail; show a label instead.
-          locationLabel: `📍 ${t('chats.media.location')}`,
-        });
-        needsSidebarRefetch = result.needsSidebarRefetch;
-        return result.chats;
-      });
+      // Update sidebar chat list. Whether the chat is missing is decided against the list on screen,
+      // never inside the updater: React double-invokes updaters under StrictMode, and it may defer
+      // one to the next render, so a flag set in there was still false when read here and a chat the
+      // sidebar does not list never appeared.
+      const listOptions = {
+        // Only a chat this key marks read is exempt from the unread count (see markChatRead).
+        activeChatId: canWrite ? activeChat?.id : undefined,
+        // A location message's body is the (multi-KB) base64 map thumbnail; show a label instead.
+        locationLabel: `📍 ${t('chats.media.location')}`,
+      };
+      const { needsSidebarRefetch } = applyIncomingToChatList(chatsRef.current, newMsg, listOptions);
+      setChats(prevChats => applyIncomingToChatList(prevChats, newMsg, listOptions).chats);
       if (needsSidebarRefetch) {
         void loadChats(selectedSessionId, { background: true });
       }

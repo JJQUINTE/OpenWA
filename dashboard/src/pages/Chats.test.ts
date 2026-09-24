@@ -998,6 +998,48 @@ test('a chat list refetch lands while a newer one is out, and an older answer ne
   assert.ok(!screen.queryByText('carol v2'), 'an older answer replaced the newer list');
 });
 
+test('every message for a chat the sidebar does not list refetches the list, and the chat appears', async () => {
+  const { screen, waitFor } = rtl;
+  renderChats();
+  await screen.findByText('Alice');
+  resetFetchCalls();
+
+  const DAVE = '15550009999@c.us';
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  const receive = (id: string): void =>
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION.id,
+        data: {
+          id,
+          chatId: DAVE,
+          from: DAVE,
+          to: 'me',
+          body: 'hi',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_003_000,
+        },
+      },
+    });
+  // Each arrival renders before the next, the shape of live traffic.
+  const chatsPath = `/api/sessions/${SESSION.id}/chats`;
+  for (const [index, id] of ['wamid.dave.1', 'wamid.dave.2', 'wamid.dave.3'].entries()) {
+    receive(id);
+    await waitFor(() => assert.equal(countFetchCalls('GET', chatsPath), index + 1, 'an arrival did not refetch'));
+    await flush();
+  }
+
+  chatsResponder = () =>
+    Promise.resolve(jsonResponse([{ ...CHAT_2, id: DAVE, name: 'Dave', lastMessage: 'hi' }, CHAT_2, CHAT]));
+  receive('wamid.dave.4');
+  await screen.findByText('Dave');
+});
+
 test('changing the UI language keeps the selected session and the open chat', async () => {
   const { screen, fireEvent, within, waitFor, act } = rtl;
   const { default: i18n } = await import('../i18n/index.ts');
