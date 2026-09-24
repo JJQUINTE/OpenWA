@@ -227,7 +227,7 @@ export class SessionEngineEventWiring {
         if (!host.isLiveEngine(id, engine)) return;
         // Persist for the chat view only; no dispatch (these predate the live session).
         void host.messages
-          .persistHistoryMessages(id, messages)
+          .persistHistoryMessages(id, engine, messages)
           .catch(err => this.logger.error(`Failed to persist history messages for ${id}`, String(err)));
       },
       onMessageCreate: (message): void => host.messages.handleOwnSendEcho(id, engine, message),

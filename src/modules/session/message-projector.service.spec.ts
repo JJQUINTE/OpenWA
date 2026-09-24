@@ -245,7 +245,7 @@ describe('MessageProjector', () => {
 
   describe('persistHistoryMessages', () => {
     it('skips rows that cannot become a valid message row, and queries nothing when none survive', async () => {
-      await projector.persistHistoryMessages('s1', [
+      await projector.persistHistoryMessages('s1', engine, [
         historyMessage({ id: '' }), // no id -> cannot de-dup
         historyMessage({ isStatusBroadcast: true }), // a story, not a chat
         historyMessage({ chatId: '' }), // chatId is NOT NULL
@@ -261,7 +261,7 @@ describe('MessageProjector', () => {
       // filter rather than dragging the insert builder into a test about which rows qualify.
       messageRepository.find.mockResolvedValue([{ waMessageId: 'GOOD' }]);
 
-      await projector.persistHistoryMessages('s1', [
+      await projector.persistHistoryMessages('s1', engine, [
         historyMessage({ id: 'GOOD' }),
         historyMessage({ id: 'BAD', from: '' }),
       ]);
@@ -273,7 +273,10 @@ describe('MessageProjector', () => {
     it('de-duplicates repeated ids within one batch', async () => {
       messageRepository.find.mockResolvedValue([{ waMessageId: 'DUP' }]);
 
-      await projector.persistHistoryMessages('s1', [historyMessage({ id: 'DUP' }), historyMessage({ id: 'DUP' })]);
+      await projector.persistHistoryMessages('s1', engine, [
+        historyMessage({ id: 'DUP' }),
+        historyMessage({ id: 'DUP' }),
+      ]);
 
       expect(dedupIds(messageRepository.find)).toEqual(['DUP']);
     });

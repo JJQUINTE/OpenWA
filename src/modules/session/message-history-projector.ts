@@ -17,6 +17,7 @@ export async function persistHistoryMessages(
   id: string,
   messages: IncomingMessage[],
   logger: LoggerService,
+  isLive: () => boolean,
 ): Promise<void> {
   const storeEphemeralMessages = resolveFeatureFlags(configService).storeEphemeralMessages;
   const byId = new Map<string, IncomingMessage>();
@@ -46,6 +47,10 @@ export async function persistHistoryMessages(
       where: { sessionId: id, waMessageId: In(chunkIds) },
       select: { waMessageId: true },
     });
+    // A delete() can retire the engine while a large batch works through its chunks; its transaction
+    // has then already cleared this session's messages, and a row inserted after it (no FK) would
+    // never be reaped. Same re-check the live inbound path makes after its awaits.
+    if (!isLive()) break;
     const seen = new Set(existing.map(r => r.waMessageId));
     const rows = chunkIds
       .filter(x => !seen.has(x))

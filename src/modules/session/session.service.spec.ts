@@ -5919,6 +5919,43 @@ describe('SessionService', () => {
         expect(messageRepository.save).not.toHaveBeenCalled(); // no longer the throwing path
       });
 
+      it('stops a history backfill whose engine retired mid-batch, so a session delete leaves no orphan rows', async () => {
+        const callbacks = await startAndCaptureCallbacks();
+        const execute = jest.fn().mockResolvedValue({ identifiers: [] });
+        const qb = {
+          insert: jest.fn().mockReturnThis(),
+          values: jest.fn().mockReturnThis(),
+          orIgnore: jest.fn().mockReturnThis(),
+          execute,
+        };
+        (messageRepository.createQueryBuilder as jest.Mock) = jest.fn().mockReturnValue(qb);
+        (messageRepository.create as jest.Mock).mockImplementation((data: Record<string, unknown>) => ({ ...data }));
+        // delete() tears the engine down while the de-dup query is in flight.
+        (messageRepository.find as jest.Mock).mockImplementation(() => {
+          registry.delete('sess-uuid-1');
+          return Promise.resolve([]);
+        });
+
+        callbacks.onHistoryMessages?.([
+          {
+            id: 'h1',
+            from: 'peer@c.us',
+            to: 'me@c.us',
+            chatId: 'peer@c.us',
+            body: 'old',
+            type: 'text',
+            timestamp: 1,
+            fromMe: false,
+            isGroup: false,
+            kind: 'individual',
+          },
+        ]);
+        await flush();
+
+        expect(messageRepository.find).toHaveBeenCalled();
+        expect(execute).not.toHaveBeenCalled();
+      });
+
       it('persists author only for inbound history rows, never for the account’s own (fromMe) posts', async () => {
         // The Baileys history sync includes the account's own group messages (with author = self);
         // those must land with author NULL to keep the column's "null on outgoing" contract.

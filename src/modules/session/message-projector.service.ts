@@ -633,8 +633,10 @@ export class MessageProjector {
   }
 
   /** History backfill persist, extracted to message-history-projector.ts (stateless function). */
-  persistHistoryMessages(id: string, messages: IncomingMessage[]): Promise<void> {
-    return persistHistoryMessages(this.messageRepository, this.configService, id, messages, this.logger);
+  persistHistoryMessages(id: string, engine: IWhatsAppEngine, messages: IncomingMessage[]): Promise<void> {
+    return persistHistoryMessages(this.messageRepository, this.configService, id, messages, this.logger, () =>
+      this.engines.isLive(id, engine),
+    );
   }
 
   /** Reaction apply, queued on the per-message mutation chain — see MessageMutationProjector. */
