@@ -383,6 +383,41 @@ describe('WhatsAppWebJsAdapter initialize() retry on a navigation-killed first i
     expect(clientInitSpy).toHaveBeenCalledTimes(1);
   });
 
+  // A stop, delete or logout that lands while Chromium is still launching runs Client.destroy()
+  // before whatsapp-web.js has assigned pupBrowser, so it closes nothing. The launch then finishes
+  // with a logged-in browser that nothing owns.
+  it('closes the browser a mid-launch teardown could not reach once the launch finishes', async () => {
+    const adapter = newAdapter();
+    const launch = { finished: false };
+    const destroyedAfterLaunch: boolean[] = [];
+    clientDestroySpy.mockImplementation(() => {
+      destroyedAfterLaunch.push(launch.finished);
+      return Promise.resolve();
+    });
+    clientInitSpy.mockImplementationOnce(async () => {
+      await adapter.disconnect();
+      launch.finished = true;
+    });
+
+    await expect(adapter.initialize({ onError: jest.fn() })).resolves.toBeUndefined();
+
+    // The stop's own destroy ran before the browser existed; only a second one can close it.
+    expect(destroyedAfterLaunch).toEqual([false, true]);
+    expect(adapter.getStatus()).toBe(EngineStatus.DISCONNECTED);
+  });
+
+  it('does not launch when a teardown lands during the pre-launch sweep', async () => {
+    const adapter = newAdapter();
+    clientInitSpy.mockResolvedValue(undefined);
+    rmSpy.mockImplementationOnce(async () => {
+      await adapter.disconnect();
+    });
+
+    await expect(adapter.initialize({ onError: jest.fn() })).resolves.toBeUndefined();
+
+    expect(clientInitSpy).not.toHaveBeenCalled();
+  });
+
   it('clears the abandoned reconcile deadline from a first attempt that authenticated before dying', async () => {
     jest.useFakeTimers();
     clientInitSpy
