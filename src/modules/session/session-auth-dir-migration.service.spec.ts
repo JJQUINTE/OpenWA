@@ -205,26 +205,60 @@ describe('SessionAuthDirMigration', () => {
   ])('leaves another session login alone when a name is %s', async (_case, bobId) => {
     seed(path.join(sessionsDir, `session-${bobId}`), 'wwjs-bob');
     seed(path.join(baileysDir, bobId), 'baileys-bob');
-
-    await buildMigration([
+    const migration = buildMigration([
       { id: bobId, name: 'bob' },
       { id: ALICE_ID, name: bobId },
-    ]).onModuleInit();
+    ]);
+    const warn = jest
+      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await migration.onModuleInit();
 
     expect(markerAt(path.join(sessionsDir, `session-${bobId}`))).toBe('wwjs-bob');
     expect(markerAt(path.join(baileysDir, bobId))).toBe('baileys-bob');
     expect(fs.existsSync(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe(false);
     expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
+    // Known to be another session's login, so nothing tells the operator to hand it over.
+    expect(warn).not.toHaveBeenCalled();
   });
 
-  it('never moves a directory named by a UUID-shaped name, even when no session has that id', async () => {
-    const deletedId = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
-    seed(path.join(baileysDir, deletedId), 'baileys-deleted');
+  // A UUID-shaped name's legacy directory cannot be told apart from a deleted session's id-keyed
+  // leftover, so it is not moved; but on an upgrade it may be this session's own login, which must
+  // not be stranded without a word.
+  it('never moves a directory named by a UUID-shaped name, and names it so it can be moved by hand', async () => {
+    const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+    seed(path.join(baileysDir, uuidName), 'baileys-legacy');
+    const migration = buildMigration([{ id: ALICE_ID, name: uuidName }]);
+    const warn = jest
+      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
 
-    await buildMigration([{ id: ALICE_ID, name: deletedId }]).onModuleInit();
+    await migration.onModuleInit();
 
-    expect(markerAt(path.join(baileysDir, deletedId))).toBe('baileys-deleted');
+    expect(markerAt(path.join(baileysDir, uuidName))).toBe('baileys-legacy');
     expect(fs.existsSync(path.join(baileysDir, ALICE_ID))).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(path.join(baileysDir, uuidName)),
+      expect.objectContaining({ action: 'auth_dir_migration_ambiguous_name', engine: 'baileys' }),
+    );
+  });
+
+  it('says nothing about a UUID-shaped name once its session has an id-keyed directory', async () => {
+    const uuidName = '0f9e8d7c-6b5a-4938-8271-605f4e3d2c1b';
+    seed(path.join(baileysDir, uuidName), 'baileys-leftover');
+    seed(path.join(baileysDir, ALICE_ID), 'baileys-alice');
+    const migration = buildMigration([{ id: ALICE_ID, name: uuidName }]);
+    const warn = jest
+      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await migration.onModuleInit();
+
+    expect(markerAt(path.join(baileysDir, uuidName))).toBe('baileys-leftover');
+    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-alice');
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('skips the query and the filesystem entirely when there are no sessions', async () => {

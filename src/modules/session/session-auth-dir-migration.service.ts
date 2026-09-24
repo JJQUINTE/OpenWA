@@ -65,10 +65,10 @@ export class SessionAuthDirMigration implements OnModuleInit {
 
     // The name rule lets a session be named after another session's id, and the "legacy" directory
     // that name points at is then that session's live id-keyed login: moving it would hand the
-    // account to this row. Same guard as EngineFactory.purgeSessionData, plus the exact ids for a
-    // row imported with an id that is not UUID-shaped.
+    // account to this row. The exact ids catch a row imported with an id that is not UUID-shaped;
+    // migrateBase holds back the other UUID-shaped names, as EngineFactory.purgeSessionData does.
     const ids = new Set(rows.map(row => row.id));
-    const movable = sessions.filter(row => !isUUID(row.name) && !ids.has(row.name));
+    const movable = sessions.filter(row => !ids.has(row.name));
 
     const sessionDataPath = this.configService.get<string>('engine.sessionDataPath') ?? './data/sessions';
     const authDir = this.configService.get<string>('engine.baileys.authDir') ?? './data/baileys';
@@ -114,6 +114,19 @@ export class SessionAuthDirMigration implements OnModuleInit {
       const legacy = path.basename(dirFor(session.name));
       const target = path.basename(dirFor(session.id));
       if (legacy === target || !entries.has(legacy)) continue;
+      if (isUUID(session.name)) {
+        // Its directory cannot be told apart from a deleted session's id-keyed leftover, so it is
+        // not moved; but on an upgrade from a name-keyed release it may be this session's own login.
+        if (!entries.has(target)) {
+          this.logger.warn(
+            `Session "${session.name}" has a UUID-shaped name, so "${path.join(base, legacy)}" was not moved ` +
+              `onto its session id. If it holds this session's ${engine} login, move it to ` +
+              `"${path.join(base, target)}" before starting the session; otherwise the session starts at a QR code.`,
+            { sessionId: session.id, action: 'auth_dir_migration_ambiguous_name', engine, legacy, target },
+          );
+        }
+        continue;
+      }
       found.push(session.name);
       if (entries.has(target)) {
         this.logger.warn(
