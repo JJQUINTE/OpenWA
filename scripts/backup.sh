@@ -12,7 +12,8 @@
 #                     (unreachable, or no credentials); the bucket's contents are not archived and
 #                     need a backup of their own
 #   - plugin-packages/ — installed plugin packages from PLUGINS_DIR
-#   - plugin-state/    — registry and persisted ctx.storage state under OPENWA_DATA_DIR
+#   - plugin-state/    — registry and persisted ctx.storage state under PLUGIN_STATE_DIR/plugins
+#                        (default: <data dir>/plugins)
 #   - .env.generated and .api-key — dashboard config and plaintext bootstrap admin key
 #
 # The previous runbook backed up the wrong file (openwa.db) and omitted main.sqlite,
@@ -32,6 +33,10 @@
 #   DATABASE_TYPE     sqlite (default) | postgres
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   PLUGIN_STATE_DIR  root whose plugins/ holds the plugin registry and ctx.storage (default: the
+#                     data dir)
+#   BOOTSTRAP_KEY_FILE  the plaintext admin key to archive (default: <data dir>/.api-key)
+#                     These paths resolve through the same layers as the databases.
 #   For postgres: DATABASE_URL, or DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME
 #                     DATABASE_URL is read by this script only (the app uses the DATABASE_* keys)
 #                     and wins over them when set. It is passed to pg_dump as an argument, which
@@ -67,7 +72,7 @@ MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
 DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
 SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
 BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+MEDIA_DIR="$(openwa_media_dir)"
 # Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
 # registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
 # too, or the archive silently omits the plugin packages.
@@ -81,7 +86,8 @@ PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
 PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
 PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 GENERATED_ENV="$DATA_DIR/.env.generated"
-ADMIN_KEY_FILE="$DATA_DIR/.api-key"
+# The app writes the generated admin key to BOOTSTRAP_KEY_FILE when that is set.
+ADMIN_KEY_FILE="$(openwa_resolve BOOTSTRAP_KEY_FILE "$DATA_DIR/.api-key")"
 
 log() { echo "[backup] $*"; }
 
@@ -187,11 +193,21 @@ fi
 if [ -d "$MEDIA_DIR" ]; then
   log "Backing up local media"
   cp -pRH "$MEDIA_DIR" "$STAGE/media"
+else
+  log "WARN: $MEDIA_DIR not found; skipping local media"
 fi
 
 if [ -d "$PLUGIN_PACKAGES_DIR" ]; then
   log "Backing up installed plugin packages"
   cp -pRH "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
+fi
+
+# With PLUGINS_DIR unset the app also loads packages from ./plugins, its default up to 0.12.1 (see
+# plugin-package-scanner.ts). The archive does not carry that directory, so say so.
+if [ -z "$(openwa_resolve PLUGINS_DIR '')" ] &&
+  [ -n "$(find -H ./plugins -mindepth 2 -maxdepth 2 -name manifest.json ! -path './plugins/.*' 2>/dev/null)" ]; then
+  log "WARN: ./plugins holds plugin packages the app still loads, and this archive does not carry them;"
+  log "      move them into $PLUGIN_PACKAGES_DIR, or set PLUGINS_DIR=./plugins, and back up again"
 fi
 
 if [ -d "$PLUGIN_STATE_DIR" ]; then

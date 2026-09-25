@@ -1,5 +1,11 @@
 import type * as BaileysLib from '@whiskeysockets/baileys';
-import type { AnyMessageContent, MiscMessageGenerationOptions, WAMessage, WASocket } from '@whiskeysockets/baileys';
+import type {
+  AnyMessageContent,
+  MiscMessageGenerationOptions,
+  WAMessage,
+  WAMessageKey,
+  WASocket,
+} from '@whiskeysockets/baileys';
 import { generateSafeLinkPreview } from './safe-link-preview';
 import {
   CallLinkType,
@@ -64,6 +70,8 @@ export interface BaileysMessagingHost {
   wasDeletedForEveryone(messageId: string): boolean;
   /** Record a delete for everyone this session just made (see wasDeletedForEveryone). */
   markDeletedForEveryone(messageId: string): void;
+  /** The text of an edit of this message the stored copy with key `target` does not show yet, if any. */
+  pendingEditOf(messageId: string, target: WAMessageKey): string | undefined;
   /** Remember a lid<->phone pair the socket resolved, so later reads do not have to ask again. */
   recordLidMapping(lid: string, pn: string): void;
   /** The currently-registered onMessageCreate callback, if any (assigned at initialize()). */
@@ -157,8 +165,9 @@ const GENERIC_FETCHED_TYPES = new Set(['', 'application/octet-stream', 'binary/o
  * `sessionProxyUrl` is this session's egress proxy, which the URL fetch leaves through (#1626). It
  * is required, not optional, so a new call site cannot fetch direct on a proxied session by omission.
  *
- * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg), used for a URL whose type
- * neither the caller nor the host names. A document send passes none and keeps what it was given.
+ * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg, application/octet-stream for a
+ * document), used for a URL whose type neither the caller nor the host names. A document needs one too:
+ * Baileys labels a document with an empty type as application/pdf.
  */
 export async function resolveMediaBuffer(
   media: MediaInput,
@@ -393,7 +402,7 @@ export class BaileysMessaging {
 
   async sendDocumentMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'application/octet-stream');
     return this.sendContent(
       chatId,
       {
@@ -585,7 +594,9 @@ export class BaileysMessaging {
             timestamp: this.host.toUnixSeconds(target.messageTimestamp),
           },
         },
-        this.host.toEngineJid(chatId),
+        // Indexed by the chat the message is stored in: for a lid-keyed chat that is its lid, which the
+        // @c.us id the listing publishes does not fold to.
+        this.host.toEngineJid(chatJid),
       ),
       'the delete-for-me',
     );
@@ -823,7 +834,8 @@ export class BaileysMessaging {
    * `allowDeleted`: quoting it would hand WhatsApp the deleted content again (Baileys copies the
    * quoted message into the reply's contextInfo), and there is nothing left to forward, react to or
    * edit. A message the session knows was deleted is treated the same while its stored copy still
-   * holds the content, as it can when the delete overtook the original's own store write.
+   * holds the content, as it can when the delete overtook the original's own store write. An edit
+   * that overtook it the same way is applied to a copy, so a quote or forward carries the edited text.
    */
   private async requireStored(messageId: string, allowDeleted = false): Promise<WAMessage> {
     const found = await this.host.getStoredMessage(messageId);
@@ -831,7 +843,13 @@ export class BaileysMessaging {
     if (!found?.key || (deleted && !allowDeleted)) {
       throw new MessageNotFoundError(messageId);
     }
-    return found;
+    const edited = deleted ? undefined : this.host.pendingEditOf(messageId, found.key);
+    if (edited === undefined) return found;
+    const b = await this.host.loadLib();
+    const copy = JSON.parse(JSON.stringify(found, b.BufferJSON.replacer), b.BufferJSON.reviver) as WAMessage;
+    const content = b.normalizeMessageContent(copy.message ?? undefined);
+    if (content) setBaileysText(content, edited);
+    return copy;
   }
 
   /** Apply a change this session just made to the stored copy. Best-effort: the change already went out. */
@@ -864,13 +882,14 @@ export class BaileysMessaging {
     this.assertStoredInChat(target, chatId, messageId);
     // fromMe is load-bearing: the same message id addresses a different message depending on
     // direction, so omitting it would star the wrong side of the conversation.
-    // Fold @c.us -> @s.whatsapp.net: chatModify keys the star app-state index by the raw jid (no
-    // jidNormalizedUser, unlike the send path), so a neutral @c.us would index a phantom chat and
-    // the star would silently apply to nothing on a 1:1 conversation.
+    // chatModify keys the star app-state index by the raw jid (no jidNormalizedUser, unlike the send
+    // path), so it takes the chat the message is stored in, folded to the engine form: a neutral @c.us,
+    // or the phone jid of a chat keyed by the contact's lid, would index a phantom chat and the star
+    // would silently apply to nothing.
     await this.confirmed(
       this.sock().chatModify(
         { star: { messages: [{ id: target.key.id!, fromMe: target.key.fromMe ?? false }], star } },
-        this.host.toEngineJid(chatId),
+        this.host.toEngineJid(target.key.remoteJid ?? chatId),
       ),
       'the star change',
     );

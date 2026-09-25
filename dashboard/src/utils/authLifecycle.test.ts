@@ -47,6 +47,14 @@ test('startup validation: ok + role refreshes the cached role from the server', 
   });
 });
 
+test('startup validation: ok + role also carries the engine the server reports', () => {
+  assert.deepEqual(resolveStartupValidation(200, { valid: true, role: 'operator', engineType: 'baileys' }), {
+    action: 'role',
+    role: 'operator',
+    engineType: 'baileys',
+  });
+});
+
 test('startup validation: ok without a usable role keeps the cached role', () => {
   assert.deepEqual(resolveStartupValidation(200, { valid: false }), { action: 'keep' });
   assert.deepEqual(resolveStartupValidation(200, { valid: true, role: 'superuser' }), { action: 'keep' });
@@ -67,6 +75,7 @@ test('isUserRole accepts exactly the three known roles', () => {
 
 const LOGIN_KEY = 'openwa_api_key';
 const ROLE_KEY = 'openwa_user_role';
+const ENGINE_KEY = 'openwa_engine_type';
 
 interface FetchCall {
   method: string;
@@ -78,7 +87,11 @@ const fetchCalls: FetchCall[] = [];
 // Per-test body for POST /auth/validate. The home page's stats endpoints need their object shapes
 // ([] would crash Dashboard's overview render); every other request gets an empty list, which the
 // post-login pages' React Query hooks tolerate.
-let validateBody: { valid?: boolean; role?: string } = { valid: true, role: 'operator' };
+let validateBody: { valid?: boolean; role?: string; engineType?: string } = {
+  valid: true,
+  role: 'operator',
+  engineType: 'whatsapp-web.js',
+};
 
 function installFetchStub(): void {
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -151,7 +164,7 @@ afterEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   fetchCalls.length = 0;
-  validateBody = { valid: true, role: 'operator' };
+  validateBody = { valid: true, role: 'operator', engineType: 'whatsapp-web.js' };
 });
 
 // Types a key into the login form and submits it, then waits until App has applied the role from
@@ -176,6 +189,8 @@ test('a fresh sign-in makes exactly one /auth/validate request, feeding the role
   assert.equal(validateCallCount(), 1);
   assert.equal(sessionStorage.getItem(ROLE_KEY), 'operator');
   assert.equal(sessionStorage.getItem(LOGIN_KEY), 'fresh-key');
+  // The engine comes from the same response: a non-admin key cannot read /infra/engines/current.
+  assert.equal(sessionStorage.getItem(ENGINE_KEY), 'whatsapp-web.js');
 });
 
 test('a fresh sign-in with a role-less validate response still degrades to viewer', async () => {
@@ -191,11 +206,12 @@ test('a fresh sign-in with a role-less validate response still degrades to viewe
 test('a page reload with a saved key re-validates once at startup and refreshes the cached role', async () => {
   sessionStorage.setItem(LOGIN_KEY, 'saved-key');
   sessionStorage.setItem(ROLE_KEY, 'viewer'); // stale cached role
-  validateBody = { valid: true, role: 'admin' };
+  validateBody = { valid: true, role: 'admin', engineType: 'baileys' };
   rtl.render(createElement(App));
 
   await rtl.waitFor(() => assert.equal(sessionStorage.getItem(ROLE_KEY), 'admin'));
   await new Promise(resolve => setTimeout(resolve, 50));
 
   assert.equal(validateCallCount(), 1);
+  assert.equal(sessionStorage.getItem(ENGINE_KEY), 'baileys');
 });

@@ -532,6 +532,91 @@ describe('MessageProjector (inbound projection)', () => {
       expect(projector.inFlightInbound('other-session', 'wamid.1')).toBeUndefined();
     });
 
+    // The row is inserted only after the message:received chain, so a revoke or edit landing while
+    // it runs updates nothing, and the insert would then write the content the sender took back.
+    describe('a revoke or edit that lands while message:received is still running', () => {
+      let releaseHook: () => void;
+      const received = async (engine: IWhatsAppEngine): Promise<void> => {
+        const gate = new Promise<void>(resolve => (releaseHook = resolve));
+        hookManager.execute.mockImplementationOnce(async (_event: string, data: unknown) => {
+          await gate;
+          return { continue: true, data };
+        });
+        projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+        await new Promise(resolve => setImmediate(resolve));
+      };
+      const drain = async (): Promise<void> => {
+        for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+      };
+      /** The update calls issued after the row was inserted, as [where, change]. */
+      const updatesAfterInsert = (): unknown[] => {
+        const insertedAt = messageRepository.insert.mock.invocationCallOrder[0];
+        return messageRepository.update.mock.calls.filter(
+          (_call, i) => messageRepository.update.mock.invocationCallOrder[i] > insertedAt,
+        );
+      };
+      const where = { sessionId: SESSION_ID, waMessageId: 'wamid.1' };
+
+      beforeEach(() => {
+        Object.assign(eventsGateway, { emitMessageEdited: jest.fn() });
+      });
+
+      it('empties the row once it is written', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.handleMessageRevoked(SESSION_ID, engine, { id: 'wamid.1', body: '', type: 'revoked' } as never);
+        expect(messageRepository.update).toHaveBeenCalledWith(where, { body: '', type: 'revoked' });
+        expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.revoked', expect.anything());
+        releaseHook();
+        await drain();
+
+        expect(messageRepository.insert).toHaveBeenCalledTimes(1);
+        expect(updatesAfterInsert()).toEqual([[where, { body: '', type: 'revoked' }]]);
+      });
+
+      it('writes the latest edit onto the row once it is written', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'first fix' } as never);
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'second fix' } as never);
+        await drain();
+        releaseHook();
+        await drain();
+
+        expect(updatesAfterInsert()).toEqual([[where, { body: 'second fix' }]]);
+        expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.edited', expect.anything());
+      });
+
+      it('lets a revoke win over an edit', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.handleMessageRevoked(SESSION_ID, engine, { id: 'wamid.1' } as never);
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'late fix' } as never);
+        await drain();
+        releaseHook();
+        await drain();
+
+        expect(updatesAfterInsert()).toEqual([[where, { body: '', type: 'revoked' }]]);
+      });
+
+      it('changes nothing after the insert when no revoke or edit arrived', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+        releaseHook();
+        await drain();
+
+        expect(messageRepository.insert).toHaveBeenCalledTimes(1);
+        expect(updatesAfterInsert()).toEqual([]);
+      });
+    });
+
     it('routes a status broadcast to the status store instead of the message table', async () => {
       const engine = makeEngine();
       engines.set(SESSION_ID, engine);

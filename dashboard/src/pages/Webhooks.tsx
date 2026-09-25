@@ -279,7 +279,11 @@ export function Webhooks() {
               <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                 {t('common.cancel')}
               </button>
-              <button className="btn-primary" onClick={handleCreate} disabled={createMutation.isPending}>
+              <button
+                className="btn-primary"
+                onClick={handleCreate}
+                disabled={createMutation.isPending || !newWebhook.url || !newWebhook.sessionId}
+              >
                 {t('common.create')}
               </button>
             </>

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { contactApi, sessionApi } from '../../services/api';
-import { useCurrentEngineQuery } from '../../hooks/queries';
+import { useRole } from '../../hooks/useRole';
 import { useToast } from '../../hooks/useToast';
 import { Modal } from '../Modal';
 
@@ -20,12 +20,13 @@ interface Props {
 function StatusComposeModal({ sessionId, onClose, onPosted }: Props) {
   const { t } = useTranslation();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
-  const currentEngine = useCurrentEngineQuery();
+  // From the sign-in validate response: GET /infra/engines/current is admin-only, and operators post too.
+  const { engineType } = useRole();
 
   // Baileys targets a status post to an explicit allow-list (statusJidList); whatsapp-web.js has no
   // per-recipient concept and broadcasts to the account's status-privacy audience instead, so the
   // recipient picker is Baileys-only.
-  const isBaileysEngine = currentEngine.data?.engineType === 'baileys';
+  const isBaileysEngine = engineType === 'baileys';
 
   const [composeType, setComposeType] = useState<'text' | 'image'>('text');
   const [composeText, setComposeText] = useState<string>('');
@@ -120,7 +121,7 @@ function StatusComposeModal({ sessionId, onClose, onPosted }: Props) {
     !composePosting &&
     // The engine type decides whether recipients are required (Baileys) or omitted (wwjs) — while
     // it's still unknown, a Baileys submit would go out with no recipients and 400.
-    Boolean(currentEngine.data) &&
+    Boolean(engineType) &&
     (composeType === 'text' ? composeText.trim().length > 0 : Boolean(composeImageBase64 || composeImageUrl.trim())) &&
     (!isBaileysEngine || composeRecipients.length > 0);
 

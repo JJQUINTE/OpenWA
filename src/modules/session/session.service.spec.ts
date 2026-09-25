@@ -7761,8 +7761,8 @@ describe('SessionService', () => {
 
       const result = await service.updateConfig('sess-uuid-1', { maxReconnectAttempts: null });
 
-      // Deleted outright rather than written as null: resolveReconnectConfig reads Number(null) as 0,
-      // so a stored null would mean "never reconnect" — the exact opposite of the default it restores.
+      // Deleted outright rather than written as null, so the stored row reads as the default it restores
+      // and never depends on how a reader interprets a stored null.
       expect(writtenConfig()).not.toHaveProperty('maxReconnectAttempts');
       expect(writtenConfig()).toEqual({ autoRejectCalls: true });
       expect(result.maxReconnectAttempts).toBeNull();

@@ -20,6 +20,30 @@ describe('resolveReconnectConfig', () => {
     });
   });
 
+  it('treats null, undefined and blank values as unset, the way GET /config reports them', () => {
+    // GET /config reports the unlimited default as maxReconnectAttempts: null, so a client copying it into a
+    // create body sends that null; Number(null) is 0, which would disable reconnect and floor the delay.
+    expect(resolveReconnectConfig({ maxReconnectAttempts: null, reconnectBaseDelay: null })).toEqual({
+      baseDelay: 5000,
+      maxAttempts: Number.POSITIVE_INFINITY,
+    });
+    expect(resolveReconnectConfig({ maxReconnectAttempts: undefined, reconnectBaseDelay: undefined })).toEqual({
+      baseDelay: 5000,
+      maxAttempts: Number.POSITIVE_INFINITY,
+    });
+    expect(resolveReconnectConfig({ maxReconnectAttempts: '', reconnectBaseDelay: '  ' })).toEqual({
+      baseDelay: 5000,
+      maxAttempts: Number.POSITIVE_INFINITY,
+    });
+  });
+
+  it('keeps coercing numeric strings a create body may have stored', () => {
+    expect(resolveReconnectConfig({ maxReconnectAttempts: '5', reconnectBaseDelay: '8000' })).toEqual({
+      baseDelay: 8000,
+      maxAttempts: 5,
+    });
+  });
+
   it('clamps a huge baseDelay down to the 5-minute max (no infinite-timer wedge)', () => {
     expect(resolveReconnectConfig({ reconnectBaseDelay: 1e15 }).baseDelay).toBe(300_000);
   });

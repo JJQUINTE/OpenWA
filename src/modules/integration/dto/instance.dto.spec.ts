@@ -14,6 +14,11 @@ describe('UpdateInstanceDto', () => {
     await expect(through({ sessionScope: null })).resolves.toEqual({ sessionScope: null });
   });
 
+  // plugin_instances.enabled is NOT NULL: a null that got past validation reached save() and answered 500.
+  it('rejects enabled: null with a 400', async () => {
+    await expect(through({ enabled: null })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('still rejects an empty sessionScope', async () => {
     await expect(through({ sessionScope: '' })).rejects.toBeInstanceOf(BadRequestException);
   });

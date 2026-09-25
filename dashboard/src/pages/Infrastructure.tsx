@@ -41,7 +41,7 @@ export function Infrastructure() {
   const { t } = useTranslation();
   useDocumentTitle(t('infrastructure.title'));
   const toast = useToast();
-  const { data: infraStatus, isLoading: loading, isError: statusError } = useInfraStatusQuery();
+  const { data: infraStatus, isLoading: loading } = useInfraStatusQuery();
   const { data: savedConfig, isLoading: configLoading } = useInfraConfigQuery();
   const { data: engines = [] } = useEnginesQuery();
   const { data: currentEngineData } = useCurrentEngineQuery();
@@ -150,8 +150,10 @@ export function Infrastructure() {
   // external+empty. Show an error + retry instead. (#488 review)
   // Likewise without the saved config: the database, storage and engine detail fields hydrate only
   // from it, and a Save sends every one of them.
-  if (statusError || !infraStatus || !savedConfig) {
-    const configOnly = !statusError && !!infraStatus;
+  // Keyed on missing data, not on the query's error flag: a failed background refetch keeps the last
+  // good data, and replacing the page then would unmount the form and a restart already in progress.
+  if (!infraStatus || !savedConfig) {
+    const configOnly = !!infraStatus;
     return (
       <div className="infrastructure-page">
         <PageHeader title={t('infrastructure.title')} subtitle={t('infrastructure.subtitle')} />

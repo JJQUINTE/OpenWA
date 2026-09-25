@@ -45,11 +45,17 @@ describe('AuditService', () => {
     expect(repo.findAndCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { action: AuditAction.SESSION_STARTED, severity: AuditSeverity.INFO },
-        order: { createdAt: 'DESC' },
+        order: { createdAt: 'DESC', id: 'DESC' },
         take: 50,
         skip: 0,
       }),
     );
+  });
+
+  it('findAll breaks createdAt ties by id, so offset pages over rows written in one second cannot overlap', async () => {
+    await service.findAll({ limit: 200, offset: 200 });
+    const arg = (repo.findAndCount.mock.calls as unknown[][])[0][0] as { order: Record<string, string> };
+    expect(arg.order).toEqual({ createdAt: 'DESC', id: 'DESC' });
   });
 
   it('findAll clamps an oversized limit to the max page size (prevents whole-table loads)', async () => {

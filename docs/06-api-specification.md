@@ -4968,16 +4968,16 @@ Permanently delete an API key (hard delete). Also drops any un-flushed usage acc
 
 #### POST /api/auth/validate
 
-Validate the supplied `X-API-Key` and report its validity and role.
+Validate the supplied `X-API-Key` and report its validity, its role, and the engine the gateway runs.
 
 **Auth:** API key (any valid role — VIEWER+)
 
-The key is read from the `X-API-Key` header, not the body; send an empty body. This route sits behind the global guard (it is not `@Public`), so a missing/invalid/revoked/expired key is rejected with `401` at the guard before the handler runs. On success it returns the caller's role. A key restricted with `allowedChats` is refused with `403 "API key is restricted to selected chats"`: the route is not open to a chat-scoped key.
+The key is read from the `X-API-Key` header, not the body; send an empty body. This route sits behind the global guard (it is not `@Public`), so a missing/invalid/revoked/expired key is rejected with `401` at the guard before the handler runs. On success it returns the caller's role and `engineType`, the engine the process resolved at boot (`whatsapp-web.js` or `baileys`). The engine is reported to every role because `GET /api/infra/engines/current` is ADMIN-only. A key restricted with `allowedChats` is refused with `403 "API key is restricted to selected chats"`: the route is not open to a chat-scoped key.
 
 **Response** `200`
 
 ```json
-{ "valid": true, "role": "operator" }
+{ "valid": true, "role": "operator", "engineType": "whatsapp-web.js" }
 ```
 
 **Errors:** `401` missing/invalid/revoked/expired key (raised by the global guard before the handler); `403` a key restricted with `allowedChats`
@@ -5053,7 +5053,7 @@ During shutdown the `details` instead read `{ "shutdown": { "status": "draining"
 
 Prometheus exposition scrape of OpenWA process + session + message metrics; gated by a `METRICS_TOKEN` bearer (disabled when the token is unset).
 
-**Auth:** Bearer METRICS_TOKEN — `Authorization: Bearer <METRICS_TOKEN>`. This route is `@Public()` (it bypasses the `X-API-Key` guard); access is instead validated inside the service with a constant-time compare. The `Bearer ` prefix is stripped case-insensitively. Hidden from Swagger.
+**Auth:** Bearer METRICS_TOKEN — `Authorization: Bearer <METRICS_TOKEN>`. This route is `@Public()` (it bypasses the `X-API-Key` guard); access is instead validated inside the service with a constant-time compare. The `Bearer ` prefix is stripped case-insensitively. Published in the OpenAPI spec under the `metrics-bearer` security scheme.
 
 **Response** `200`
 
@@ -5063,8 +5063,6 @@ When the data database cannot be read the database-derived series (`openwa_sessi
 `openwa_messages*`) are OMITTED rather than reported as zero — a zero would fire an alert
 claiming every session had dropped. `openwa_stats_available` is what tells the two cases apart,
 so alert on it rather than reading a missing series as zero. `docs/10` lists every series.
-
-**Errors:** `401` METRICS_TOKEN is set but the bearer is missing or wrong · `404` the endpoint is disabled (METRICS_TOKEN unset) · `429` 10 failed token attempts from one client within a minute; only failures count, and the block lifts as the window slides
 
 ```
 # HELP openwa_up 1 if the OpenWA process is running
@@ -5094,7 +5092,9 @@ openwa_messages_failed_total 4
 
 Values come from `StatsService.getOverview()` plus `process.memoryUsage()`/`process.uptime()`. The render is memoized for 5000 ms to avoid re-running the overview query on every scrape.
 
-**Errors:** `401` — `METRICS_TOKEN` is configured but the bearer is missing or does not match (`{ "statusCode": 401, "message": "Invalid metrics token", "error": "Unauthorized" }`) · `404` — `METRICS_TOKEN` is unset/blank, so the endpoint is disabled (`{ "statusCode": 404, "message": "Metrics endpoint is disabled (set METRICS_TOKEN to enable)", "error": "Not Found" }`).
+**Errors:** `401` — `METRICS_TOKEN` is configured but the bearer is missing or does not match (`{ "statusCode": 401, "message": "Invalid metrics token", "error": "Unauthorized" }`) · `404` — `METRICS_TOKEN` is unset/blank, so the endpoint is disabled (`{ "statusCode": 404, "message": "Metrics endpoint is disabled (set METRICS_TOKEN to enable)", "error": "Not Found" }`) · `429`: 10 failed token attempts from one client within a minute; only failures count, and the block lifts as the window slides (`{ "statusCode": 429, "message": "Too many failed metrics token attempts" }`).
+
+The 429 applies to every request from the locked-out client, a valid token included, so scrape from an address that untrusted clients do not share (behind a reverse proxy, set `TRUSTED_PROXIES` so each client resolves to its own address).
 
 #### GET /api/stats/overview
 
@@ -5150,7 +5150,7 @@ Get message statistics over a period: time series, counts by type, by session, a
 }
 ```
 
-Notes: raw handler return. `timeSeries.timestamp` is a DB-formatted bucket string — hourly `YYYY-MM-DD HH:00:00` for `24h`, daily `YYYY-MM-DD` for `7d`/`30d` — sorted ascending. `byType` keys are message-type strings (a null type becomes `unknown`). `bySession.name` is `Unknown` when the session is not found. `topChats` is the top 10 by `messageCount` DESC. All counts are numbers.
+Notes: raw handler return. `timeSeries.timestamp` is a DB-formatted bucket string — hourly `YYYY-MM-DD HH:00:00` for `24h`, daily `YYYY-MM-DD` for `7d`/`30d` — sorted ascending. `byType` keys are message-type strings (a null type becomes `unknown`). `bySession.name` is `Unknown` when the session is not found. `topChats` is the top 10 by `messageCount` DESC; each `chatName` is the contact's push name for a 1:1 chat, taken from its incoming messages, and `null` for a group or when none is known. All counts are numbers.
 
 **Errors:** `400` — `period` not in the enum, or any non-whitelisted query field (strict `whitelist` + `forbidNonWhitelisted`) · `401` — missing/invalid API key · `403` — role below `ADMIN`, or the key is session-restricted.
 
@@ -5180,7 +5180,7 @@ Get statistics for a single session: identity, message counts, top chats, and 24
 }
 ```
 
-Notes: raw handler return. `session.status` is the `SessionStatus` enum value. `messages.sent`/`received` are all-time outgoing/incoming COUNTs; `today` is the total message count since local midnight; `failed` is the `FAILED`-status count. `topChats` is the top 10 by count DESC, with `lastActive` = `MAX(createdAt)` as a DB-native datetime string. `hourlyActivity` always has 24 entries (hour `0..23`), missing hours zero-filled, computed over the last 24 h.
+Notes: raw handler return. `session.status` is the `SessionStatus` enum value. `messages.sent`/`received` are all-time outgoing/incoming COUNTs; `today` is the total message count since local midnight; `failed` is the `FAILED`-status count. `topChats` is the top 10 by count DESC, with `lastActive` = `MAX(createdAt)` as a DB-native datetime string and `chatName` as in `GET /api/stats/messages`. `hourlyActivity` always has 24 entries (hour `0..23`), missing hours zero-filled, computed over the last 24 h.
 
 **Errors:** `401` — missing/invalid API key, or the key is not scoped to this session · `404` — session not found (`Session not found`).
 
@@ -5262,7 +5262,7 @@ List audit-log entries, newest first. API-key lifecycle changes, session lifecyc
 
 Unlike the other list routes this one is **not** a bare array: `data` is the page and `total` the unpaginated match count. Nullable columns (`apiKeyId`, `sessionId`, `metadata`, `errorMessage`, …) are `null` when the event has no such dimension. `userAgent` and `statusCode` are reserved columns nothing populates, so rows carry `null`. `method` and `path` are populated only where an emitter passes them explicitly (API-key auth failures, key lifecycle changes, queue-board mutations); session/message-flow rows like the sample leave them `null`.
 
-**Errors:** `401` missing/invalid API key · `403` key role below ADMIN
+**Errors:** `400` repeated `action` or `severity`, or a value not in its list · `401` missing/invalid API key · `403` key role below ADMIN
 
 ### 6.4.11 Administration (Infrastructure, Plugins, MCP)
 
@@ -5352,7 +5352,7 @@ omitted per engine.
 
 #### GET /api/infra/engines/current
 
-Get the currently active engine type.
+Get the currently active engine type. A non-admin key reads the same value from `POST /api/auth/validate`.
 
 **Auth:** API key (ADMIN)
 

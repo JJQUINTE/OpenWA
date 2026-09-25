@@ -134,6 +134,7 @@ describe('quoting a Baileys message the moment it is announced', () => {
       mapMessage: (...a: Parameters<BaileysEvents['mapMessage']>) => events.mapMessage(...a),
       wasDeletedForEveryone: (id: string) => events.wasDeletedForEveryone(id),
       markDeletedForEveryone: (id: string) => events.markDeletedForEveryone(id),
+      pendingEditOf: (id: string, key: WAMessage['key']) => events.pendingEditOf(id, key),
     });
     return { events, messaging, sock };
   };
@@ -322,6 +323,9 @@ describe('quoting a Baileys message the moment it is announced', () => {
 
       await expect(reply).resolves.toMatchObject({ id: 'R1' });
       expect(writtenContents('TARGET')).toEqual([photo('TARGET').message]);
+      // The declined delete is written through update(), after the reply, so read the row it left.
+      await ticks();
+      expect((await store.getMessage('s1', 'TARGET'))?.message).toEqual(photo('TARGET').message);
     });
   });
 
@@ -379,6 +383,62 @@ describe('quoting a Baileys message the moment it is announced', () => {
 
       expect(await caption()).toBe('fixed caption');
       expect(heard).toEqual(['fixed caption', 'fixed caption']);
+    });
+
+    it('lets a consumer of the edit quote the edited text while a repeat of the original is stored', async () => {
+      let reply: Promise<unknown> | undefined;
+      const { events, messaging, sock } = build(() => undefined, {
+        edited: () => {
+          reply = messaging.replyToMessage(CHAT, 'TARGET', 'ok');
+        },
+      });
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      downloads[1](); // the repeat is stored with the old caption; the first delivery still downloads
+      await ticks();
+
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+
+      await expect(reply).resolves.toMatchObject({ id: 'R1' });
+      const [, , options] = sock.sendMessage.mock.calls[0] as [unknown, unknown, { quoted?: WAMessage }];
+      expect(options.quoted?.message?.imageMessage?.caption).toBe('fixed caption');
+      // The overlay is a copy: the stored row changes only once the first delivery settles.
+      expect(await caption()).toBe('about to be deleted');
+      downloads[0]();
+      await ticks();
+      expect(await caption()).toBe('fixed caption');
+    });
+
+    it('forgets the edit once the message is no longer in flight', async () => {
+      const { events } = build(() => undefined);
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+      expect(events.pendingEditOf('TARGET', photo('TARGET').key)).toBe('fixed caption');
+      downloads[0]();
+      await ticks();
+
+      // A later repeat is in flight again, but the store already carries the edit, and any newer one.
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      expect(events.pendingEditOf('TARGET', photo('TARGET').key)).toBeUndefined();
+      await ticks();
+    });
+
+    it('does not overlay an edit sent from another chat', async () => {
+      const { events } = build(() => undefined);
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+
+      const elsewhere = { ...photo('TARGET').key, remoteJid: '628999@s.whatsapp.net' };
+      expect(events.pendingEditOf('TARGET', elsewhere)).toBeUndefined();
+      downloads[0]();
+      await ticks();
     });
 
     it('lets a delete for everyone win over an earlier edit', async () => {

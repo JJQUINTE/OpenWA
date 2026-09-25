@@ -6,6 +6,51 @@
         "operationId": "AuditController_findAll",
         "parameters": [
           {
+            "name": "sessionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "severity",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "name": "action",
             "required": false,
             "in": "query",
@@ -54,51 +99,6 @@
               ],
               "type": "string"
             }
-          },
-          {
-            "name": "severity",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "enum": [
-                "info",
-                "warn",
-                "error"
-              ],
-              "type": "string"
-            }
-          },
-          {
-            "name": "sessionId",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "apiKeyId",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
           }
         ],
         "responses": {
@@ -111,6 +111,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "action or severity is repeated or not one of the listed values"
           }
         },
         "summary": "List audit logs with optional filters",
@@ -10306,6 +10309,11 @@
               "viewer"
             ],
             "description": "The key's role; present only when valid."
+          },
+          "engineType": {
+            "type": "string",
+            "description": "Engine the process resolved at boot; present only when valid.",
+            "example": "baileys"
           }
         },
         "required": [
@@ -10324,7 +10332,7 @@
           },
           "config": {
             "type": "object",
-            "description": "Session configuration. Only three keys are read: autoRejectCalls (boolean, default false, Baileys engine only) rejects incoming calls as soon as they ring, and the call.received event is still emitted first; maxReconnectAttempts (0-20, default unlimited) caps consecutive reconnects and reconnectBaseDelay (1000-300000 ms, default 5000) sets the backoff base, both for the gateway's own reconnect only (on Baileys the engine retries a transient drop itself, with a fixed backoff and no cap). Anything else is stored but ignored. All three can be changed later with PATCH /api/sessions/{sessionId}/config, without restarting the session.",
+            "description": "Session configuration. Only three keys are read: autoRejectCalls (boolean, default false, Baileys engine only) rejects incoming calls as soon as they ring, and the call.received event is still emitted first; maxReconnectAttempts (0-20, default unlimited) caps consecutive reconnects and reconnectBaseDelay (1000-300000 ms, default 5000) sets the backoff base, both for the gateway's own reconnect only (on Baileys the engine retries a transient drop itself, with a fixed backoff and no cap). Anything else is stored but ignored. All three can be changed later with PATCH /api/sessions/{sessionId}/config without a restart: autoRejectCalls applies from the next incoming call, the two reconnect settings from the next session start.",
             "example": {
               "autoRejectCalls": false,
               "maxReconnectAttempts": 5,
@@ -15914,7 +15922,7 @@
           "chatName": {
             "type": "string",
             "nullable": true,
-            "description": "Null when no name is known for the chat."
+            "description": "The contact's push name for a 1:1 chat, taken from its incoming messages. Null for a group chat, or when no name is known."
           },
           "messageCount": {
             "type": "number",
@@ -16027,7 +16035,7 @@
           "chatName": {
             "type": "string",
             "nullable": true,
-            "description": "Null when no name is known for the chat."
+            "description": "The contact's push name for a 1:1 chat, taken from its incoming messages. Null for a group chat, or when no name is known."
           },
           "count": {
             "type": "number",

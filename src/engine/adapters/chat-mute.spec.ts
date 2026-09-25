@@ -175,6 +175,8 @@ describe('BaileysContacts.muteChat', () => {
       listChats: () => [],
       lastMessage: () => opts.lastMessage ?? null,
       toEngineJid: (j: string) => j.replace('@c.us', '@s.whatsapp.net'),
+      // A chat the store holds no record for resolves to its engine form, as the session store does.
+      chatJid: (j: string) => j.replace('@c.us', '@s.whatsapp.net'),
     } as unknown as BaileysContactsHost;
     return new BaileysContacts(host, opts.budgetMs ?? 500);
   }

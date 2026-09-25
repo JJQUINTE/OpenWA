@@ -52,7 +52,8 @@ export class Message {
   @Column()
   chatId!: string;
 
-  /** Human-readable name for the chat (contact pushName, group name, etc). Populated on save when available — null for legacy rows. */
+  /** The sender's contact name (pushName) as the engine reported it: in a group that is the member, not
+   *  the group. Null on legacy rows and on rows that carried no contact. */
   @Column({ nullable: true })
   chatName?: string;
 

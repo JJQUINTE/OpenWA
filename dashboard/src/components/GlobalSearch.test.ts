@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 
 const pending = new Map<string, (hits: string[], total?: number) => void>();
+// Answers the held search for a query with an HTTP error instead of hits.
+const failing = new Map<string, (status: number) => void>();
 const offsets: string[] = [];
 const scopes: string[] = [];
 
@@ -21,6 +23,7 @@ function installFetchStub(): void {
     offsets.push(offset);
     scopes.push(url.searchParams.get('sessionId') ?? '');
     return new Promise(resolve => {
+      failing.set(q, status => resolve(new Response(JSON.stringify({ message: 'failed' }), { status })));
       pending.set(q, (texts, total = texts.length) =>
         resolve(
           new Response(
@@ -58,6 +61,7 @@ before(async () => {
 afterEach(() => {
   rtl.cleanup();
   pending.clear();
+  failing.clear();
   offsets.length = 0;
   scopes.length = 0;
 });
@@ -166,6 +170,44 @@ test('a mouse click on "more" keeps the results open and appends the next page',
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.ok(screen.queryByRole('listbox'), 'the results closed after "more"');
   assert.equal(screen.getAllByRole('option').length, 40);
+});
+
+test('a failed "more" keeps the results already shown and offers the button again', async () => {
+  const { screen, fireEvent, act, waitFor } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(page(0), 40));
+  fireEvent.click(await screen.findByRole('button', { name: '40 results' }));
+  await waitFor(() => assert.deepEqual(offsets, ['0', '20']));
+  await act(async () => failing.get('refund')!(500));
+
+  await screen.findByText('Search failed. Try again.');
+  assert.equal(screen.getAllByRole('option').length, 20, 'the first page was dropped');
+  // The retry runs the same page again, and its success clears the error.
+  fireEvent.click(screen.getByRole('button', { name: '40 results' }));
+  await waitFor(() => assert.deepEqual(offsets, ['0', '20', '20']));
+  await act(async () => pending.get('refund')!(page(20), 40));
+  await waitFor(() => assert.equal(screen.getAllByRole('option').length, 40));
+  assert.equal(screen.queryByText('Search failed. Try again.'), null);
+});
+
+test('a failed search shows only the error', async () => {
+  const { screen, act } = rtl;
+  rtl.render(createElement(GlobalSearch, { onHit: () => undefined }));
+  const input = screen.getByRole('textbox');
+  input.focus();
+  await typeAndWaitForRequest(input, 'refund');
+  await act(async () => pending.get('refund')!(page(0), 40));
+  await screen.findByRole('button', { name: '40 results' });
+
+  await typeAndWaitForRequest(input, 'refunds');
+  await act(async () => failing.get('refunds')!(500));
+  await screen.findByText('Search failed. Try again.');
+  assert.equal(screen.queryAllByRole('option').length, 0, "the previous query's hits stayed on screen");
+  assert.equal(screen.queryByRole('button', { name: '40 results' }), null);
+  assert.equal(screen.queryByText('No messages found.'), null);
 });
 
 test('Tab then Enter on "more" keeps the results open and returns focus to the input', async () => {

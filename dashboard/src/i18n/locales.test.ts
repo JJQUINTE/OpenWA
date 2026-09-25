@@ -78,9 +78,27 @@ test('chats.channels.subscribers: count=1 renders singular, count>1 renders plur
   assert.equal(i18n.t('chats.channels.subscribers', { count: 4 }), '4 subscribers');
 });
 
+test('common.minAgo and common.hoursAgo agree with the count', () => {
+  assert.equal(i18n.t('common.hoursAgo', { count: 1 }), '1 hour ago');
+  assert.equal(i18n.t('common.hoursAgo', { count: 2 }), '2 hours ago');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 1 }), 'Il y a 1 heure');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 3 }), 'Il y a 3 heures');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'he', count: 2 }), 'לפני שעתיים');
+  // 'पहले' governs the oblique case, so Hindi keeps 'घंटे' for one hour too.
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'hi', count: 1 }), '1 घंटे पहले');
+  assert.equal(i18n.t('common.minAgo', { lng: 'te', count: 5 }), '5 నిమిషాల క్రితం');
+  assert.equal(i18n.t('common.minAgo', { lng: 'ar', count: 3 }), 'منذ 3 دقائق');
+});
+
 test('count badges resolve to a non-key, interpolated string in every locale', () => {
   for (const lng of LOCALE_IDS) {
-    for (const key of ['webhooks.filters.badge', 'chats.unreadBadge', 'chats.channels.subscribers']) {
+    for (const key of [
+      'webhooks.filters.badge',
+      'chats.unreadBadge',
+      'chats.channels.subscribers',
+      'common.minAgo',
+      'common.hoursAgo',
+    ]) {
       for (const count of [1, 2]) {
         const value = i18n.t(key, { lng, count });
         assert.ok(value && !value.startsWith(key), `${lng} ${key} count=${count} did not resolve (got "${value}")`);
@@ -98,6 +116,11 @@ test('Hebrew dual + Arabic plural categories resolve for the filter badge', () =
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'he', count: 2 }), 'שני מסננים');
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'he', count: 5 }), '5 מסננים');
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'ar', count: 3 }), '3 عوامل تصفية');
+});
+
+test('Arabic takes the singular noun from 100 up and the plural from 3 to 10', () => {
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 100 }), '100 تحديث');
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 3 }), '3 تحديثات');
 });
 
 test('every session-scope API key string resolves in every locale', () => {

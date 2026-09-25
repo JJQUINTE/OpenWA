@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Hindi (हिन्दी) dashboard locale, selectable from the language picker. Thanks @probably-ABHINAV.
+- `POST /api/auth/validate` returns `engineType`, the engine the gateway runs, so every role can read it.
 
 ### Fixed
 
@@ -28,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Baileys: a failed chat-state read no longer resets a chat's persisted mute, archive and pin flags, and a chat list no longer queries the database once for every chat that has no stored state.
 - Baileys: a chat muted "Always" reads as muted indefinitely instead of unmuted.
 - Baileys: marking read or unread, clearing, archiving and deleting a chat WhatsApp addresses by the contact's lid work with the `@c.us` id `GET /chats` returns, instead of answering `success: false`.
+- Baileys: `POST /api/sessions/:sessionId/chats/read` without `messageIds` acknowledges the chat's newest received message and answers `success: false` when none is known; after a reply sent from the phone it sent no receipt and still answered `success: true`.
+- Baileys: muting, pinning, labelling, starring and deleting for me a chat WhatsApp addresses by the contact's lid target that chat; mute and pin added a second row for it to `GET /chats`.
+- Baileys: a chat deleted through the API or on the phone leaves `GET /chats`, and its stored mute, archive and pin state is cleared.
+- Baileys: a session start reloads its chats' mute, archive and pin state from the database, so a change made on another node shows up.
+- Baileys: a document sent from a URL whose host sends no Content-Type goes out as `application/octet-stream` instead of `application/pdf`.
+- Baileys: a call whose rejection failed can be rejected again instead of answering `404`, unless the session was disconnected meanwhile.
 - Baileys: two quick archive, mute or pin changes to a chat no longer lose one of the two.
 - Baileys: `GET` channel and channel subscribe return the channel's name, description, invite code, subscriber count and verified flag, with `createdAt` as a number; only `id` and a string `createdAt` came back.
 - Baileys: delete for everyone on a message the account cannot revoke (another sender's message in a 1:1 chat, or in a group it does not administer) deletes it for the account only, as on whatsapp-web.js, instead of reporting success and deleting nothing. When the group's member list shows no row the gateway can identify as the account, the revoke is still sent.
@@ -47,9 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `WWEBJS_AUTH_TIMEOUT_MS` above about 24.8 days no longer fails every session start with `504`.
 - The lid-to-phone cache keeps the most recently written mappings after a restart instead of evicting them first.
 - `GET /api/infra/engines` lists channels, status updates and catalog among the Baileys features.
-- A session named after another session's id no longer deletes that session's WhatsApp credentials when it is deleted, or moves them onto itself at boot.
+- A session named after another session's id no longer moves that session's WhatsApp credentials onto itself at boot.
 - A session with a reconnect base delay above about two minutes now reconnects while the liveness watchdog keeps reporting its wedged engine, instead of having the reconnect pushed back on every report.
 - A session that recovers on its own after the liveness watchdog scheduled a reconnect is no longer torn down when that reconnect fires.
+- A `null` `maxReconnectAttempts` or `reconnectBaseDelay` in a `POST /api/sessions` config means the default (unlimited attempts, 5000 ms) instead of turning auto-reconnect off.
+- Message history keeps a revoke or edit that arrives while the `message:received` hook chain is still running, instead of storing the original content.
+- `API_MASTER_KEY` is trimmed before the first admin key is seeded, so a trailing newline no longer seeds a key that can never authenticate.
 - On a multi-node deployment, `GET /api/sessions` and the MCP session tools report `engineLoaded: true` for a session another live node runs, so the dashboard offers Stop, Logout and Force-kill for it instead of Start. With `NODE_URL` set on every node those actions are forwarded to the owner; without it only the owner can act on the session.
 - With `RESOLVE_LID_TO_PHONE=true`, one transient lookup failure no longer stops a sender's phone from ever being resolved again.
 - Bulk media sent as base64 without a mimetype is stored with the mimetype it was sent with, so the media endpoint serves it, and a bulk media URL without a mimetype takes the fetched Content-Type instead of a hardcoded one.
@@ -78,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PUPPETEER_ARGS` keeps a comma inside a flag value, such as `--window-size=1280,720`.
 - Boot validation catches `MAIN_DATABASE_NAME` pointing at the data database's default SQLite file.
 - The production weak-secret refusal names `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` instead of the legacy variable names.
+- Boot fails on a non-integer `STORAGE_EXPORT_TTL_MS` or `STORAGE_EXPORT_SWEEP_MAX_AGE_MS` and on a timer above 2147483647 ms for `STORAGE_EXPORT_TTL_MS`, `MESSAGE_REAPER_INTERVAL_MS`, `WEBHOOK_RECONCILE_INTERVAL_MS` and `INGRESS_RECONCILE_INTERVAL_MS`; such values deleted export archives within milliseconds or fired every millisecond.
+- Updating an automation rule with a `null` `name`, `replyText`, `cooldownSeconds` or `enabled`, or an integration instance with `enabled: null`, answers `400` instead of `500`.
+- `GET /api/audit` answers `400` for a repeated or unknown `action` or `severity`, and breaks `createdAt` ties by id so pages never overlap.
+- The top-chats statistics no longer label a group with one member's name; a group's `chatName` is `null`.
 - Automation rules without a `kind` condition no longer auto-reply to channel posts, broadcast-list messages or status updates.
 - `scripts/restore.sh` works on the compose named volume and the Helm PVC: `OPENWA_RESTORE_SNAPSHOT_DIR` moves the pre-restore snapshot off the read-only container root, and the restore runbook gives the in-image commands.
 - `scripts/restore.sh` takes every pre-restore snapshot before it writes anything, and copies what a symlinked data dir points at; the snapshot of a symlinked data dir was a link to the live data the restore then overwrote.
@@ -86,6 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/restore.sh` places databases, sessions, media and plugins where the archive's `.env.generated` points, since that file replaces the target's.
 - `scripts/backup.sh` archives a symlinked sessions, Baileys, media or plugins directory by its content, and `scripts/restore.sh` refills it through the link instead of replacing the link.
 - The Helm chart renders whole-number `env` and `secretEnv` values from a values file as integers instead of exponent notation such as `5.24288e+07`.
+- `scripts/backup.sh` and `scripts/restore.sh` read `.env` lines with CRLF endings or spaces around `=` as the app does, follow the app's fallback from a leftover `STORAGE_LOCAL_PATH=./uploads` to `./data/media`, handle the admin key at `BOOTSTRAP_KEY_FILE`, and warn about missing media and legacy `./plugins` code the archive does not carry.
+- `scripts/restore.sh` stops before replacing any database when a target it would write cannot be written, instead of leaving a half-restored install.
 - The bundled compose files forward `DATABASE_SSL` and `DATABASE_SSL_REJECT_UNAUTHORIZED`, so TLS to a managed PostgreSQL set in `.env` takes effect.
 - `docker-compose.dev.yml` publishes the API on `API_PORT`, as `.env.example` documents.
 - Dashboard Chats no longer shows the previous session's chat list when that list arrives after a session switch, and changing the UI language no longer resets Chats to the first session or closes the open chat.
@@ -106,8 +122,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard: turning off a built-in Postgres, Redis or MinIO on the Infrastructure page and restarting stops its container.
 - Dashboard Sessions: an older list response no longer overwrites a newer status, the session detail modal follows status changes while open, and a pairing code no longer lands in a modal opened for another session.
 - Dashboard: double-clicking Create no longer registers a webhook twice, an audit export whose search matches nothing says so, and call, order and product slices in the messages-by-type chart get their own colors.
+- Dashboard: operator and session-scoped keys can post a status and open Channels, which depended on the admin-only engine route.
+- Dashboard: Infrastructure keeps the form and the restart dialog on screen when a background status refresh fails, Templates and Message Tester report a failed sessions or groups read instead of an empty state, and the webhook Create button stays disabled until a session and URL are set.
+- Dashboard: a search hit from another session opens that session's chat, a failed 'load more' in global search keeps the results already shown, a session status push right after a create or delete no longer drops or revives a card, and the audit export no longer repeats a row written during the walk.
+- Dashboard: relative times use the singular or plural the count needs ("1 hour ago"), and Arabic status counts of 100 or more use the grammatical singular.
 - Dashboard: the page search boxes show keyboard focus, the Infrastructure storage badge is translated, and the signed-in role is kept per browser tab with its API key instead of in storage shared by every tab.
-- Dashboard: the session proxy settings and the partial-export media warning are translated in 11 locales, together with the proxy Save button and the webhook chat-kind filter, the Telugu status composer and channel messages are translated, and counts that are exact multiples of a million render in the plural in French, Spanish, Italian and Portuguese.
+- Dashboard: the session proxy settings are translated in 11 locales and the partial-export media warning in 10, together with the proxy Save button and the webhook chat-kind filter, the Telugu status composer and channel messages are translated, and counts that are exact multiples of a million render in the plural in French, Spanish, Italian and Portuguese.
 - Dashboard: the Templates sidebar item is translated in Arabic, Hebrew, Telugu and both Chinese locales.
 - JavaScript SDK: requests no longer fail with "Illegal invocation" in browsers and Workers, with or without an injected fetch; `timeoutMs` 0 or `Infinity` turns the timeout off instead of aborting every request after 1 ms, and a value that is not a non-negative number (an empty variable, `30s`) throws a `TypeError`; and an error body without the usual envelope is shown as JSON instead of `[object Object]`.
 - SDKs: a caller header that differs only in letter case from `X-API-Key` or `Content-Type` no longer goes out next to the SDK's own value.
@@ -115,6 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Java SDK: `CatalogProduct.price` is a nullable `Double`, so a product without a price no longer breaks `catalog.products()`.
 - Go SDK: a `429` or `503` whose `Retry-After` outlasts the remaining timeout is returned at once instead of sleeping into a `TimeoutError`.
 - Go SDK: `CatalogProduct.Price` is nil for a product without a price instead of reading as 0.
+- Go SDK: the opt-in retry policy does not retry a `429` whose body carries `code: "SEND_PACING_LIMITED"`.
 - PHP SDK: the insecure-http warning fires for an upper-case `HTTP://` base URL and no longer fires for `http://LOCALHOST`.
 
 ### Documentation
@@ -129,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The SDK READMEs and SDK reference create a session and pass its id, not its name, and `.env.example` says a malformed or non-positive value for a boot-validated setting stops the gateway.
 - The maintenance runbook and the backup FAQ back up inside the container under the production compose, the version rollback reloads a PostgreSQL data store from the pre-upgrade dump, and the migration guide covers an upgrade from an image without `scripts/backup.sh`.
 - The rollback and restore runbooks load a PostgreSQL dump into an empty database inside the built-in `openwa-postgres` container, and the backup docs keep the password out of `DATABASE_URL` and say the local media directory is archived under `STORAGE_TYPE=s3` too.
-- The SDK READMEs name `429` and `503` as the transient statuses, and the Go README states that a `POST` or `PATCH` is never retried after a network error and only on `429` or `503`.
+- The SDK READMEs name the transient statuses, and the Go README states that a `POST` or `PATCH` is never retried after a network error and only on `429` or `503`.
+- The SDK docs say the rate limiter's `429` carries its delay only in `Retry-After` and that a `SEND_PACING_LIMITED` refusal waits `retryAfterSeconds`, and describe `engineLoaded` on multi-node gateways; the metrics reference lists its `401`, `404` and `429` in one place; the backup runbook and script headers give the real path order; and the upgrade hazards cover PostgreSQL upgrades from 0.19.0 to 0.21.x images, which ship no `pg_dump`.
 - The migration guide's SQLite-to-PostgreSQL script copies `chat_states` and `webhook_outbox_events`, the storage export `download` field is documented as a server-side path, the retention docs cover `webhook_outbox_events`, live chat history is documented as oldest first, and the `GET /api/infra/engines` example shows real feature tokens.
 
 ### Upgrade notes (behavior changes)
@@ -138,13 +160,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - whatsapp-web.js: a reply, location or contact card to a channel or a status/broadcast list, and a poll or sticker to a status/broadcast list, answer `501` where they answered `500`; nothing is sent, and the send breaker no longer counts them.
 - whatsapp-web.js: adding a label id the account does not have answers `404` where it answered `200`.
 - `POST /api/sessions` refuses a `config` that is not a JSON object with `400`.
-- Boot fails on a `DATABASE_TYPE`, `ENGINE_TYPE` or `STORAGE_TYPE` with surrounding whitespace; on a malformed, zero or negative value for the chat-media, status and S3 re-probe settings (a negative `CHAT_MEDIA_ARCHIVE_TTL_DAYS`; 0 still means keep forever); and on a timer above 2147483647 ms for the chat-media and status orphan sweeps, `S3_REPROBE_INTERVAL_MS` and `MEDIA_CONVERSION_TIMEOUT_MS`. `migration:run` applies the same `DATABASE_TYPE` rule.
+- Boot fails on a `DATABASE_TYPE`, `ENGINE_TYPE` or `STORAGE_TYPE` with surrounding whitespace; on a malformed, zero or negative value for the chat-media, status and S3 re-probe settings (a negative `CHAT_MEDIA_ARCHIVE_TTL_DAYS`; 0 still means keep forever); and on a timer above 2147483647 ms for the chat-media and status orphan sweeps, `S3_REPROBE_INTERVAL_MS` and `MEDIA_CONVERSION_TIMEOUT_MS`. Boot and `migration:run` also fail on SQLite when `MAIN_DATABASE_NAME` names the data database file, including the default `./data/openwa.sqlite` when `DATABASE_NAME` is unset; point one of them at a separate file. `migration:run` applies the same `DATABASE_TYPE` rule.
 - whatsapp-web.js: button, list and template-button replies are type `text` instead of `unknown` in webhooks, storage and message-type filters, and stored rows with the old tokens are rewritten at boot. Rows earlier releases stored as `unknown` keep that type.
 - Baileys: reply, quoted send, forward, react, edit, star, pin, unpin and click-button on a message deleted for everyone answer `404` where they answered `200`.
 - Java SDK: `CatalogProduct.price` is a nullable `Double` instead of a `double`; recompile against it and check for `null` before unboxing. JavaScript SDK: `CatalogProduct` `price`, `currency` and `priceFormatted` are optional.
 - Go SDK: `CatalogProduct.Price` is a `*float64` instead of a `float64`; check for nil before dereferencing.
 - An automation rule that should answer channel, broadcast-list or status messages needs an explicit `kind` condition; a rule without one skips those chats.
 - `scripts/restore.sh` refuses an archive whose state directory was stored as a symlink by an older `backup.sh`; take the backup again with this version.
+- With `BOOTSTRAP_KEY_FILE` set, `scripts/restore.sh` writes the admin key there and refuses to start when that path cannot be written.
+- Baileys: delete for everyone on a message the account cannot revoke now deletes it, with its media, for the account only and still answers `200`; it used to change nothing.
 - Sessions deleted on 0.23.5 or 0.23.6 left their auth directories on the data volume, and upgrading does not remove them: delete the directories under the session data path and the Baileys auth dir whose session id no longer exists, drop backups that carry them, and remove the device under Linked Devices on the phone.
 - `GET /api/plugins/:id/health` reports a sandboxed plugin that is disabled or whose worker crashed as unhealthy, so health-based alerting also fires for a plugin disabled on purpose.
 - `NODE_URL` keeps its path when a request is forwarded, so the path must be only a reverse-proxy prefix: a `NODE_URL` ending in `/api` now forwards to `/api/api/...`.
@@ -165,6 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backup archives under `./backups` and restore snapshots (`*.pre-restore-*`) are ignored by git and kept out of the Docker build context; they hold the admin API key, WhatsApp credentials and database copies.
 - Deleting a session removes its whatsapp-web.js and Baileys auth directories; they stayed on the data volume, and in every later backup, still linked to the WhatsApp account.
 - Baileys: a text status containing a URL no longer reaches the library's own link-preview fetcher.
+- The audit CSV export quotes a bare carriage return and neutralizes cells that start with a tab or carriage return as formula triggers.
 
 ## [0.23.6] - 2026-09-23
 

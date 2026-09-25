@@ -104,6 +104,7 @@ function resetFetchCalls(): void {
   qrGate = null;
   listGate = null;
   pairingGate = null;
+  afterMutation = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -139,6 +140,9 @@ let qrGate: { sessionId: string; until: Promise<void> } | null = null;
 let listGate: Promise<void> | null = null;
 // When set, POST .../pairing-code answers only once this settles.
 let pairingGate: Promise<void> | null = null;
+// When set, runs on the macrotask after a create or delete has answered: a push that lands before
+// React has rendered what that answer wrote.
+let afterMutation: (() => void) | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -180,6 +184,7 @@ function installFetchStub(): void {
     }
 
     if (method === 'POST' && path === '/api/sessions') {
+      if (afterMutation) setImmediate(afterMutation);
       const payload = body as { name?: string; proxyUrl?: string; proxyType?: string } | undefined;
       const name = payload?.name ?? 'unnamed';
       return Promise.resolve(
@@ -201,6 +206,7 @@ function installFetchStub(): void {
         : Promise.resolve(jsonResponse({ message: 'not found' }, 404));
     }
     if (method === 'DELETE' && sessionIdMatch) {
+      if (afterMutation) setImmediate(afterMutation);
       return Promise.resolve(new Response(null, { status: 204 }));
     }
 
@@ -1260,6 +1266,84 @@ test('a list read in flight does not undo a create, a stop or a delete', async (
   } finally {
     Object.assign(SESSION_QR, qrRow);
     if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
+  }
+});
+
+// A push for another session, handled before React renders a create or a delete, must patch the list
+// that write produced rather than the one on screen before it.
+test('a status push landing right after a create or a delete keeps what it wrote', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const staleIndex = SESSIONS.indexOf(SESSION_STALE_ENGINE);
+  try {
+    renderSessions();
+    await screen.findByText('new-device');
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 50)));
+
+    // `authenticating` starts no list read, so nothing would repair the list afterwards.
+    afterMutation = () => pushSessionStatus(SESSION_RECONNECTING.id, 'authenticating');
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g., marketing-bot'), { target: { value: 'probe-bot' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => assert.ok(findFetchCall('POST', '/api/sessions')));
+    await settle();
+    assert.ok(screen.queryByText('probe-bot'), 'the push dropped the created card');
+
+    afterMutation = () => pushSessionStatus(SESSION_RECONNECTING.id, 'qr_ready');
+    const staleCard = screen.getByText('stale-engine').closest('.session-card') as HTMLElement;
+    fireEvent.click(within(staleCard).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => assert.ok(findFetchCall('DELETE', `/api/sessions/${SESSION_STALE_ENGINE.id}`)));
+    await settle();
+    assert.ok(!screen.queryByText('stale-engine'), 'the push brought the deleted card back');
+  } finally {
+    afterMutation = null;
+    if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
+  }
+});
+
+// A push handled between a list render's commit and its passive effects must not have its write undone
+// in the ref, or the double-signal that follows it is taken for a fresh transition.
+test('a duplicate push right after a list render is still recognised as a duplicate', async () => {
+  const { screen, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-dup-1', name: 'dup-probe', status: 'authenticating' };
+  SESSIONS.push(row);
+  // Emitted outside act, so React commits and runs effects on its own schedule, as in the browser.
+  const emit = (status: string) =>
+    lastSocket()!.receive('message', {
+      type: 'event',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { event: 'session.status', sessionId: row.id, data: { status } },
+    });
+  let phase = 0;
+  const observer = new MutationObserver(() => {
+    if (phase === 0 && screen.queryByText('dup-probe-renamed')) {
+      // The list read has just committed; its passive effects have not run yet.
+      phase = 1;
+      Object.assign(row, { status: 'ready' });
+      emit('ready');
+    } else if (phase === 1) {
+      // The engine double-signals the same transition once React has rendered the first one.
+      phase = 2;
+      emit('ready');
+    }
+  });
+  try {
+    renderSessions();
+    await screen.findByText('dup-probe');
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    Object.assign(row, { name: 'dup-probe-renamed' });
+    pushSessionStatus(SESSION_TIMELOCKED.id, 'action_required');
+    await waitFor(() => assert.equal(phase, 2));
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 50)));
+    assert.equal(screen.queryAllByText('Session Ready').length, 1, 'the duplicate ready push was handled twice');
+  } finally {
+    observer.disconnect();
+    SESSIONS.pop();
   }
 });
 

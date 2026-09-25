@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { AuditListResponseDto } from './dto/audit-response.dto';
 import { AuditService, AuditQueryOptions } from './audit.service';
@@ -21,18 +21,30 @@ export class AuditController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Paginated list of audit logs', type: AuditListResponseDto })
+  @ApiResponse({ status: 400, description: 'action or severity is repeated or not one of the listed values' })
   async findAll(
     @CurrentApiKey() apiKey?: ApiKey,
-    @Query('action') action?: AuditAction,
-    @Query('severity') severity?: AuditSeverity,
+    @Query('action') action?: AuditAction | AuditAction[],
+    @Query('severity') severity?: AuditSeverity | AuditSeverity[],
     @Query('sessionId') sessionId?: string,
     @Query('apiKeyId') apiKeyId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<{ data: AuditLog[]; total: number }> {
+    // The global pipe leaves these enum-typed params alone, so ?action=a&action=b arrives as an array,
+    // which the driver rejects as a 500, and an unknown value would silently match nothing. An empty
+    // value still means no filter.
+    if (action && !(Object.values(AuditAction) as unknown[]).includes(action)) {
+      throw new BadRequestException('action must be a single value from the AuditAction list');
+    }
+    if (severity && !(Object.values(AuditSeverity) as unknown[]).includes(severity)) {
+      throw new BadRequestException(
+        `severity must be a single value, one of: ${Object.values(AuditSeverity).join(', ')}`,
+      );
+    }
     const options: AuditQueryOptions = {};
-    if (action) options.action = action;
-    if (severity) options.severity = severity;
+    if (action) options.action = action as AuditAction;
+    if (severity) options.severity = severity as AuditSeverity;
     if (sessionId) options.sessionId = sessionId;
     if (apiKeyId) options.apiKeyId = apiKeyId;
     if (limit) options.limit = parseInt(limit, 10);

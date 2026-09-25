@@ -15,7 +15,8 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Session, Chat, ChatMessage, SearchHit } from '../services/api';
+import type { Session, Chat, ChatMessage, SearchHit, Channel, ChannelMessage, StatusUpdate } from '../services/api';
+import { MENTION_CLOSE, MENTION_OPEN } from '../utils/messageFormatter.ts';
 import type { installJsdomGlobals as installJsdomGlobalsFn } from '../test-helpers/jsdom.ts';
 // socket.io-client resolves to a double under this runner (see vite-shim-hooks.mjs), which is what
 // lets a test deliver a server frame to the page's realtime handlers.
@@ -44,6 +45,13 @@ let thirdSessionStatus: Session['status'] | null = null;
 
 // Hits the global search answers with.
 let searchHits: SearchHit[] = [];
+
+// The engine the gateway reports: only whatsapp-web.js lists channels.
+let engineType = 'baileys';
+// The subscribed channels, the posts every channel's feed answers with, and the stored statuses.
+let channels: Channel[] = [];
+let channelPosts: ChannelMessage[] = [];
+let statuses: StatusUpdate[] = [];
 
 // Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
 // the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
@@ -166,6 +174,9 @@ let sendGate: Promise<void> | null = null;
 // Hold Alice's first page open, so a test can write to the thread before it has any data.
 let firstPageGate: Promise<void> | null = null;
 
+// Rows Alice's first page serves after the fixture rows, so a test can put its own message in the thread.
+let firstPageExtra: ChatMessage[] = [];
+
 // The id a text send answers with. whatsapp-web.js answers '' when it cannot read the sent id back.
 let sendTextId = 'wamid.out.1';
 
@@ -220,6 +231,7 @@ function holdMedia(path: string): () => void {
 // Contact for the status-compose recipient picker (Baileys requires an explicit allow-list).
 const CONTACT = { id: '15550002222@c.us', name: 'Bob', number: '15550002222' };
 const STATUS_TEXT = 'status text here';
+const CHANNEL = { id: '120363000000000001@newsletter', name: 'Release notes' };
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -276,8 +288,18 @@ function installFetchStub(): void {
       if (thirdSessionStatus) listed.push({ ...SESSION_3, status: thirdSessionStatus });
       return Promise.resolve(jsonResponse(listed));
     }
+    // ADMIN-only on the server, so any other role gets the 403 a real gateway answers.
     if (method === 'GET' && path === '/api/infra/engines/current') {
-      return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
+      if (window.sessionStorage.getItem('openwa_user_role') !== 'admin') {
+        return Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: admin' }, 403));
+      }
+      return Promise.resolve(jsonResponse({ engineType }));
+    }
+    if (method === 'GET' && path.startsWith(`/api/sessions/${SESSION.id}/channels/`)) {
+      return Promise.resolve(jsonResponse(channelPosts));
+    }
+    if (method === 'GET' && path === `/api/sessions/${SESSION.id}/channels`) {
+      return Promise.resolve(jsonResponse(channels));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/chats`) {
       if (chatsResponder) return chatsResponder(url.includes(`/sessions/${SESSION_2.id}/`) ? SESSION_2.id : SESSION.id);
@@ -311,7 +333,10 @@ function installFetchStub(): void {
         return gate ? gate.then(answer) : Promise.resolve(answer());
       }
       const firstPage = () =>
-        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 });
+        jsonResponse({
+          messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2, ...firstPageExtra],
+          total: 3 + firstPageExtra.length,
+        });
       return firstPageGate ? firstPageGate.then(firstPage) : Promise.resolve(firstPage());
     }
     // The media route answers bytes, not JSON — Content-Disposition: attachment.
@@ -324,7 +349,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse([]));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/status`) {
-      return Promise.resolve(jsonResponse({ statuses: [] }));
+      return Promise.resolve(jsonResponse({ statuses }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/chats/read`) {
       return Promise.resolve(jsonResponse({ success: true }));
@@ -370,6 +395,8 @@ before(async () => {
   // RoleProvider initializes from sessionStorage; 'admin' makes canWrite true so the composer
   // controls render enabled.
   window.sessionStorage.setItem('openwa_user_role', 'admin');
+  // The engine POST /auth/validate reported at sign-in, kept next to the role.
+  window.sessionStorage.setItem('openwa_engine_type', 'baileys');
   // useWebSocket.connect() bails without this, so no socket would exist to receive a frame. It
   // dials nothing: the client is the double above.
   window.sessionStorage.setItem('openwa_api_key', 'test-key');
@@ -396,11 +423,16 @@ afterEach(() => {
   olderPageGate = null;
   sendGate = null;
   firstPageGate = null;
+  firstPageExtra = [];
   sendTextId = 'wamid.out.1';
   olderPageFails = false;
   chatsResponder = null;
   thirdSessionStatus = null;
   searchHits = [];
+  engineType = 'baileys';
+  channels = [CHANNEL];
+  channelPosts = [];
+  statuses = [];
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -664,6 +696,53 @@ test('a read-only key is offered no status compose trigger', async () => {
     assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
   } finally {
     window.sessionStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
+test('an operator key on whatsapp-web.js posts a status without the admin-only engine route', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  window.sessionStorage.setItem('openwa_engine_type', 'whatsapp-web.js');
+  try {
+    resetFetchCalls();
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post a status' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Text'), { target: { value: STATUS_TEXT } });
+    const postButton = within(dialog).getByRole('button', { name: 'Post' }) as HTMLButtonElement;
+    await waitFor(() => assert.equal(postButton.disabled, false, 'Post never enabled for an operator key'));
+    // whatsapp-web.js has no recipient list, so the picker stays hidden and none are sent.
+    assert.equal(within(dialog).queryByRole('checkbox'), null);
+    fireEvent.click(postButton);
+
+    await waitFor(() => {
+      const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/status/send-text`);
+      assert.ok(call, 'expected a POST to the status send-text endpoint');
+      assert.deepEqual(call.body, { text: STATUS_TEXT });
+    });
+    assert.equal(countFetchCalls('GET', '/api/infra/engines/current'), 0);
+  } finally {
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_engine_type', 'baileys');
+  }
+});
+
+test('an operator key on whatsapp-web.js lists its channels', async () => {
+  const { screen, fireEvent } = rtl;
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  window.sessionStorage.setItem('openwa_engine_type', 'whatsapp-web.js');
+  try {
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Channels' }));
+    await screen.findByText(CHANNEL.name);
+    assert.equal(screen.queryByText('Channels are not supported on the Baileys engine.'), null);
+  } finally {
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_engine_type', 'baileys');
   }
 });
 
@@ -1075,6 +1154,44 @@ test('a chat list that answers after the user switched sessions does not replace
   }
 });
 
+test("a chat list that answers after a switch leaves the new session's spinner up", async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>(resolve => {
+    releaseFirst = resolve;
+  });
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id
+      ? firstGate.then(() => jsonResponse([CHAT]))
+      : secondGate.then(() => jsonResponse([CHAT_2]));
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the first list never started'));
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+
+    // Session 1's list settles while session 2's is still out.
+    releaseFirst();
+    await flush();
+    await flush();
+    assert.ok(container.querySelector('.chats-list-loading'), 'the previous session cleared the switch spinner');
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats showed under the selected session");
+
+    releaseSecond();
+    await screen.findByText('Carol');
+    assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test("a failed background refetch during a session switch keeps the spinner over the previous session's list", async () => {
   const { screen, fireEvent, waitFor } = rtl;
   twoSessions = true;
@@ -1302,6 +1419,42 @@ test('a search hit in a session that connected after the page loaded opens it', 
   await within(container.querySelector('.room-header') as HTMLElement).findByText('Alice');
 });
 
+test("a search hit in another session opens that session's chat, not the one the previous list held", async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  twoSessions = true;
+  // A chat both accounts list, under a different name in each.
+  searchHits = [{ ...THIRD_SESSION_HIT, sessionId: SESSION_2.id }];
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id
+      ? Promise.resolve(jsonResponse([CHAT, CHAT_2]))
+      : secondGate.then(() => jsonResponse([{ ...CHAT, name: 'Alice on two' }]));
+  try {
+    const { container } = renderChats();
+    // A room already open is what re-runs the hit's lookup while session 1's list is still held.
+    fireEvent.click(await screen.findByText('Carol'));
+    await waitFor(() => assert.ok(container.querySelector('.room-header'), 'Carol did not open'));
+
+    await clickSearchHit(container);
+    const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+    await waitFor(() => assert.equal(select.value, SESSION_2.id));
+    await flush();
+    releaseSecond();
+
+    const header = await waitFor(() => {
+      const found = container.querySelector('.room-header');
+      assert.ok(found, "the hit's chat did not open");
+      return found as HTMLElement;
+    });
+    await within(header).findByText('Alice on two');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test('changing the UI language keeps the selected session and the open chat', async () => {
   const { screen, fireEvent, within, waitFor, act } = rtl;
   const { default: i18n } = await import('../i18n/index.ts');
@@ -1372,8 +1525,93 @@ test('an omitted media bubble fetches the bytes from the per-message media route
   });
 });
 
+test('the media viewer saves an image under its file name, not its caption', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  firstPageExtra = [
+    {
+      ...DB_MESSAGE,
+      id: 'db-img',
+      waMessageId: 'wamid.img',
+      body: 'Look at this!',
+      type: 'image',
+      timestamp: 1_700_000_003,
+      createdAt: new Date(1_700_000_003_000).toISOString(),
+      metadata: { media: { mimetype: 'image/png', filename: 'photo.png', data: 'http://localhost/media/photo.png' } },
+    },
+  ];
+  const { container } = renderChats();
+  fireEvent.click(await screen.findByText('Alice'));
+  const image = await waitFor(() => {
+    const found = container.querySelector('.room-messages img.chat-image-media');
+    assert.ok(found, 'the image bubble did not render');
+    return found;
+  });
+  fireEvent.click(image);
+  const download = await screen.findByRole('button', { name: 'Download' });
+
+  const links: HTMLAnchorElement[] = [];
+  const createElementOriginal = document.createElement;
+  document.createElement = ((tag: string, options?: ElementCreationOptions) => {
+    const element = createElementOriginal.call(document, tag, options);
+    if (tag === 'a') {
+      // Stop the synthetic click from navigating jsdom; only the name matters here.
+      element.dispatchEvent = () => true;
+      links.push(element as HTMLAnchorElement);
+    }
+    return element;
+  }) as typeof document.createElement;
+  try {
+    fireEvent.click(download);
+  } finally {
+    document.createElement = createElementOriginal;
+  }
+  assert.equal(links.length, 1, 'expected one download link');
+  assert.equal(links[0].download, 'photo.png');
+});
+
+test('a channel post or status caption carrying mention delimiters renders them as nothing, not as a mention', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  // Only resolveMentions may place the delimiters; raw text carrying them is stripped before render.
+  const raw = `${MENTION_OPEN}@Mallory${MENTION_CLOSE} says hi`;
+  engineType = 'whatsapp-web.js';
+  window.sessionStorage.setItem('openwa_engine_type', engineType);
+  channels = [{ id: '120363000000000001@newsletter', name: 'News' }];
+  channelPosts = [{ id: 'post-1', body: raw, timestamp: 1_700_000_000, hasMedia: false }];
+  const now = Date.now();
+  statuses = [
+    {
+      id: 'status-1',
+      contact: { id: CONTACT.id, name: 'Bob' },
+      type: 'image',
+      caption: raw,
+      timestamp: new Date(now).toISOString(),
+      expiresAt: new Date(now + 86_400_000).toISOString(),
+    },
+  ];
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+  const bubbleText = async (): Promise<Element> =>
+    waitFor(() => {
+      const found = container.querySelector('.channel-room .message-bubble .message-text');
+      assert.ok(found, 'the post did not render');
+      return found;
+    });
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Channels' }));
+  fireEvent.click(await screen.findByText('News'));
+  const post = await bubbleText();
+  assert.equal(post.textContent, '@Mallory says hi');
+  assert.ok(!post.querySelector('bdi'), 'the channel post rendered a mention');
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+  fireEvent.click(await screen.findByText('Bob'));
+  const caption = await bubbleText();
+  assert.equal(caption.textContent, '@Mallory says hi');
+  assert.ok(!caption.querySelector('bdi'), 'the status caption rendered a mention');
+});
+
 /**
- * Two omitted bubbles can be downloading at once — nothing stops a viewer clicking one, then the
+ * Two omitted bubbles can be downloading at once, and nothing stops a viewer clicking one, then the
  * next. Each must own its own lifecycle: with a single shared slot the second click overwrote the
  * first, and then whichever settled first cleared the other's state, re-enabling a button whose
  * download was still open and letting a later failure mark the wrong bubble.

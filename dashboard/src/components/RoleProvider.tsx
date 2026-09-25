@@ -27,6 +27,19 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Kept beside the role because GET /infra/engines/current is admin-only: the validate response is
+  // the one place every role learns which engine it is talking to.
+  const [engineType, setEngineTypeState] = useState<string | null>(() => sessionStorage.getItem('openwa_engine_type'));
+
+  const setEngineType = useCallback((newEngineType: string | null) => {
+    setEngineTypeState(newEngineType);
+    if (newEngineType) {
+      sessionStorage.setItem('openwa_engine_type', newEngineType);
+    } else {
+      sessionStorage.removeItem('openwa_engine_type');
+    }
+  }, []);
+
   const value: RoleContextType = {
     role,
     setRole,
@@ -34,6 +47,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     isOperator: role === 'operator',
     isViewer: role === 'viewer',
     canWrite: role === 'admin' || role === 'operator',
+    engineType,
+    setEngineType,
   };
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;

@@ -17,13 +17,18 @@
 # Environment:
 #   MAIN_DATABASE_NAME  restore target for the auth/audit DB (default: ./data/main.sqlite)
 #   DATABASE_NAME       restore target for the SQLite data store (default: ./data/openwa.sqlite)
-#                       Both resolve EXACTLY like the app (src/config/configuration.ts): the
-#                       explicit env path wins, otherwise the fixed ./data default. They are NOT
-#                       derived from OPENWA_DATA_DIR — restoring there would write databases the
-#                       app never reads (fresh-empty boot + new master key).
+#                       Both resolve EXACTLY like the app: the environment first, then ./.env, then
+#                       .env.generated (the archive's copy when it carries one, else the data dir's),
+#                       otherwise the fixed ./data default (see lib-env.sh). They are NOT derived
+#                       from OPENWA_DATA_DIR; restoring there would write databases the app never
+#                       reads (fresh-empty boot + new master key).
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   PLUGIN_STATE_DIR  root whose plugins/ holds the plugin registry and ctx.storage (default: the
+#                     data dir)
+#   BOOTSTRAP_KEY_FILE  where the plaintext admin key goes (default: <data dir>/.api-key)
+#                     These paths resolve through the same layers as the databases.
 #   OPENWA_RESTORE_SNAPSHOT_DIR
 #                     where the safety snapshots go (default: next to the data dir, and next to
 #                     each target outside it); needed when a parent is read-only, as in the
@@ -115,6 +120,13 @@ if [ "$RESOLVED_DATA_DIR" = "$RESOLVED_USER_HOME" ]; then
   exit 1
 fi
 
+# refuse_unwritable <path> <label>: stop in the snapshot phase, before the first database is replaced.
+refuse_unwritable() {
+  log "ERROR: cannot write the $2 target: $1"
+  log "       nothing has been restored yet; fix its permissions or point the setting at a writable path, then re-run"
+  exit 1
+}
+
 replace_tree() {
   source_dir="$1"
   target_dir="$2"
@@ -143,6 +155,13 @@ replace_tree() {
       ;;
   esac
   if [ "$PHASE" = snapshot ]; then
+    # An existing directory is emptied before it is refilled, which needs every directory in it.
+    openwa_writable "$target_dir" || refuse_unwritable "$target_dir" "$label"
+    if [ -d "$target_dir" ]; then
+      blocked="$(find "$target_dir/" -type d \
+        -exec sh -c 'for d do [ -w "$d" ] || { echo "$d"; exit 1; }; done' sh {} + 2>/dev/null)" || true
+      [ -z "$blocked" ] || refuse_unwritable "${blocked%%$'\n'*}" "$label"
+    fi
     snapshot_external "$target_dir"
     return
   fi
@@ -162,10 +181,10 @@ replace_tree() {
 }
 
 # The data-dir safety snapshot below cannot cover a target that lives OUTSIDE it (a custom
-# MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH or
-# PLUGINS_DIR). Preserve such a target separately, so a restore pointed at the wrong archive remains
-# recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is set: a target on its
-# own mount under a read-only root has no writable place next to it.
+# MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH,
+# PLUGINS_DIR or BOOTSTRAP_KEY_FILE). Preserve such a target separately, so a restore pointed at the
+# wrong archive remains recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is
+# set: a target on its own mount under a read-only root has no writable place next to it.
 snapshot_external() {
   target="$1"
   external_snapshot=""
@@ -197,6 +216,14 @@ snapshot_external() {
 restore_db() {
   resolved_db="$(resolve_path "$2")"
   if [ "$PHASE" = snapshot ]; then
+    openwa_writable "$2" || refuse_unwritable "$2" "$3"
+    for db in "$2" "$resolved_db"; do
+      for sfx in -wal -shm -journal; do
+        if [ -e "$db$sfx" ] && [ ! -w "$(dirname "$db")" ]; then
+          refuse_unwritable "$(dirname "$db")" "$3"
+        fi
+      done
+    done
     snapshot_external "$2"
     # Empty when the target lives in the data dir, whose own snapshot already holds the sidecars.
     if [ -n "$external_snapshot" ]; then
@@ -278,7 +305,7 @@ MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
 DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
 SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
 BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+MEDIA_DIR="$(openwa_media_dir)"
 # Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
 # registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
 # too, or the archive silently omits the plugin packages.
@@ -291,6 +318,8 @@ PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
 # not the plugins directory inside it.
 PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
 PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
+# The app reads the plaintext admin key from BOOTSTRAP_KEY_FILE when that is set.
+ADMIN_KEY_FILE="$(openwa_resolve BOOTSTRAP_KEY_FILE "$DATA_DIR/.api-key")"
 
 # backup.sh archives state directories by content. An archive from before it followed symlinks
 # carries a link instead, which on this host may point at the very directory the restore empties
@@ -364,8 +393,9 @@ if [ -d "$STAGE/plugin-packages" ] && [ -d "$STAGE/plugin-state" ] &&
 fi
 
 # Runs twice: PHASE=snapshot checks every target and snapshots the ones outside the data dir, then
-# PHASE=apply writes them. A target that cannot be snapshotted or is refused stops the restore
-# before the first database is written, instead of halfway through with a mixed install left behind.
+# PHASE=apply writes them. A target that is refused, or cannot be snapshotted or written, stops the
+# restore before the first database is written, instead of halfway through with a mixed install left
+# behind.
 restore_targets() {
   if [ -f "$STAGE/main.sqlite" ]; then
     restore_db "$STAGE/main.sqlite" "$MAIN_DB" "auth/audit DB"
@@ -392,10 +422,35 @@ restore_targets() {
       replace_tree "$STAGE/plugin-state" "$PLUGIN_STATE_DIR" "plugin registry and persisted state"
     fi
   fi
+  if [ -f "$STAGE/.api-key" ]; then
+    restore_admin_key
+  fi
+}
+
+# The plaintext admin key goes where the app reads it. Checked and, outside the data dir, snapshotted
+# with the other targets: it may be the only plaintext copy of a key the replaced main.sqlite accepts.
+restore_admin_key() {
+  if [ "$PHASE" = snapshot ]; then
+    openwa_writable "$ADMIN_KEY_FILE" || refuse_unwritable "$ADMIN_KEY_FILE" "admin key (BOOTSTRAP_KEY_FILE)"
+    snapshot_external "$ADMIN_KEY_FILE"
+    return
+  fi
+  log "Restoring plaintext admin key -> $ADMIN_KEY_FILE"
+  mkdir -p "$(dirname "$ADMIN_KEY_FILE")"
+  cp "$STAGE/.api-key" "$ADMIN_KEY_FILE"
+  chmod 0600 "$ADMIN_KEY_FILE"
 }
 
 PHASE=snapshot
 restore_targets
+# Written into the data dir after the targets, so checked with them; the data-dir snapshot holds both.
+if [ -f "$STAGE/.env.generated" ]; then
+  openwa_writable "$DATA_DIR/.env.generated" ||
+    refuse_unwritable "$DATA_DIR/.env.generated" "dashboard-generated configuration"
+fi
+if [ -f "$STAGE/database.sql" ]; then
+  openwa_writable "$DATA_DIR/database.sql" || refuse_unwritable "$DATA_DIR/database.sql" "PostgreSQL dump"
+fi
 PHASE=apply
 restore_targets
 
@@ -403,12 +458,6 @@ if [ -f "$STAGE/.env.generated" ]; then
   log "Restoring dashboard-generated configuration"
   cp "$STAGE/.env.generated" "$DATA_DIR/.env.generated"
   chmod 0600 "$DATA_DIR/.env.generated"
-fi
-
-if [ -f "$STAGE/.api-key" ]; then
-  log "Restoring plaintext admin key"
-  cp "$STAGE/.api-key" "$DATA_DIR/.api-key"
-  chmod 0600 "$DATA_DIR/.api-key"
 fi
 
 if [ -f "$STAGE/database.sql" ]; then

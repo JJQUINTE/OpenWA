@@ -71,7 +71,14 @@ class OpenWAConflictError(OpenWAApiError):
 
 
 class OpenWARateLimitError(OpenWAApiError):
-    """429 Too Many Requests."""
+    """429 Too Many Requests.
+
+    The global rate limiter's 429 lifts when its window expires (seconds for the
+    per-second tier, up to an hour for the hourly tier by default); its delay is
+    only in the Retry-After response header, which this error does not carry. A
+    429 whose body has code "SEND_PACING_LIMITED" is not transient: do not retry
+    it before the body's retryAfterSeconds, which can be hours.
+    """
 
 
 class OpenWANotImplementedError(OpenWAApiError):
@@ -82,13 +89,13 @@ class OpenWAServiceUnavailableError(OpenWAApiError):
     """503 Service Unavailable -- a transport failure, not a refusal.
 
     The gateway answers this when the engine did not confirm the operation in time: WhatsApp never
-    replied, the socket was down, or the request budget ran out. Retryable, as is a 429 (honor its
-    Retry-After), but a catalog 503 can persist because WhatsApp may never answer that query, so bound
-    any retry. The non-idempotent sends are deliberately left unbounded by the gateway so a slow
-    WhatsApp reply never answers one, and in a multi-node deployment a forwarded request answers 503
-    only when the owner node was never reached. A forward that fails after the request was sent
-    answers 502 or 504 instead (a plain OpenWAApiError): the owner may already have carried it out, so
-    do not repeat a non-idempotent send on those unchecked.
+    replied, the socket was down, or the request budget ran out. Retryable, but a catalog 503 can
+    persist because WhatsApp may never answer that query, so bound any retry. The non-idempotent
+    sends are deliberately left unbounded by the gateway so a slow WhatsApp reply never answers
+    one, and in a multi-node deployment a forwarded request answers 503 only when the owner node
+    was never reached. A forward that fails after the request was sent answers 502 or 504 instead
+    (a plain OpenWAApiError): the owner may already have carried it out, so do not repeat a
+    non-idempotent send on those unchecked.
     """
 
 

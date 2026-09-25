@@ -166,6 +166,17 @@ export interface BaileysEventsHost {
   getOnCallOutcome(): EngineEventCallbacks['onCallOutcome'];
 }
 
+/** Every teardown clears the live-call map; counting those clears lets a reject in flight tell that its
+ *  connection was torn down meanwhile. */
+class LiveCallMap<V> extends Map<string, V> {
+  clears = 0;
+
+  override clear(): void {
+    this.clears++;
+    super.clear();
+  }
+}
+
 export class BaileysEvents {
   /** How long a received call's handle stays rejectable. Calls ring for roughly a minute, so
    *  two minutes covers the ringing window with margin without pinning dead calls for long. */
@@ -174,10 +185,13 @@ export class BaileysEvents {
   /** Live incoming calls by call id, holding the raw `from` JID sock.rejectCall() needs — the
    *  call event is long gone by the time a reject arrives, so it must be cached at event time.
    *  Readonly reference, owned here; the adapter's lifecycle clears it on teardown. */
-  readonly liveCalls = new Map<
-    string,
-    { callFrom: string; expiresAt: number; from: string; isVideo: boolean; isGroup: boolean }
-  >();
+  readonly liveCalls = new LiveCallMap<{
+    callFrom: string;
+    expiresAt: number;
+    from: string;
+    isVideo: boolean;
+    isGroup: boolean;
+  }>();
 
   /** How many ids the record of deletes for everyone keeps before it forgets the oldest. */
   static readonly DELETED_FOR_EVERYONE_LIMIT = 5_000;
@@ -200,8 +214,9 @@ export class BaileysEvents {
   /**
    * The latest edit of a message still being processed, by id, with the key it was sent under. The
    * edit is announced first and finds no row or preview to change, and a repeat delivery can be stored
-   * after the edit was applied, so the original is stored and announced with this text instead.
-   * Bounded like deletedForEveryone, which wins over it.
+   * after the edit was applied, so the original is stored and announced with this text instead, and
+   * a quote or forward meanwhile carries it too (see pendingEditOf). Dropped once the message's
+   * processing settles, and bounded like deletedForEveryone, which wins over it.
    */
   private readonly editedWhileInFlight = new Map<string, { envelope: WAMessageKey; body: string }>();
 
@@ -210,6 +225,16 @@ export class BaileysEvents {
   /** Whether a delete for everyone of this message was accepted (see deletedForEveryone). */
   wasDeletedForEveryone(messageId: string): boolean {
     return this.deletedForEveryone.has(messageId);
+  }
+
+  /**
+   * The text of an edit announced while this message is still being processed, when that edit may
+   * change `target`, the key of the copy about to be quoted or forwarded. The stored copy catches up
+   * once the processing settles, but a repeat delivery can already be stored with the old text.
+   */
+  pendingEditOf(messageId: string, target: WAMessageKey): string | undefined {
+    const edit = this.inboundInFlight.has(messageId) ? this.editedWhileInFlight.get(messageId) : undefined;
+    return edit && this.mayChange(target, edit.envelope, false) ? edit.body : undefined;
   }
 
   /** Record an accepted delete for everyone of this message (see deletedForEveryone). */
@@ -288,7 +313,10 @@ export class BaileysEvents {
         };
         this.inboundInFlight.set(id, tracked);
         void tracked.done.finally(() => {
-          if (this.inboundInFlight.get(id) === tracked) this.inboundInFlight.delete(id);
+          if (this.inboundInFlight.get(id) !== tracked) return;
+          this.inboundInFlight.delete(id);
+          // The edit's store write was chained behind this, so the store carries it (or a newer one) now.
+          this.editedWhileInFlight.delete(id);
         });
       }
     }
@@ -1040,25 +1068,39 @@ export class BaileysEvents {
   }
 
   /**
-   * Reject a currently-ringing call. The entry is evicted on ANY attempt (a rejected/ended call
-   * will not become rejectable again); an unknown id or an expired entry maps to CallNotFoundError
-   * (HTTP 404). A failure of the library's rejectCall() itself propagates as-is.
+   * Reject a currently-ringing call. The entry is evicted before the attempt, so an outcome that
+   * arrives meanwhile cannot publish a second one, and a rejected call does not become rejectable
+   * again. A failed attempt leaves the call ringing, so its entry is put back for a retry unless the
+   * id rang again or the connection was torn down meanwhile. An unknown id or an expired entry maps to CallNotFoundError (HTTP 404).
+   * A failure of the library's rejectCall() itself propagates as-is.
    */
   async rejectCall(callId: string): Promise<void> {
     const entry = this.liveCalls.get(callId);
-    this.liveCalls.delete(callId);
     if (!entry || entry.expiresAt <= Date.now()) {
+      this.liveCalls.delete(callId);
       throw new CallNotFoundError(callId);
     }
     const sock = this.host.getSocketOrNull();
     if (!sock) {
       throw new EngineNotReadyError('Cannot reject a call before the engine is initialized.');
     }
-    await withQueryDeadline(
-      sock.rejectCall(callId, entry.callFrom),
-      BAILEYS_QUERY_BUDGET_MS,
-      'WhatsApp did not confirm the call rejection in time',
-    );
+    this.liveCalls.delete(callId);
+    const clears = this.liveCalls.clears;
+    try {
+      await withQueryDeadline(
+        sock.rejectCall(callId, entry.callFrom),
+        BAILEYS_QUERY_BUDGET_MS,
+        'WhatsApp did not confirm the call rejection in time',
+      );
+    } catch (err) {
+      // A teardown meanwhile ended the connection and its call handles, so the handle stays gone.
+      // Known limit: an outcome that ended the call during the attempt found no entry and left no
+      // trace, so the handle comes back even then, until its TTL runs out.
+      if (this.liveCalls.clears === clears && !this.liveCalls.has(callId) && entry.expiresAt > Date.now()) {
+        this.liveCalls.set(callId, entry);
+      }
+      throw err;
+    }
     // A rejection made HERE produces no inbound `reject` signal to observe, so without this the
     // one outcome the caller definitely knows about — the one they asked for — was the only one
     // never published. Emitted only after the socket accepted it, and the entry is already evicted,

@@ -39,6 +39,8 @@ export interface BaileysContactsHost {
   getStoredMessages(messageIds: string[]): Promise<WAMessage[]> | undefined;
   /** Fold a neutral @c.us id to the engine @s.whatsapp.net form used as the app-state index key. */
   toEngineJid(jid: string): string;
+  /** The id the chat is keyed under (its lid for a lid-migrated contact), the app-state index key. */
+  chatJid(chatId: string): string;
   /** Fold an engine jid back to the neutral dialect before it crosses the engine boundary. */
   toNeutralJid(jid: string): string;
 }
@@ -446,7 +448,7 @@ export class BaileysContacts {
     this.host.ensureReady();
     // Deliberately no lastMessage lookup: the `mute` member of ChatModification carries no
     // `lastMessages`, unlike archive/clear/delete, so a chat with no known history mutes fine.
-    await this.confirmed(this.sock().chatModify({ mute: muteUntil }, this.host.toEngineJid(chatId)), 'the mute change');
+    await this.confirmed(this.sock().chatModify({ mute: muteUntil }, this.host.chatJid(chatId)), 'the mute change');
   }
 
   async pinChat(chatId: string, pin: boolean): Promise<boolean> {
@@ -455,7 +457,7 @@ export class BaileysContacts {
     // archive/clear/delete, so a chat with no known history pins fine. Always true — Baileys writes
     // the app-state patch and reports nothing back, so it has no equivalent of the whatsapp-web.js
     // three-pin refusal to surface.
-    await this.confirmed(this.sock().chatModify({ pin }, this.host.toEngineJid(chatId)), 'the pin change');
+    await this.confirmed(this.sock().chatModify({ pin }, this.host.chatJid(chatId)), 'the pin change');
     return true;
   }
 

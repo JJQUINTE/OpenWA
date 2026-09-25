@@ -138,6 +138,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
         this.config.messageStore?.update(this.config.dbSessionId, messageId, change),
       wasDeletedForEveryone: messageId => this.events.wasDeletedForEveryone(messageId),
       markDeletedForEveryone: messageId => this.events.markDeletedForEveryone(messageId),
+      pendingEditOf: (messageId, target) => this.events.pendingEditOf(messageId, target),
       rememberOwnSend: id => this.ownSends.remember(id),
       consumeOwnSend: id => this.ownSends.consume(id),
       getOnMessage: () => this.callbacks.onMessage,
@@ -152,6 +153,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
       getOnCallOutcome: () => this.callbacks.onCallOutcome,
       ensureReady: () => this.ensureReady(),
       toEngineJid: jid => this.sessionStore.toEngineJid(jid),
+      chatJid: chatId => this.sessionStore.chatJid(chatId),
       getEphemeralExpiration: chatId => this.sessionStore.getEphemeralExpiration(chatId),
       getStoredMessage: messageId => this.config.messageStore?.getMessage(this.config.dbSessionId, messageId),
       getStoredMessages: messageIds => this.config.messageStore?.getMessages(this.config.dbSessionId, messageIds),
@@ -167,6 +169,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
       lastInboundMessage: chatId => this.sessionStore.lastInboundMessage(chatId),
       upsertContacts: records => this.sessionStore.upsertContacts(records),
       upsertChats: records => this.sessionStore.upsertChats(records),
+      removeChats: ids => this.sessionStore.removeChats(ids),
       extractEphemeralDuration: msg => this.sessionStore.extractEphemeralDuration(msg),
       getOnHistoryMessages: () => this.callbacks.onHistoryMessages,
       authPath: this.authPath,
@@ -590,9 +593,10 @@ export class BaileysAdapter implements IWhatsAppEngine {
   // WhatsApp Business only — Baileys rejects these on personal accounts. The label must already
   // exist (use getLabels on an engine that lists them); addChatLabel/removeChatLabel associate it
   // with a chat, they do not create/edit the label definition.
-  // Fold @c.us -> @s.whatsapp.net first: chatModify (which both calls wrap) keys the label
-  // app-state index by the RAW jid, so a neutral @c.us would label a phantom chat the phone never
-  // reads — reported as success. Same class of no-op the deleteForMe/star folds fixed.
+  // Resolve to the jid the chat is keyed under first (its lid for a lid-migrated contact, the engine
+  // form for a chat the store does not know): chatModify (which both calls wrap) keys the label
+  // app-state index by the RAW jid, so any other spelling labels a phantom chat the phone never
+  // reads, reported as success.
   /**
    * Labels are a Business-account chat feature and WhatsApp has no concept of labelling a channel.
    * whatsapp-web.js refuses a channel jid outright; this engine forwarded it and answered success
@@ -608,7 +612,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.ensureReady();
     this.assertLabelable(chatId);
     await withQueryDeadline(
-      this.sock!.addChatLabel(this.sessionStore.toEngineJid(chatId), labelId),
+      this.sock!.addChatLabel(this.sessionStore.chatJid(chatId), labelId),
       BAILEYS_QUERY_BUDGET_MS,
       'WhatsApp did not confirm the chat label add in time',
     );
@@ -617,7 +621,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.ensureReady();
     this.assertLabelable(chatId);
     await withQueryDeadline(
-      this.sock!.removeChatLabel(this.sessionStore.toEngineJid(chatId), labelId),
+      this.sock!.removeChatLabel(this.sessionStore.chatJid(chatId), labelId),
       BAILEYS_QUERY_BUDGET_MS,
       'WhatsApp did not confirm the chat label removal in time',
     );

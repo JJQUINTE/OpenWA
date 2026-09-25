@@ -126,12 +126,17 @@ export function Sessions() {
   const latestList = useRef<Promise<Session[]>>(Promise.resolve([]));
 
   // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
-  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Kept
-  // in sync with every state update (fetch / create / delete / WS) via the effect below.
+  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Every
+  // writer moves the ref in the same tick as its setState (a list read directly, row writes through
+  // `updateSessions`), so a push handled before React re-renders sees what the last write produced. No
+  // effect copies `sessions` back in: one flushing after such a push would move the ref to an older list.
   const sessionsRef = useRef<Session[]>([]);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
+  // A row write: applied to the ref now, and to state as a functional update, so it builds on every
+  // write queued before it instead of replacing the list with an older copy.
+  const updateSessions = useCallback((update: (list: Session[]) => Session[]) => {
+    sessionsRef.current = update(sessionsRef.current);
+    setSessions(update);
+  }, []);
 
   const readSessions = useCallback(async (): Promise<Session[]> => {
     listReadFailed.current = false;
@@ -214,7 +219,7 @@ export function Sessions() {
       // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
       // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
       rowWrites.current += 1;
-      setSessions(current => [...current, newSession]);
+      updateSessions(current => [...current, newSession]);
       void invalidateSessionQueries(queryClient, queryKeys.sessions);
     },
     onFailed: msg => setError(msg),
@@ -230,12 +235,11 @@ export function Sessions() {
   const applySessionResponse = useCallback(
     async (updated: Session) => {
       rowWrites.current += 1;
-      sessionsRef.current = replaceSession(sessionsRef.current, updated);
-      setSessions(sessionsRef.current);
+      updateSessions(current => replaceSession(current, updated));
       dismissQrForSession(updated.id);
       await reconcileSessionCache(queryClient, queryKeys.sessions, updated);
     },
-    [queryClient, dismissQrForSession],
+    [queryClient, dismissQrForSession, updateSessions],
   );
 
   // A restriction push and a recovered socket mean the same thing to this page: the local list may be
@@ -258,8 +262,8 @@ export function Sessions() {
       (event: { sessionId: string; status: string }) => {
         const prev = sessionsRef.current.find(s => s.id === event.sessionId);
         // Some engines double-signal one transition; only react to an ACTUAL status change so the toast
-        // and the failed-refresh don't fire on every redundant envelope. Update the ref synchronously so
-        // a duplicate arriving in the same tick (before the sync effect runs) is also caught.
+        // and the failed-refresh don't fire on every redundant envelope. `updateSessions` moves the ref
+        // synchronously, so a duplicate arriving before React re-renders is also caught.
         if (prev && prev.status === event.status) return;
         // A push for a row the page does not hold yet changes nothing, so it must not void the read
         // that is about to bring that row (the mount read, before any row is on screen).
@@ -270,10 +274,11 @@ export function Sessions() {
         // with no engine). Clearing it makes isSessionStarted fall back to the status set until an
         // authoritative response arrives — and for `disconnected`, where that fallback is knowingly
         // wrong, the branch below refetches.
-        sessionsRef.current = sessionsRef.current.map(s =>
-          s.id === event.sessionId ? { ...s, status: event.status as Session['status'], engineLoaded: undefined } : s,
+        updateSessions(current =>
+          current.map(s =>
+            s.id === event.sessionId ? { ...s, status: event.status as Session['status'], engineLoaded: undefined } : s,
+          ),
         );
-        setSessions(sessionsRef.current);
         // Mark the shared session queries stale so sibling views refetch — but ONLY on a real
         // transition (the dedup guard above already swallows the redundant double-signals, so this
         // does not re-invalidate on duplicate envelopes).
@@ -313,7 +318,7 @@ export function Sessions() {
           toast.error(t('sessions.toasts.failedTitle'), t('sessions.toasts.failedDesc'));
         }
       },
-      [toast, t, fetchSessions, queryClient, dismissQrForSession, clearQrCodeForSession],
+      [toast, t, fetchSessions, queryClient, dismissQrForSession, clearQrCodeForSession, updateSessions],
     ),
   });
 
@@ -347,7 +352,7 @@ export function Sessions() {
       await sessionApi.delete(id);
       // Functional removal (no stale `sessions` capture), then invalidate the prefix.
       rowWrites.current += 1;
-      setSessions(current => current.filter(s => s.id !== id));
+      updateSessions(current => current.filter(s => s.id !== id));
       await invalidateSessionQueries(queryClient, queryKeys.sessions);
       toast.success(
         t('sessions.delete.successTitle'),
@@ -375,7 +380,7 @@ export function Sessions() {
       // from before the start, which now includes `engineLoaded` and would leave the card offering
       // Start for a session that just acquired an engine.
       const started = await sessionApi.start(id);
-      setSessions(current => replaceSession(current, started));
+      updateSessions(current => replaceSession(current, started));
       // A 200 does not promise the engine is still there when the list is read back: a concurrent stop
       // retires the start, and an engine can fail right after answering. Skip the modal when the re-read
       // shows the session without one. A failed re-read gives no answer, so the start's success decides.

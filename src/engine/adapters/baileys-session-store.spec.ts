@@ -23,7 +23,13 @@ class FakeChatStateStore implements ChatStateStore {
   clearSession(): Promise<void> {
     return Promise.resolve();
   }
-  forgetAbsent(): void {}
+  forget(s: string, chatIds: string[]): Promise<void> {
+    for (const c of chatIds) this.rows.delete(this.key(s, c));
+    return Promise.resolve();
+  }
+  refreshSession(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe('BaileysSessionStore', () => {
@@ -639,6 +645,24 @@ describe('BaileysSessionStore', () => {
       });
       store.recordMessageEdit('628111@c.us', 'IN', 'edited');
       expect(store.listChats()[0].lastMessage).toBe('edited');
+    });
+
+    it('removes a deleted chat, its preview and its chat state under every spelling', () => {
+      const fake = new FakeChatStateStore();
+      const s = new BaileysSessionStore(undefined, 'sess-1', fake);
+      s.upsertChats([{ id: LID, name: 'Alice', pinned: 7 }]);
+      s.recordKeyLidMappings({ remoteJid: LID, remoteJidAlt: PHONE });
+      s.recordMessage(msg(LID, 'IN', 100));
+      s.upsertChats([{ id: '120363@g.us', name: 'Team' }]);
+      // Baileys names the deleted chat by the id its app-state index carries, here the phone twin.
+      s.removeChats([PHONE]);
+      expect(s.listChats()).toEqual([expect.objectContaining({ id: '120363@g.us' })]);
+      expect(s.lastMessage('628111@c.us')).toBeNull();
+      expect(s.lastInboundMessage('628111@c.us')).toBeNull();
+      expect(fake.rows.size).toBe(0);
+      // A later message re-creates the chat without the pin the deleted one carried.
+      s.upsertChats([{ id: LID }]);
+      expect(s.listChats().find(c => c.id === '628111@c.us')).toEqual(expect.objectContaining({ pinned: false }));
     });
 
     it('finds the lid twin through the persisted table as well', () => {

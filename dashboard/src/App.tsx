@@ -42,9 +42,9 @@ function AppContent() {
   const [savedKey] = useState(() => sessionStorage.getItem('openwa_api_key'));
   const [isAuthenticated, setIsAuthenticated] = useState(!!savedKey);
   const [, setApiKey] = useState(savedKey || '');
-  const { setRole, role } = useRole();
+  const { setRole, role, setEngineType } = useRole();
 
-  const handleLogin = (key: string, validatedRole?: string) => {
+  const handleLogin = (key: string, validatedRole?: string, engineType?: string) => {
     setApiKey(key);
     sessionStorage.setItem('openwa_api_key', key);
 
@@ -52,6 +52,7 @@ function AppContent() {
     // round-trip is needed here. An absent or unrecognized role falls back to viewer, the
     // least-privileged default.
     setRole(isUserRole(validatedRole) ? validatedRole : 'viewer');
+    setEngineType(engineType ?? null);
 
     setIsAuthenticated(true);
   };
@@ -60,12 +61,13 @@ function AppContent() {
     setApiKey('');
     setIsAuthenticated(false);
     setRole(null);
+    setEngineType(null);
     sessionStorage.removeItem('openwa_api_key');
     // Wipe the React Query cache too: it is keyed by resource, not actor, so without a full
     // clear a logout → login in the same tab with a different key/scope shows the previous
     // actor's sessions/messages/apiKeys/audit rows.
     clearActorState(queryClient);
-  }, [setRole]);
+  }, [setRole, setEngineType]);
 
   // Re-validate and refresh the role on mount if already authenticated
   useEffect(() => {
@@ -81,13 +83,14 @@ function AppContent() {
           handleLogout();
         } else if (decision.action === 'role') {
           setRole(decision.role);
+          if (decision.engineType) setEngineType(decision.engineType);
         }
       })
       .catch(() => {
         // Network failure (API unreachable): keep the cached role so a transient outage at
         // page load doesn't eject the user — an explicit 401/403 above still logs out.
       });
-  }, [savedKey, setRole, handleLogout]);
+  }, [savedKey, setRole, setEngineType, handleLogout]);
 
   const loadingFallback = (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>

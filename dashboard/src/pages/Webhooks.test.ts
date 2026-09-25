@@ -164,3 +164,26 @@ test('a second click on Create while the first create is in flight sends nothing
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(createCalls, 1);
 });
+
+test('Create stays disabled until both a session and a URL are filled in', async () => {
+  const { screen, fireEvent } = rtl;
+  webhooksStatus = 200;
+  sessionList = [{ id: 'sess-1', name: 'Main', status: 'ready', createdAt: '2026-01-01T00:00:00.000Z' }];
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  renderWebhooks();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Webhook' }));
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: 'Create' });
+  const sessionSelect = screen.getByLabelText<HTMLSelectElement>('Session');
+  await rtl.findByText(sessionSelect, 'Main');
+  assert.equal(create.disabled, true, 'nothing filled in');
+
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.test/hook' } });
+  assert.equal(create.disabled, true, 'URL without a session');
+
+  fireEvent.change(sessionSelect, { target: { value: 'sess-1' } });
+  assert.equal(create.disabled, false);
+
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: '' } });
+  assert.equal(create.disabled, true, 'session without a URL');
+});

@@ -66,7 +66,7 @@ Storage: SHA-256 hash only (never store plain key); `keyPrefix` keeps the first 
 ```
 
 Every key minted through the API-keys endpoints uses that format. The bootstrap seed key is the only
-exception: an explicit `API_MASTER_KEY` is taken verbatim, and `ALLOW_DEV_API_KEY=true` opts into the
+exception: an explicit `API_MASTER_KEY` is taken verbatim (surrounding whitespace is stripped), and `ALLOW_DEV_API_KEY=true` opts into the
 fixed `dev-admin-key`; with neither set, the seed key is generated in the format above.
 
 ### Permission Model

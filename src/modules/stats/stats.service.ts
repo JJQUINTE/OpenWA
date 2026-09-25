@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { Session, SessionStatus } from '../session/entities/session.entity';
-import { Message, MessageStatus } from '../message/entities/message.entity';
+import { Message, MessageDirection, MessageStatus } from '../message/entities/message.entity';
 import { CacheService } from '../../common/cache';
 
 /**
@@ -41,6 +41,13 @@ export function maxCreatedAtSql(dbType: string): string {
     ? `to_char(MAX(m."createdAt"), 'YYYY-MM-DD HH24:MI:SS')`
     : `strftime('%Y-%m-%d %H:%M:%S', MAX(m.createdAt))`;
 }
+
+/**
+ * SQL for a top chat's label. `chatName` holds the SENDER's push name, not the chat's: MAX over a group's
+ * rows named the group after whichever member sorts last. Only a 1:1 chat's inbound rows carry the name
+ * of the chat itself, so groups get null and the dashboard falls back to the chat id.
+ */
+const CHAT_LABEL_SQL = `MAX(CASE WHEN m.direction = '${MessageDirection.INCOMING}' AND m.chatId NOT LIKE '%@g.us' THEN m.chatName END)`;
 
 export interface OverviewStats {
   sessions: {
@@ -251,7 +258,7 @@ export class StatsService {
       .createQueryBuilder('m')
       .select('m.chatId', 'chatId')
       .addSelect('COUNT(*)', 'messageCount')
-      .addSelect('MAX(m.chatName)', 'chatName')
+      .addSelect(CHAT_LABEL_SQL, 'chatName')
       .where('m.createdAt >= :since', { since })
       .groupBy('m.chatId')
       // Order by the aggregate expression, not the "messageCount" alias: Postgres folds an unquoted
@@ -323,7 +330,7 @@ export class StatsService {
       .select('m.chatId', 'chatId')
       .addSelect('COUNT(*)', 'count')
       .addSelect(maxCreatedAtSql(this.dataDbType), 'lastActive')
-      .addSelect('MAX(m.chatName)', 'chatName')
+      .addSelect(CHAT_LABEL_SQL, 'chatName')
       .where('m.sessionId = :sessionId', { sessionId })
       .groupBy('m.chatId')
       .orderBy('count', 'DESC')

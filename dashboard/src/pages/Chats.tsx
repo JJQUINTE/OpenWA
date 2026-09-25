@@ -49,7 +49,6 @@ import {
 import { useChannelMessages } from '../hooks/useChannelMessages';
 import { useContactStatuses } from '../hooks/useContactStatuses';
 import { useChatScrollPosition } from '../hooks/useChatScrollPosition';
-import { useCurrentEngineQuery } from '../hooks/queries';
 import { createTrailingCoalescer } from '../utils/trailingCoalescer';
 import MessageBody from '../components/chats/MessageBody';
 import MediaLightbox, { type LightboxItem } from '../components/chats/MediaLightbox';
@@ -122,7 +121,7 @@ export function Chats() {
   const { t } = useTranslation();
   useDocumentTitle(t('nav.chats'));
   const { error: showErrorToast, warning: showWarningToast } = useToast();
-  const { canWrite } = useRole();
+  const { canWrite, engineType } = useRole();
 
   // Sessions list & active session
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -155,8 +154,8 @@ export function Chats() {
 
   // Channels tab: only whatsapp-web.js implements channel listing/reading — Baileys throws 501 for
   // both, so the query is gated off entirely (never fired) rather than left to fail per-request.
-  const currentEngine = useCurrentEngineQuery();
-  const channelsSupported = currentEngine.data?.engineType === 'whatsapp-web.js';
+  // The engine comes from the sign-in validate response, which every role can read.
+  const channelsSupported = engineType === 'whatsapp-web.js';
   const channelsQuery = useQuery({
     queryKey: ['channels', selectedSessionId],
     queryFn: () => sessionApi.getSubscribedChannels(selectedSessionId!),
@@ -784,9 +783,11 @@ export function Chats() {
   );
 
   // After a session switch the chats list reloads — pick up the pending chat once it appears.
+  // While the switch's list is loading, `chats` still holds the previous session's list, which can
+  // list the same id (a shared group or contact) as a Chat object from the other account.
   useEffect(() => {
     const pending = pendingHitRef.current;
-    if (!pending || activeChat?.id === pending.chatId) return;
+    if (!pending || loadingChats || activeChat?.id === pending.chatId) return;
     const chat = chats.find(c => c.id === pending.chatId);
     if (chat) {
       if (chat.kind === 'channel') {
@@ -804,7 +805,7 @@ export function Chats() {
         setActiveStatusContactId(null);
       }
     }
-  }, [chats, activeChat, switchTab]);
+  }, [chats, loadingChats, activeChat, switchTab]);
 
   // Best-effort scroll to the hit message. Runs as a layout effect (after useChatScrollPosition's
   // own restore on the same commit) so it overrides the bottom/saved jump with no visible flash.
@@ -965,7 +966,7 @@ export function Chats() {
               onSelectChat: setActiveChat,
             }}
             channelsTab={{
-              engineLoading: currentEngine.isLoading,
+              engineLoading: engineType === null,
               supported: channelsSupported,
               query: channelsQuery,
               channels: filteredChannels,

@@ -1409,6 +1409,17 @@ describe('BaileysAdapter reconnect socket teardown (no leak)', () => {
     expect(adapter.getStatus()).not.toBe(EngineStatus.FAILED);
   });
 
+  it('detaches the chat listeners of the previous socket on an internal reconnect', async () => {
+    await initWithRealTimers();
+    jest.useFakeTimers();
+    fireRecoverableClose();
+    await jest.runAllTimersAsync();
+    // The fake hands back the same socket, so a listener the teardown missed would now be doubled.
+    for (const event of ['chats.upsert', 'chats.update', 'chats.delete']) {
+      expect(fakeSock.emitter.listenerCount(event)).toBe(1);
+    }
+  });
+
   it('tearing down the previous socket does not trigger a spurious second reconnect', async () => {
     const adapter = await initWithRealTimers();
     jest.useFakeTimers();
@@ -3797,6 +3808,8 @@ describe('BaileysAdapter media sends', () => {
       a.sendVideoMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
     audio: (a: BaileysAdapter, url: string) =>
       a.sendAudioMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
+    document: (a: BaileysAdapter, url: string) =>
+      a.sendDocumentMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url, filename: 'm.docx' }),
   };
   const sentMimetype = (): unknown =>
     (fakeSock.sendMessage.mock.calls[0] as [string, { mimetype?: string }])[1].mimetype;
@@ -3808,6 +3821,9 @@ describe('BaileysAdapter media sends', () => {
     ['video', 'video/mp4', 'Application/Octet-Stream'],
     ['audio', 'audio/mpeg', ''],
     ['audio', 'audio/mpeg', 'binary/octet-stream'],
+    // Baileys labels a document with no type as application/pdf, so a .docx would arrive unopenable.
+    ['document', 'application/octet-stream', ''],
+    ['document', 'application/octet-stream', 'binary/octet-stream'],
   ] as const)('labels an undeclared %s URL as %s when the host answers %j', async (kind, fallback, fetchedType) => {
     (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: fetchedType });
     const adapter = await ready();
@@ -3822,15 +3838,11 @@ describe('BaileysAdapter media sends', () => {
     expect(sentMimetype()).toBe('image/png');
   });
 
-  it('leaves a document with the type it was fetched with', async () => {
-    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: PLACEHOLDER });
+  it('keeps a specific fetched type for an undeclared document URL', async () => {
+    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: 'application/zip' });
     const adapter = await ready();
-    await adapter.sendDocumentMessage('628111@s.whatsapp.net', {
-      mimetype: PLACEHOLDER,
-      data: 'https://cdn.example/m',
-      filename: 'm.bin',
-    });
-    expect(sentMimetype()).toBe(PLACEHOLDER);
+    await sendByKind.document(adapter, 'https://cdn.example/m');
+    expect(sentMimetype()).toBe('application/zip');
   });
 
   it('uses the caller-declared mimetype over the fetched content-type for a URL', async () => {
@@ -4605,7 +4617,8 @@ describe('BaileysAdapter store-backed ops', () => {
       remember: jest.fn().mockResolvedValue(undefined),
       reload: jest.fn().mockResolvedValue(undefined),
       clearSession: jest.fn(),
-      forgetAbsent: jest.fn(),
+      forget: jest.fn().mockResolvedValue(undefined),
+      refreshSession: jest.fn().mockResolvedValue(undefined),
     };
     const linked = async (onDisconnected = jest.fn()): Promise<BaileysAdapter> => {
       // A failing clear must not change how either unlink ends.
@@ -4623,9 +4636,43 @@ describe('BaileysAdapter store-backed ops', () => {
     };
 
     // Another node may have written rows while it held the session (takeover).
-    it('re-reads them on start for chats found without a row before', async () => {
+    const makeSocket = (): jest.Mock => jest.requireMock<{ default: jest.Mock }>('@whiskeysockets/baileys').default;
+
+    it('re-reads them on start, before the socket opens', async () => {
+      makeSocket().mockClear();
+      let opened = false;
+      chatStateStore.refreshSession.mockImplementationOnce(() => {
+        opened = makeSocket().mock.calls.length > 0;
+        return Promise.resolve();
+      });
       await linked();
-      expect(chatStateStore.forgetAbsent).toHaveBeenCalledWith('sess-1');
+      expect(chatStateStore.refreshSession).toHaveBeenCalledWith('sess-1');
+      expect(opened).toBe(false);
+    });
+
+    it('does not open a socket when the session is stopped during the re-read', async () => {
+      makeSocket().mockClear();
+      let finish!: () => void;
+      chatStateStore.refreshSession.mockReturnValueOnce(new Promise<void>(r => (finish = r)));
+      const adapter = new BaileysAdapter({
+        sessionId: 'sess-1',
+        dbSessionId: 'db-uuid-1',
+        authDir: './data/baileys',
+        messageStore: fakeStore,
+        chatStateStore,
+      });
+      const started = adapter.initialize({});
+      await adapter.disconnect();
+      finish();
+      await started;
+      expect(makeSocket()).not.toHaveBeenCalled();
+      expect(adapter.getStatus()).toBe(EngineStatus.DISCONNECTED);
+    });
+
+    it('still starts when the re-read fails', async () => {
+      chatStateStore.refreshSession.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+      const adapter = await linked();
+      expect(adapter.getStatus()).toBe(EngineStatus.READY);
     });
 
     it('clears them on logout', async () => {
@@ -6203,6 +6250,83 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     );
   });
 
+  // The writes that need no last message resolve the chat the same way. Keyed by the phone jid, the
+  // patch named a chat the phone does not hold, and its local echo added a second row to GET /chats
+  // under the same @c.us id, carrying the mute or pin the listed row never showed.
+  describe('writes without a last message on a lid-keyed chat called with the listed @c.us id', () => {
+    const lidKeyedChat = async (): Promise<BaileysAdapter> => {
+      const adapter = newAdapter();
+      await adapter.initialize({});
+      fakeSock.fire('connection.update', { connection: 'open' });
+      fakeSock.fire('chats.upsert', [{ id: '484848@lid', name: 'Alice' }]);
+      fakeSock.fire('messages.upsert', {
+        type: 'notify',
+        messages: [
+          {
+            key: { remoteJid: '484848@lid', remoteJidAlt: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+            message: { conversation: 'hi' },
+            messageTimestamp: 1700000020,
+          },
+        ],
+      });
+      await new Promise(r => setImmediate(r));
+      expect((await adapter.getChats()).map(c => c.id)).toEqual(['628111@c.us']);
+      return adapter;
+    };
+
+    it.each([
+      [
+        'muteChat',
+        (a: BaileysAdapter) => a.muteChat('628111@c.us', 1900000000),
+        { muteEndTime: 1900000000 },
+        { muted: true },
+      ],
+      ['pinChat', (a: BaileysAdapter) => a.pinChat('628111@c.us', true), { pinned: 1700000030 }, { pinned: true }],
+    ])('%s keeps the listed row the only one', async (_n, act, echo, state) => {
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      const [, jid] = fakeSock.chatModify.mock.calls[0] as [unknown, string];
+      expect(jid).toBe('484848@lid');
+      // Baileys replays its own patch as chats.update under the jid the patch was indexed by.
+      fakeSock.fire('chats.update', [{ id: jid, ...echo }]);
+      expect(await adapter.getChats()).toEqual([
+        expect.objectContaining({ id: '628111@c.us', name: 'Alice', ...state }),
+      ]);
+    });
+
+    it.each([
+      ['addLabelToChat', 'addChatLabel', (a: BaileysAdapter) => a.addLabelToChat('628111@c.us', 'L1')],
+      ['removeLabelFromChat', 'removeChatLabel', (a: BaileysAdapter) => a.removeLabelFromChat('628111@c.us', 'L1')],
+    ] as const)('%s labels the chat under its lid', async (_n, method, act) => {
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      expect(fakeSock[method]).toHaveBeenCalledWith('484848@lid', 'L1');
+    });
+
+    it.each([
+      ['starMessage', (a: BaileysAdapter) => a.starMessage('628111@c.us', 'M1', true)],
+      ['deleteMessage for me', (a: BaileysAdapter) => a.deleteMessage('628111@c.us', 'M1', false)],
+    ])("%s indexes the patch by the stored message's chat", async (_n, act) => {
+      fakeStore.getMessage.mockResolvedValue({
+        key: { remoteJid: '484848@lid', fromMe: false, id: 'M1' },
+        message: { conversation: 'hi' },
+        messageTimestamp: 1700000020,
+      });
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      expect(fakeSock.chatModify).toHaveBeenCalledWith(expect.anything(), '484848@lid');
+    });
+  });
+
+  it('drops a chat Baileys reports deleted from the listing', async () => {
+    const adapter = await readyWithMessage();
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net' }]);
+    expect(await adapter.getChats()).toHaveLength(1);
+    fakeSock.fire('chats.delete', ['628111@s.whatsapp.net']);
+    expect(await adapter.getChats()).toEqual([]);
+    expect(await adapter.deleteChat('628111@c.us')).toBe(false);
+  });
+
   it('clearChatMessages returns false for a chat with no known history', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});
@@ -7278,6 +7402,64 @@ describe('BaileysAdapter call outcomes', () => {
 
     await expect(adapter.rejectCall(CALL_ID)).rejects.toThrow('socket closed');
     expect(onCallOutcome).not.toHaveBeenCalled();
+  });
+
+  // A failed attempt leaves the call ringing and answers 503, which invites a retry: the retry must
+  // still find the call rather than answer 404.
+  it('keeps the call rejectable after the socket fails to reject it', async () => {
+    const onCallOutcome = jest.fn();
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome });
+    fakeSock.rejectCall.mockRejectedValueOnce(new Error('Connection Closed'));
+
+    await expect(adapter.rejectCall(CALL_ID)).rejects.toThrow('Connection Closed');
+    await adapter.rejectCall(CALL_ID);
+
+    expect(fakeSock.rejectCall).toHaveBeenCalledTimes(2);
+    expect(onCallOutcome).toHaveBeenCalledTimes(1);
+    expect(onCallOutcome).toHaveBeenCalledWith(expect.objectContaining({ callId: CALL_ID, outcome: 'rejected' }));
+  });
+
+  it('does not replace a call that rang again while the failed rejection was pending', async () => {
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome: jest.fn() });
+    let fail!: (err: Error) => void;
+    fakeSock.rejectCall.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+
+    const attempt = adapter.rejectCall(CALL_ID);
+    // A new ring under the same id meanwhile owns the handle; the failed attempt must not replace it.
+    fakeSock.fire('call', [
+      { id: CALL_ID, from: '628222@s.whatsapp.net', chatId: CALLER, status: 'offer', offline: false, date: new Date() },
+    ]);
+    fail(new Error('Connection Closed'));
+    await expect(attempt).rejects.toThrow('Connection Closed');
+
+    await adapter.rejectCall(CALL_ID);
+    expect(fakeSock.rejectCall).toHaveBeenLastCalledWith(CALL_ID, '628222@s.whatsapp.net');
+  });
+
+  // A teardown ends the socket, which fails the pending attempt; the handle died with the connection
+  // and must not come back, or a retry after a restart would reject a call from the old connection.
+  it.each([
+    ['a disconnect', (adapter: BaileysAdapter) => adapter.disconnect()],
+    [
+      'a terminal close that keeps the socket',
+      () =>
+        fakeSock.fire('connection.update', {
+          connection: 'close',
+          lastDisconnect: { error: { output: { statusCode: 440 } } },
+        }),
+    ],
+  ])('does not bring the call back when %s ends the pending rejection', async (_label, teardown) => {
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome: jest.fn(), onError: jest.fn() });
+    let fail!: (err: Error) => void;
+    fakeSock.rejectCall.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+
+    const attempt = adapter.rejectCall(CALL_ID);
+    await teardown(adapter);
+    fail(new Error('Connection Closed'));
+    await expect(attempt).rejects.toThrow('Connection Closed');
+
+    await expect(adapter.rejectCall(CALL_ID)).rejects.toBeInstanceOf(CallNotFoundError);
+    expect(fakeSock.rejectCall).toHaveBeenCalledTimes(1);
   });
 
   // WhatsApp replays signalling for calls that ended while the session was disconnected. Announcing

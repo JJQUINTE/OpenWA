@@ -17,7 +17,9 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
   }
   const repo = {
     rows,
-    find: jest.fn(() => Promise.resolve([...rows.values()])),
+    find: jest.fn((opts?: { where?: { sessionId: string } }) =>
+      Promise.resolve([...rows.values()].filter(r => !opts?.where || r.sessionId === opts.where.sessionId)),
+    ),
     findOne: jest.fn(({ where }: { where: { sessionId: string; chatId: string } }) =>
       Promise.resolve(rows.get(KEY(where.sessionId, where.chatId))),
     ),
@@ -26,8 +28,9 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
       rows.set(KEY(v.sessionId, v.chatId), { ...rows.get(KEY(v.sessionId, v.chatId)), ...v });
       return Promise.resolve(undefined);
     }),
-    delete: jest.fn(({ sessionId }: { sessionId: string }) => {
-      for (const [k, r] of rows) if (r.sessionId === sessionId) rows.delete(k);
+    delete: jest.fn(({ sessionId, chatId }: { sessionId: string; chatId?: string }) => {
+      for (const [k, r] of rows)
+        if (r.sessionId === sessionId && (chatId === undefined || r.chatId === chatId)) rows.delete(k);
       return Promise.resolve(undefined);
     }),
   };
@@ -157,19 +160,65 @@ describe('ChatStateStoreService', () => {
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
   });
 
-  it('forgetAbsent makes one session read through again for chats it found no row for', async () => {
-    const repo = makeRepo();
+  describe('refreshSession (a start: another node may have written the rows since)', () => {
+    it('serves one session from the table on the very next read, cached or known absent', async () => {
+      const repo = makeRepo([
+        { sessionId: 's', chatId: 'muted', muteEndTime: -1 },
+        { sessionId: 's', chatId: 'gone', pinned: true },
+        { sessionId: 't', chatId: 'c', pinned: true },
+      ]);
+      const svc = svcWith(repo);
+      await svc.reload();
+      svc.get('s', 'new');
+      await tick(); // 'new' is now known to have no row
+      // Written by the node that held the session meanwhile.
+      await repo.upsert({ sessionId: 's', chatId: 'muted', muteEndTime: null } as ChatState);
+      await repo.upsert({ sessionId: 's', chatId: 'new', archived: true } as ChatState);
+      await repo.delete({ sessionId: 's', chatId: 'gone' });
+      await repo.upsert({ sessionId: 't', chatId: 'c', pinned: false } as ChatState);
+      await svc.refreshSession('s');
+      expect(svc.get('s', 'muted')).toEqual(expect.objectContaining({ muteEndTime: null }));
+      expect(svc.get('s', 'new')).toEqual(expect.objectContaining({ archived: true }));
+      expect(svc.get('s', 'gone')).toBeUndefined();
+      expect(svc.get('t', 'c')).toEqual(expect.objectContaining({ pinned: true })); // another session is untouched
+    });
+
+    it('keeps the cache when the table cannot be read, and reads the absent chats through again', async () => {
+      const repo = makeRepo([{ sessionId: 's', chatId: 'c', archived: true }]);
+      const svc = svcWith(repo);
+      await svc.reload();
+      svc.get('s', 'new');
+      await tick();
+      repo.find.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+      await expect(svc.refreshSession('s')).resolves.toBeUndefined();
+      expect(svc.get('s', 'c')).toEqual(expect.objectContaining({ archived: true }));
+      await repo.upsert({ sessionId: 's', chatId: 'new', pinned: true } as ChatState);
+      svc.get('s', 'new');
+      await tick();
+      expect(svc.get('s', 'new')).toEqual(expect.objectContaining({ pinned: true }));
+    });
+  });
+
+  it('forget drops the named chats of one session from the table and the cache, after their pending writes', async () => {
+    const repo = makeRepo([
+      { sessionId: 's', chatId: 'd', pinned: true },
+      { sessionId: 't', chatId: 'c', pinned: true },
+    ]);
     const svc = svcWith(repo);
-    svc.get('s', 'c');
-    svc.get('t', 'c');
-    await tick(); // both are now known to have no row
-    await repo.upsert({ sessionId: 's', chatId: 'c', archived: true } as ChatState); // written by another node
-    svc.forgetAbsent('s');
-    svc.get('s', 'c');
-    svc.get('t', 'c');
-    await tick();
-    expect(svc.get('s', 'c')).toEqual(expect.objectContaining({ archived: true }));
-    expect(repo.findOne).toHaveBeenCalledTimes(3); // 't' is still skipped
+    await svc.reload();
+    const pending = svc.remember('s', 'c', { archived: true }); // not awaited, as the session store calls it
+    await svc.forget('s', ['c', 'd']);
+    await pending;
+    expect([...repo.rows.keys()]).toEqual([KEY('t', 'c')]);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    expect(svc.get('s', 'd')).toBeUndefined();
+    expect(svc.get('t', 'c')).toEqual(expect.objectContaining({ pinned: true }));
+  });
+
+  it('forget swallows a repo error', async () => {
+    const repo = makeRepo();
+    repo.delete.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    await expect(svcWith(repo).forget('s', ['c'])).resolves.toBeUndefined();
   });
 
   it('keeps both of two concurrent patches for a chat that is not cached yet', async () => {
