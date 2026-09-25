@@ -178,9 +178,11 @@ const CODE_SEGMENT = /(```[\s\S]*?```|`[^`]*`)/;
  * like "localhost").
  *
  * The left boundary only fires at the start of the text or after whitespace, optionally through
- * a run of opening punctuation or format markers. It never fires after `/`, a backtick, or a word,
- * so a URL or an inline-code span with the same digits is left untouched (this runs on the raw
- * body, before parseMessageBody splits out code spans).
+ * a run of opening punctuation or format markers. It never fires after `/` or a word, so a URL
+ * with the same digits is left untouched, and digits inside a code span are never rewritten (this
+ * runs on the raw body, before parseMessageBody splits out code spans). Right after a closing
+ * backtick a bare "@digits" is left as it is, while an opener run such as `*@digits*` or
+ * `(@digits` still starts a mention: the span has already been split off, so it cannot break.
  */
 export function resolveMentions(raw: string, names: Map<string, string>): string {
   const text = stripMentionDelimiters(raw);
@@ -191,7 +193,8 @@ export function resolveMentions(raw: string, names: Map<string, string>): string
       i % 2
         ? part
         : part.replace(MENTION_TOKEN, (full: string, prefix: string, digits: string) => {
-            // `^` only counts at the start of the whole text, not right after a closing backtick.
+            // A bare `^` only counts at the start of the whole text, not right after a closing
+            // backtick; `^` followed by an opener run does (see above).
             if (i > 0 && prefix === '') return full;
             // The first word that renders as something: a name like "\u3164 Bob" is not blank as a
             // whole, but its first word alone would show as a bare "@".
