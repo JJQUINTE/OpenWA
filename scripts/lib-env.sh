@@ -63,6 +63,24 @@ openwa_writable() {
   [ -d "$p" ] && [ -w "$p" ]
 }
 
+# openwa_media_dir - STORAGE_LOCAL_PATH as the app settles it (src/config/storage-root.ts). v0.2.0 to
+# v0.7.3 persisted ./uploads into .env.generated; where that cannot be created, as under the image's
+# root-owned /app, the app keeps media in ./data/media instead, so the scripts have to look there too.
+openwa_media_dir() {
+  local dir
+  dir="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+  case "$dir" in
+    ./uploads | uploads)
+      if ! openwa_writable "$dir"; then
+        echo "[config] WARN: STORAGE_LOCAL_PATH=$dir cannot be created here, so the app keeps media in" >&2
+        echo "[config]       ./data/media; using that. Remove the leftover line from .env.generated." >&2
+        dir=./data/media
+      fi
+      ;;
+  esac
+  printf '%s' "$dir"
+}
+
 # Layer 3. Set here rather than read from the environment, so it can never arrive from an operator's
 # shell; restore.sh points it at the archive's copy, which replaces this file during the restore.
 OPENWA_GENERATED_ENV="${DATA_DIR:-./data}/.env.generated"

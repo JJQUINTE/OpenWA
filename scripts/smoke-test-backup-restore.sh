@@ -31,6 +31,8 @@
 #       and a `KEY: value` line is reported
 #   (u) a state or database target the restore cannot write stops it before any database is written
 #       (skipped as root)
+#   (v) a leftover STORAGE_LOCAL_PATH=./uploads the app cannot create falls back to ./data/media in
+#       both scripts, and a missing media dir is reported (skipped as root)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -949,6 +951,61 @@ if [ "$(id -u)" -ne 0 ]; then
   pass "(u) an unwritable state or database target stops the restore before anything is written"
 else
   echo "SKIP: (u) running as root, which ignores the permission bits this case relies on"
+fi
+
+echo ""
+echo "==> (v) a leftover STORAGE_LOCAL_PATH=./uploads follows the app's fallback to ./data/media"
+# v0.2.0 to v0.7.3 persisted ./uploads into data/.env.generated. In the image /app is not writable, so
+# the app cannot create it and keeps media in ./data/media instead; the scripts looked in ./uploads,
+# found nothing and left every media file out without a word. The read-only working directory stands
+# in for /app here.
+if [ "$(id -u)" -ne 0 ]; then
+  V="$WORK/v"
+  mkdir -p "$V/app/data/media" "$V/dst/data" "$V/bare/data"
+  make_fixture "$V/app/data/main.sqlite" "victor-main"
+  make_fixture "$V/app/data/openwa.sqlite" "victor-data"
+  printf 'victor-media\n' >"$V/app/data/media/a.jpg"
+  printf 'STORAGE_LOCAL_PATH=./uploads\n' >"$V/app/data/.env.generated"
+  chmod a-w "$V/app"
+  set +e
+  OUT_V="$(cd "$V/app" && BACKUP_DIR="$V/out" "$BACKUP" 2>&1)"
+  RC_V=$?
+  set -e
+  chmod u+w "$V/app"
+  if [ "$RC_V" -ne 0 ]; then
+    fail "(v) backup failed: $OUT_V"
+  fi
+  ARCHIVE_V="$(ls "$V"/out/openwa-backup-*.tar.gz)"
+  if ! tar -tzf "$ARCHIVE_V" | grep -qx './media/a.jpg'; then
+    fail "(v) backup left out the media the app keeps in ./data/media"
+  fi
+  if ! printf '%s' "$OUT_V" | grep -q 'STORAGE_LOCAL_PATH=./uploads'; then
+    fail "(v) the fallback from the leftover ./uploads was not reported"
+  fi
+  chmod a-w "$V/dst"
+  set +e
+  OUT_V="$(cd "$V/dst" && "$RESTORE" "$ARCHIVE_V" 2>&1)"
+  RC_V=$?
+  set -e
+  chmod u+w "$V/dst"
+  if [ "$RC_V" -ne 0 ]; then
+    fail "(v) restore failed: $OUT_V"
+  fi
+  if [ "$(cat "$V/dst/data/media/a.jpg" 2>/dev/null || true)" != "victor-media" ]; then
+    fail "(v) restore did not put the media back where the app reads it"
+  fi
+  # On a host where ./uploads can be created the app uses it, so the scripts keep it too, and a
+  # media dir that is not there is reported rather than skipped in silence.
+  make_fixture "$V/bare/data/main.sqlite" "victor-bare-main"
+  make_fixture "$V/bare/data/openwa.sqlite" "victor-bare-data"
+  printf 'STORAGE_LOCAL_PATH=./uploads\n' >"$V/bare/data/.env.generated"
+  OUT_V="$(cd "$V/bare" && BACKUP_DIR="$V/out-bare" "$BACKUP" 2>&1)"
+  if ! printf '%s' "$OUT_V" | grep -q 'WARN: ./uploads not found'; then
+    fail "(v) a missing media dir was skipped without a warning"
+  fi
+  pass "(v) a leftover ./uploads falls back like the app, and missing media is reported"
+else
+  echo "SKIP: (v) running as root, which ignores the permission bits this case relies on"
 fi
 
 echo ""

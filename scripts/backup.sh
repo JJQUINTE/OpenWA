@@ -67,7 +67,7 @@ MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
 DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
 SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
 BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+MEDIA_DIR="$(openwa_media_dir)"
 # Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
 # registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
 # too, or the archive silently omits the plugin packages.
@@ -187,6 +187,8 @@ fi
 if [ -d "$MEDIA_DIR" ]; then
   log "Backing up local media"
   cp -pRH "$MEDIA_DIR" "$STAGE/media"
+else
+  log "WARN: $MEDIA_DIR not found; skipping local media"
 fi
 
 if [ -d "$PLUGIN_PACKAGES_DIR" ]; then
