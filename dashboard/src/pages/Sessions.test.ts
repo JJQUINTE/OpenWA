@@ -104,6 +104,7 @@ function resetFetchCalls(): void {
   qrGate = null;
   listGate = null;
   pairingGate = null;
+  afterMutation = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -139,6 +140,9 @@ let qrGate: { sessionId: string; until: Promise<void> } | null = null;
 let listGate: Promise<void> | null = null;
 // When set, POST .../pairing-code answers only once this settles.
 let pairingGate: Promise<void> | null = null;
+// When set, runs on the macrotask after a create or delete has answered: a push that lands before
+// React has rendered what that answer wrote.
+let afterMutation: (() => void) | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -180,6 +184,7 @@ function installFetchStub(): void {
     }
 
     if (method === 'POST' && path === '/api/sessions') {
+      if (afterMutation) setImmediate(afterMutation);
       const payload = body as { name?: string; proxyUrl?: string; proxyType?: string } | undefined;
       const name = payload?.name ?? 'unnamed';
       return Promise.resolve(
@@ -201,6 +206,7 @@ function installFetchStub(): void {
         : Promise.resolve(jsonResponse({ message: 'not found' }, 404));
     }
     if (method === 'DELETE' && sessionIdMatch) {
+      if (afterMutation) setImmediate(afterMutation);
       return Promise.resolve(new Response(null, { status: 204 }));
     }
 
@@ -1259,6 +1265,41 @@ test('a list read in flight does not undo a create, a stop or a delete', async (
     assert.ok(!screen.queryByText('stale-engine'), 'a read older than the delete brought the row back');
   } finally {
     Object.assign(SESSION_QR, qrRow);
+    if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
+  }
+});
+
+// A push for another session, handled before React renders a create or a delete, must patch the list
+// that write produced rather than the one on screen before it.
+test('a status push landing right after a create or a delete keeps what it wrote', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const staleIndex = SESSIONS.indexOf(SESSION_STALE_ENGINE);
+  try {
+    renderSessions();
+    await screen.findByText('new-device');
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 50)));
+
+    // `authenticating` starts no list read, so nothing would repair the list afterwards.
+    afterMutation = () => pushSessionStatus(SESSION_RECONNECTING.id, 'authenticating');
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g., marketing-bot'), { target: { value: 'probe-bot' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => assert.ok(findFetchCall('POST', '/api/sessions')));
+    await settle();
+    assert.ok(screen.queryByText('probe-bot'), 'the push dropped the created card');
+
+    afterMutation = () => pushSessionStatus(SESSION_RECONNECTING.id, 'qr_ready');
+    const staleCard = screen.getByText('stale-engine').closest('.session-card') as HTMLElement;
+    fireEvent.click(within(staleCard).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => assert.ok(findFetchCall('DELETE', `/api/sessions/${SESSION_STALE_ENGINE.id}`)));
+    await settle();
+    assert.ok(!screen.queryByText('stale-engine'), 'the push brought the deleted card back');
+  } finally {
+    afterMutation = null;
     if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
   }
 });
