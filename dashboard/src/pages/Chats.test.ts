@@ -1359,6 +1359,42 @@ test('a search hit in a session that connected after the page loaded opens it', 
   await within(container.querySelector('.room-header') as HTMLElement).findByText('Alice');
 });
 
+test("a search hit in another session opens that session's chat, not the one the previous list held", async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  twoSessions = true;
+  // A chat both accounts list, under a different name in each.
+  searchHits = [{ ...THIRD_SESSION_HIT, sessionId: SESSION_2.id }];
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id
+      ? Promise.resolve(jsonResponse([CHAT, CHAT_2]))
+      : secondGate.then(() => jsonResponse([{ ...CHAT, name: 'Alice on two' }]));
+  try {
+    const { container } = renderChats();
+    // A room already open is what re-runs the hit's lookup while session 1's list is still held.
+    fireEvent.click(await screen.findByText('Carol'));
+    await waitFor(() => assert.ok(container.querySelector('.room-header'), 'Carol did not open'));
+
+    await clickSearchHit(container);
+    const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+    await waitFor(() => assert.equal(select.value, SESSION_2.id));
+    await flush();
+    releaseSecond();
+
+    const header = await waitFor(() => {
+      const found = container.querySelector('.room-header');
+      assert.ok(found, "the hit's chat did not open");
+      return found as HTMLElement;
+    });
+    await within(header).findByText('Alice on two');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test('changing the UI language keeps the selected session and the open chat', async () => {
   const { screen, fireEvent, within, waitFor, act } = rtl;
   const { default: i18n } = await import('../i18n/index.ts');

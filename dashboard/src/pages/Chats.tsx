@@ -783,9 +783,11 @@ export function Chats() {
   );
 
   // After a session switch the chats list reloads — pick up the pending chat once it appears.
+  // While the switch's list is loading, `chats` still holds the previous session's list, which can
+  // list the same id (a shared group or contact) as a Chat object from the other account.
   useEffect(() => {
     const pending = pendingHitRef.current;
-    if (!pending || activeChat?.id === pending.chatId) return;
+    if (!pending || loadingChats || activeChat?.id === pending.chatId) return;
     const chat = chats.find(c => c.id === pending.chatId);
     if (chat) {
       if (chat.kind === 'channel') {
@@ -803,7 +805,7 @@ export function Chats() {
         setActiveStatusContactId(null);
       }
     }
-  }, [chats, activeChat, switchTab]);
+  }, [chats, loadingChats, activeChat, switchTab]);
 
   // Best-effort scroll to the hit message. Runs as a layout effect (after useChatScrollPosition's
   // own restore on the same commit) so it overrides the bottom/saved jump with no visible flash.
