@@ -6,6 +6,51 @@
         "operationId": "AuditController_findAll",
         "parameters": [
           {
+            "name": "sessionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "apiKeyId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "severity",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "info",
+                "warn",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "name": "action",
             "required": false,
             "in": "query",
@@ -54,51 +99,6 @@
               ],
               "type": "string"
             }
-          },
-          {
-            "name": "severity",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "enum": [
-                "info",
-                "warn",
-                "error"
-              ],
-              "type": "string"
-            }
-          },
-          {
-            "name": "sessionId",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "apiKeyId",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
           }
         ],
         "responses": {
@@ -111,6 +111,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "action or severity is repeated or not one of the listed values"
           }
         },
         "summary": "List audit logs with optional filters",

@@ -5262,7 +5262,7 @@ List audit-log entries, newest first. API-key lifecycle changes, session lifecyc
 
 Unlike the other list routes this one is **not** a bare array: `data` is the page and `total` the unpaginated match count. Nullable columns (`apiKeyId`, `sessionId`, `metadata`, `errorMessage`, …) are `null` when the event has no such dimension. `userAgent` and `statusCode` are reserved columns nothing populates, so rows carry `null`. `method` and `path` are populated only where an emitter passes them explicitly (API-key auth failures, key lifecycle changes, queue-board mutations); session/message-flow rows like the sample leave them `null`.
 
-**Errors:** `401` missing/invalid API key · `403` key role below ADMIN
+**Errors:** `400` repeated `action` or `severity`, or a value not in its list · `401` missing/invalid API key · `403` key role below ADMIN
 
 ### 6.4.11 Administration (Infrastructure, Plugins, MCP)
 
