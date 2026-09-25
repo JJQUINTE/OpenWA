@@ -238,7 +238,14 @@ export class BaileysLifecycle {
     if (this.intentionalClose) {
       return;
     }
-    this.host.config.chatStateStore?.forgetAbsent(this.host.config.sessionId);
+    const chatStateStore = this.host.config.chatStateStore;
+    if (chatStateStore) {
+      await chatStateStore.refreshSession(this.host.config.sessionId).catch(() => undefined);
+      // A teardown during that read must still keep this adapter from opening a socket.
+      if (this.intentionalClose) {
+        return;
+      }
+    }
 
     // An install that skipped a Baileys patch fails later with errors that name no cause: an
     // app-state resync that never terminates, a newsletter create that cannot parse its reply.

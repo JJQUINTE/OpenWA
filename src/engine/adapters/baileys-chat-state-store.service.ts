@@ -25,8 +25,8 @@ export interface ChatStateStore {
   clearSession(sessionId: string): Promise<void>;
   /** Forget the named chats of one session (a deleted chat: one a later message re-creates starts clean). */
   forget(sessionId: string, chatIds: string[]): Promise<void>;
-  /** Re-read a session's chats known to have no row (a start: another node may have written them since). */
-  forgetAbsent(sessionId: string): void;
+  /** Re-read one session's rows from the table (a start: another node may have written them since). */
+  refreshSession(sessionId: string): Promise<void>;
 }
 
 const DEFAULT_STATE: ChatStateValue = { muteEndTime: null, archived: false, pinned: false };
@@ -198,10 +198,41 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     );
   }
 
-  forgetAbsent(sessionId: string): void {
+  /**
+   * Replaces the session's cached rows, the ones known absent included, with what the table holds now,
+   * so the first chat list after a start already reads it; a row changed or deleted while another node
+   * held the session would otherwise stay cached. Awaited before the socket opens: dropping the entries
+   * and warming them lazily instead would serve that first list from the live record, which carries no
+   * mute, archive or pin after a reconnect. A failed read keeps the cached rows, which are no worse
+   * than before, and only makes the absent ones read through again.
+   */
+  async refreshSession(sessionId: string): Promise<void> {
     const prefix = `${sessionId}${SEP}`;
+    let rows: ChatState[] | undefined;
+    try {
+      rows = await this.repo.find({
+        where: { sessionId },
+        order: { updatedAt: 'DESC' },
+        take: this.maxEntries > 0 ? this.maxEntries : undefined,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not refresh chat states for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     for (const k of [...this.absent]) {
       if (k.startsWith(prefix)) this.absent.delete(k);
+    }
+    if (!rows) return;
+    for (const k of [...this.states.keys()]) {
+      if (k.startsWith(prefix)) this.states.delete(k);
+    }
+    for (const row of rows) {
+      this.index(this.key(sessionId, row.chatId), {
+        muteEndTime: row.muteEndTime,
+        archived: row.archived,
+        pinned: row.pinned,
+      });
     }
   }
 

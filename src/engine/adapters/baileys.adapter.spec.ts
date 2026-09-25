@@ -4618,7 +4618,7 @@ describe('BaileysAdapter store-backed ops', () => {
       reload: jest.fn().mockResolvedValue(undefined),
       clearSession: jest.fn(),
       forget: jest.fn().mockResolvedValue(undefined),
-      forgetAbsent: jest.fn(),
+      refreshSession: jest.fn().mockResolvedValue(undefined),
     };
     const linked = async (onDisconnected = jest.fn()): Promise<BaileysAdapter> => {
       // A failing clear must not change how either unlink ends.
@@ -4636,9 +4636,44 @@ describe('BaileysAdapter store-backed ops', () => {
     };
 
     // Another node may have written rows while it held the session (takeover).
-    it('re-reads them on start for chats found without a row before', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const makeSocket = (): jest.Mock => (jest.requireMock('@whiskeysockets/baileys') as { default: jest.Mock }).default;
+
+    it('re-reads them on start, before the socket opens', async () => {
+      makeSocket().mockClear();
+      let opened = false;
+      chatStateStore.refreshSession.mockImplementationOnce(() => {
+        opened = makeSocket().mock.calls.length > 0;
+        return Promise.resolve();
+      });
       await linked();
-      expect(chatStateStore.forgetAbsent).toHaveBeenCalledWith('sess-1');
+      expect(chatStateStore.refreshSession).toHaveBeenCalledWith('sess-1');
+      expect(opened).toBe(false);
+    });
+
+    it('does not open a socket when the session is stopped during the re-read', async () => {
+      makeSocket().mockClear();
+      let finish!: () => void;
+      chatStateStore.refreshSession.mockReturnValueOnce(new Promise<void>(r => (finish = r)));
+      const adapter = new BaileysAdapter({
+        sessionId: 'sess-1',
+        dbSessionId: 'db-uuid-1',
+        authDir: './data/baileys',
+        messageStore: fakeStore,
+        chatStateStore,
+      });
+      const started = adapter.initialize({});
+      await adapter.disconnect();
+      finish();
+      await started;
+      expect(makeSocket()).not.toHaveBeenCalled();
+      expect(adapter.getStatus()).toBe(EngineStatus.DISCONNECTED);
+    });
+
+    it('still starts when the re-read fails', async () => {
+      chatStateStore.refreshSession.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+      const adapter = await linked();
+      expect(adapter.getStatus()).toBe(EngineStatus.READY);
     });
 
     it('clears them on logout', async () => {

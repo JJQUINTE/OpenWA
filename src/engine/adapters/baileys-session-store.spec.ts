@@ -27,7 +27,9 @@ class FakeChatStateStore implements ChatStateStore {
     for (const c of chatIds) this.rows.delete(this.key(s, c));
     return Promise.resolve();
   }
-  forgetAbsent(): void {}
+  refreshSession(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe('BaileysSessionStore', () => {
