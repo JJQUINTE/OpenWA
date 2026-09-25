@@ -198,6 +198,14 @@ if [ -d "$PLUGIN_PACKAGES_DIR" ]; then
   cp -pRH "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
 fi
 
+# With PLUGINS_DIR unset the app also loads packages from ./plugins, its default up to 0.12.1 (see
+# plugin-package-scanner.ts). The archive does not carry that directory, so say so.
+if [ -z "$(openwa_resolve PLUGINS_DIR '')" ] &&
+  [ -n "$(find -H ./plugins -mindepth 2 -maxdepth 2 -name manifest.json ! -path './plugins/.*' 2>/dev/null)" ]; then
+  log "WARN: ./plugins holds plugin packages the app still loads, and this archive does not carry them;"
+  log "      move them into $PLUGIN_PACKAGES_DIR, or set PLUGINS_DIR=./plugins, and back up again"
+fi
+
 if [ -d "$PLUGIN_STATE_DIR" ]; then
   log "Backing up plugin registry and persisted state"
   cp -pRH "$PLUGIN_STATE_DIR" "$STAGE/plugin-state"

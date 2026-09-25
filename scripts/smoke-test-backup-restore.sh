@@ -36,6 +36,7 @@
 #   (w) the default colocated plugins dir is rebuilt from both archive members, even when they differ
 #   (x) a relocated BOOTSTRAP_KEY_FILE is archived and restored there, and an unwritable one is refused
 #       before any database is written (that half skipped as root)
+#   (y) plugin packages in the legacy ./plugins, which the archive does not carry, are reported
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -1111,6 +1112,25 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
 fi
 pass "(x) BOOTSTRAP_KEY_FILE is honoured by backup and by restore"
+
+echo ""
+echo "==> (y) plugin code in the legacy ./plugins is reported, since the archive does not carry it"
+# With PLUGINS_DIR unset the app still loads packages from ./plugins, the default up to 0.12.1, but
+# the archive holds only <data dir>/plugins, so a restore brings back a registry with no code.
+Y="$WORK/y"
+mkdir -p "$Y/data" "$Y/plugins/legacy-bot"
+make_fixture "$Y/data/main.sqlite" "yankee-main"
+make_fixture "$Y/data/openwa.sqlite" "yankee-data"
+printf '{"id":"legacy-bot"}' >"$Y/plugins/legacy-bot/manifest.json"
+OUT_Y="$(cd "$Y" && BACKUP_DIR="$Y/out" "$BACKUP" 2>&1)"
+if ! printf '%s' "$OUT_Y" | grep -q 'WARN: ./plugins holds plugin packages'; then
+  fail "(y) plugin code in the legacy ./plugins was left out without a warning"
+fi
+OUT_Y="$(cd "$Y" && PLUGINS_DIR="$Y/plugins" BACKUP_DIR="$Y/out2" "$BACKUP" 2>&1)"
+if printf '%s' "$OUT_Y" | grep -q 'WARN: ./plugins'; then
+  fail "(y) the legacy ./plugins was reported although PLUGINS_DIR names the plugin dir"
+fi
+pass "(y) packages in the legacy ./plugins are reported when PLUGINS_DIR is unset"
 
 echo ""
 echo "All smoke tests passed!"
