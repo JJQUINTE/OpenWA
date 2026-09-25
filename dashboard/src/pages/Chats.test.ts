@@ -166,6 +166,9 @@ let sendGate: Promise<void> | null = null;
 // Hold Alice's first page open, so a test can write to the thread before it has any data.
 let firstPageGate: Promise<void> | null = null;
 
+// Rows Alice's first page serves after the fixture rows, so a test can put its own message in the thread.
+let firstPageExtra: ChatMessage[] = [];
+
 // The id a text send answers with. whatsapp-web.js answers '' when it cannot read the sent id back.
 let sendTextId = 'wamid.out.1';
 
@@ -319,7 +322,10 @@ function installFetchStub(): void {
         return gate ? gate.then(answer) : Promise.resolve(answer());
       }
       const firstPage = () =>
-        jsonResponse({ messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2], total: 3 });
+        jsonResponse({
+          messages: [DB_MESSAGE, OMITTED_MEDIA_MESSAGE, OMITTED_MEDIA_MESSAGE_2, ...firstPageExtra],
+          total: 3 + firstPageExtra.length,
+        });
       return firstPageGate ? firstPageGate.then(firstPage) : Promise.resolve(firstPage());
     }
     // The media route answers bytes, not JSON — Content-Disposition: attachment.
@@ -406,6 +412,7 @@ afterEach(() => {
   olderPageGate = null;
   sendGate = null;
   firstPageGate = null;
+  firstPageExtra = [];
   sendTextId = 'wamid.out.1';
   olderPageFails = false;
   chatsResponder = null;
@@ -1509,6 +1516,50 @@ test('an omitted media bubble fetches the bytes from the per-message media route
  * first, and then whichever settled first cleared the other's state, re-enabling a button whose
  * download was still open and letting a later failure mark the wrong bubble.
  */
+test('the media viewer saves an image under its file name, not its caption', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  firstPageExtra = [
+    {
+      ...DB_MESSAGE,
+      id: 'db-img',
+      waMessageId: 'wamid.img',
+      body: 'Look at this!',
+      type: 'image',
+      timestamp: 1_700_000_003,
+      createdAt: new Date(1_700_000_003_000).toISOString(),
+      metadata: { media: { mimetype: 'image/png', filename: 'photo.png', data: 'http://localhost/media/photo.png' } },
+    },
+  ];
+  const { container } = renderChats();
+  fireEvent.click(await screen.findByText('Alice'));
+  const image = await waitFor(() => {
+    const found = container.querySelector('.room-messages img.chat-image-media');
+    assert.ok(found, 'the image bubble did not render');
+    return found;
+  });
+  fireEvent.click(image);
+  const download = await screen.findByRole('button', { name: 'Download' });
+
+  const links: HTMLAnchorElement[] = [];
+  const createElementOriginal = document.createElement;
+  document.createElement = ((tag: string, options?: ElementCreationOptions) => {
+    const element = createElementOriginal.call(document, tag, options);
+    if (tag === 'a') {
+      // Stop the synthetic click from navigating jsdom; only the name matters here.
+      element.dispatchEvent = () => true;
+      links.push(element as HTMLAnchorElement);
+    }
+    return element;
+  }) as typeof document.createElement;
+  try {
+    fireEvent.click(download);
+  } finally {
+    document.createElement = createElementOriginal;
+  }
+  assert.equal(links.length, 1, 'expected one download link');
+  assert.equal(links[0].download, 'photo.png');
+});
+
 test('two media downloads in flight do not clobber each other', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
