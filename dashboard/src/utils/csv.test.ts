@@ -35,3 +35,12 @@ test('structural quoting is unchanged for commas, quotes and newlines', () => {
   assert.equal(escapeCsvCell('say "hi"'), '"say ""hi"""');
   assert.equal(escapeCsvCell('line1\nline2'), '"line1\nline2"');
 });
+
+test('a bare carriage return is quoted, like a newline', () => {
+  assert.equal(escapeCsvCell('a\rb'), '"a\rb"');
+});
+
+test('cells starting with a tab or carriage return are apostrophe-prefixed', () => {
+  assert.equal(escapeCsvCell('\t=1+1'), `'\t=1+1`);
+  assert.equal(escapeCsvCell('\r=1'), `"'\r=1"`);
+});
