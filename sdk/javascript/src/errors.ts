@@ -77,7 +77,8 @@ export class OpenWANotFoundError extends OpenWAApiError {}
 /** 409 Conflict — typically an {@link EngineNotReadyError} from the backend. */
 export class OpenWAConflictError extends OpenWAApiError {}
 /**
- * 429 Too Many Requests — rate limited. The global rate limiter's 429 clears within seconds; its
+ * 429 Too Many Requests — rate limited. The global rate limiter's 429 lifts when its window
+ * expires (seconds for the per-second tier, up to an hour for the hourly tier by default); its
  * delay is only in the `Retry-After` response header, which this error does not carry. A 429 whose
  * `body` has `code: 'SEND_PACING_LIMITED'` is not transient: do not retry it before
  * `body.retryAfterSeconds`, which can be hours.

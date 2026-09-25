@@ -29,10 +29,12 @@ var (
 	// ErrConflict is returned for a 409 (typically an engine-not-ready condition).
 	ErrConflict = errors.New("openwa: conflict")
 	// ErrRateLimited is returned for a 429 (too many requests). The global rate
-	// limiter's 429 clears within seconds; its delay is only in the Retry-After
-	// response header, which APIError does not carry but WithRetry honors. A
-	// 429 whose Body has code "SEND_PACING_LIMITED" is not transient: do not
-	// retry it before the body's retryAfterSeconds, which can be hours.
+	// limiter's 429 lifts when its window expires (seconds for the per-second
+	// tier, up to an hour for the hourly tier by default); its delay is only in
+	// the Retry-After response header, which APIError does not carry but
+	// WithRetry honors. A 429 whose Body has code "SEND_PACING_LIMITED" is not
+	// transient: do not retry it before the body's retryAfterSeconds, which can
+	// be hours.
 	ErrRateLimited = errors.New("openwa: rate limited")
 	// ErrNotImplemented is returned for a 501 (the active engine does not
 	// support this operation).

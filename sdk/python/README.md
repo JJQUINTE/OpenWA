@@ -74,11 +74,12 @@ A non-2xx response raises a typed `OpenWAApiError` subclass — `OpenWAAuthError
 `OpenWAServiceUnavailableError` (503) — each carrying `.status` and the parsed `.body`. A
 timeout raises `OpenWATimeoutError`. 503 is transient, but a catalog 503 can persist because
 WhatsApp may never answer that query, so bound any retry. A 429 from the global rate limiter
-clears within seconds; its delay is only in the `Retry-After` response header, which the error
-does not carry. A 429 whose body has `code: "SEND_PACING_LIMITED"` is not transient: do not
-retry it before the body's `retryAfterSeconds`, which can be hours. In a routed deployment only
-503 proves the request was never carried out: a forward that fails after the request reached
-the owner node answers 502 or 504.
+lifts when its window expires (seconds for the per-second tier, up to an hour for the hourly
+tier by default); its delay is only in the `Retry-After` response header, which the error does
+not carry. A 429 whose body has `code: "SEND_PACING_LIMITED"` is not transient: do not retry it
+before the body's `retryAfterSeconds`, which can be hours. In a routed deployment only 503
+proves the request was never carried out: a forward that fails after the request reached the
+owner node answers 502 or 504.
 
 ```python
 from openwa import OpenWANotFoundError
