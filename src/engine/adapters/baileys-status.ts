@@ -38,7 +38,9 @@ export class BaileysStatus {
   }
 
   postTextStatus(text: string, options: StatusPostOptions): Promise<StatusResult> {
-    return this.postStatus({ text }, options);
+    // `linkPreview: null` is Baileys' explicit "no preview": with the key absent it runs its own
+    // generator (link-preview-js, unfixed SSRF advisory) on any URL in the status text.
+    return this.postStatus({ text, linkPreview: null }, options);
   }
 
   postImageStatus(media: MediaInput, options: StatusPostOptions): Promise<StatusResult> {

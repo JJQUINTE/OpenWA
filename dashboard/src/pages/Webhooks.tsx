@@ -122,7 +122,8 @@ export function Webhooks() {
   };
 
   const handleCreate = async () => {
-    if (!newWebhook.url || !newWebhook.sessionId) return;
+    // The gateway saves every create it receives, so a double click would register the webhook twice.
+    if (createMutation.isPending || !newWebhook.url || !newWebhook.sessionId) return;
     try {
       await createMutation.mutateAsync({
         sessionId: newWebhook.sessionId,
@@ -278,7 +279,7 @@ export function Webhooks() {
               <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                 {t('common.cancel')}
               </button>
-              <button className="btn-primary" onClick={handleCreate}>
+              <button className="btn-primary" onClick={handleCreate} disabled={createMutation.isPending}>
                 {t('common.create')}
               </button>
             </>

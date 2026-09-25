@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } fr
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
-import { applyIncomingToChatList } from '../utils/chatList';
+import { applyIncomingToChatList, promoteChatWithSnippet } from '../utils/chatList';
 import { filterChats, filterChannels, groupStatusesByContact } from '../utils/chatFilters';
 import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare } from 'lucide-react';
 import { useProfilePicture } from '../hooks/useProfilePicture';
@@ -335,11 +335,21 @@ export function Chats() {
         showLoadError('chats.errors.loadChats', err);
         setChats([]);
       } finally {
-        if (sessionId === chatsSessionRef.current) setLoadingChats(false);
+        // Only the call that raised the spinner clears it: a background refetch settling first would
+        // otherwise uncover the previous session's list while the switch's own load is still out.
+        if (!background && sessionId === chatsSessionRef.current) setLoadingChats(false);
       }
     },
     [showLoadError],
   );
+
+  // A send resolves after the await, possibly once another session's list is on screen. That list can
+  // hold a chat with the same id (a group or contact both accounts share), so the promote only applies
+  // to the session the send started in.
+  const promoteSentChat = useCallback((sessionId: string, chatId: string, snippet: string, sentAt: number) => {
+    if (sessionId !== chatsSessionRef.current) return;
+    setChats(prev => promoteChatWithSnippet(prev, chatId, snippet, sentAt));
+  }, []);
 
   useEffect(() => {
     if (selectedSessionId) {
@@ -723,7 +733,25 @@ export function Chats() {
   const pendingHitRef = useRef<{ chatId: string; waMessageId: string } | null>(null);
 
   const handleSearchHit = useCallback(
-    (hit: SearchHit) => {
+    async (hit: SearchHit) => {
+      // Search covers stored messages of every session, but the page can only open a ready one, and
+      // its list is read on mount. A session missing from it is looked up again, since it may have
+      // connected since; one that still is not ready is refused rather than selected with no chats.
+      if (hit.sessionId !== selectedSessionId && !sessions.some(s => s.id === hit.sessionId)) {
+        let ready: Session[];
+        try {
+          ready = (await sessionApi.list()).filter(s => s.status === 'ready');
+        } catch (err) {
+          showLoadError('chats.errors.loadSessions', err);
+          return;
+        }
+        if (!ready.some(s => s.id === hit.sessionId)) {
+          pendingHitRef.current = null;
+          showWarningToast(t('chats.errors.searchHitSessionNotReady'));
+          return;
+        }
+        setSessions(ready);
+      }
       pendingHitRef.current = { chatId: hit.chatId, waMessageId: hit.waMessageId };
       if (hit.sessionId !== selectedSessionId) {
         // Switching session triggers loadChats; the effect below selects the chat once the list lands.
@@ -752,7 +780,7 @@ export function Chats() {
         }
       }
     },
-    [selectedSessionId, chats, switchTab],
+    [selectedSessionId, sessions, chats, switchTab, showLoadError, showWarningToast, t],
   );
 
   // After a session switch the chats list reloads — pick up the pending chat once it appears.
@@ -1024,7 +1052,7 @@ export function Chats() {
                   replyingTo={replyingTo}
                   setReplyingTo={setReplyingTo}
                   onMessageAppended={onMessageAppended}
-                  setChats={setChats}
+                  onSent={promoteSentChat}
                   messageInput={messageInput}
                   setMessageInput={setMessageInput}
                   attachment={attachment}

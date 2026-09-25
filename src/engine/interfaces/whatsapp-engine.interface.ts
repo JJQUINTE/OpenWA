@@ -1090,13 +1090,14 @@ export interface MessageOperationsCapability {
  */
 export interface ChatHistoryCapability {
   /**
-   * Read a chat's recent messages, newest first. When `includeMedia` downloads blobs, an optional
-   * `mediaMaxBytes` tightens the declared-size pre-gate below the global MEDIA_DOWNLOAD_MAX_BYTES —
+   * Read a chat's most recent `limit` messages, returned oldest first (ascending timestamp). When
+   * `includeMedia` downloads blobs, an optional `mediaMaxBytes` tightens the declared-size pre-gate
+   * below the global MEDIA_DOWNLOAD_MAX_BYTES —
    * the status seed uses it to skip downloads the store would discard as over-cap anyway.
-   * Inlined media is additionally bounded in aggregate (CHAT_HISTORY_MEDIA_BUDGET_BYTES): once the
-   * running base64 total crosses the budget, later media messages carry the `omitted` marker instead
-   * of a download. An optional `signal` (e.g. client disconnect) stops the read loop early; the
-   * messages collected so far are returned.
+   * Inlined media is additionally bounded in aggregate (CHAT_HISTORY_MEDIA_BUDGET_BYTES), spent in
+   * that same order: once the running base64 total crosses the budget, the newer media messages
+   * carry the `omitted` marker instead of a download. An optional `signal` (e.g. client disconnect)
+   * stops the read loop early; the messages collected so far are returned.
    */
   getChatHistory(
     chatId: string,

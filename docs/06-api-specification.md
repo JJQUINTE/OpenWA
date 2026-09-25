@@ -926,12 +926,12 @@ Mark a chat as read/seen.
 
 **Request body** — `MarkChatReadDto`
 
-| Field        | Type     | Required | Constraints                                                                                   | Description                                                                                                 |
-| ------------ | -------- | -------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `chatId`     | string   | Yes      | `@IsString`; `@IsNotEmpty`; `@Matches(/^[^\s@]+@[^\s@]+$/)` (localpart@host, no whitespace)   | Engine-native JID, e.g. `1234567890@c.us` (wwebjs) or `1234@s.whatsapp.net` (Baileys)                       |
-| `messageIds` | string[] | No       | `@IsArray`; `@ArrayNotEmpty`; `@ArrayMaxSize(100)`; each a non-empty token with no whitespace | Messages to acknowledge. Omit the field to acknowledge only the newest message; an empty array is rejected. |
+| Field        | Type     | Required | Constraints                                                                                   | Description                                                                                                          |
+| ------------ | -------- | -------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `chatId`     | string   | Yes      | `@IsString`; `@IsNotEmpty`; `@Matches(/^[^\s@]+@[^\s@]+$/)` (localpart@host, no whitespace)   | Engine-native JID, e.g. `1234567890@c.us` (wwebjs) or `1234@s.whatsapp.net` (Baileys)                                |
+| `messageIds` | string[] | No       | `@IsArray`; `@ArrayNotEmpty`; `@ArrayMaxSize(100)`; each a non-empty token with no whitespace | Messages to acknowledge. Omit the field to acknowledge only the newest received message; an empty array is rejected. |
 
-Baileys acknowledges individual messages rather than chats, and the receipt enumerates ids instead of carrying a read-up-to watermark. Without `messageIds` only the newest message the engine still holds in memory gets a receipt, so a burst leaves its earlier messages unread and a session restarted since the message arrived has nothing to acknowledge at all. Each supplied id is resolved through the message store, which is what carries the `participant` a group receipt needs. Ignored by whatsapp-web.js, whose own `sendSeen` is chat-level.
+Baileys acknowledges individual messages rather than chats, and the receipt enumerates ids instead of carrying a read-up-to watermark. Without `messageIds` only the newest received message the engine still holds in memory gets a receipt, so a burst leaves its earlier messages unread and a session restarted since the message arrived has nothing to acknowledge at all. Each supplied id is resolved through the message store, which is what carries the `participant` a group receipt needs. Ignored by whatsapp-web.js, whose own `sendSeen` is chat-level.
 
 ```json
 { "chatId": "1234567890@c.us", "messageIds": ["3EB0C767D26B8A3F1A2B", "3EB0C767D26B8A3F1A2C"] }
@@ -946,9 +946,10 @@ Baileys acknowledges individual messages rather than chats, and the receipt enum
 Returns HTTP `200`, matching the OpenAPI contract.
 
 > **`success: false` is a real outcome on the Baileys engine.** The read receipt is sent against the
-> chat's last known message, so a chat the session has seen no message in is reported as declined
-> rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no local
-> history, so it never produces this outcome.
+> newest message the chat received, so a chat the session has received no message in (one holding
+> only the account's own sends included) is reported as declined rather than marked read. The
+> whatsapp-web.js engine reads the chat from the page and needs no local history, so it never
+> produces this outcome.
 
 **Errors:** `400` validation, or session not started · `401` · `403` · `404` session not found · `409` the session is not connected (engine exists but is not `ready`) · `503` WhatsApp did not answer within the request budget, or the engine’s browser page died — the change may or may not have been applied
 
@@ -1309,7 +1310,8 @@ Fetch chat history live from WhatsApp for a chat, bypassing the local DB.
 
 **Response** `200`
 
-Returns a bare array of engine-neutral `IncomingMessage` objects:
+Returns a bare array of engine-neutral `IncomingMessage` objects: the chat's most recent `limit` messages, oldest first
+(ascending `timestamp`).
 
 ```json
 [
@@ -3709,17 +3711,16 @@ Get a single channel/newsletter by its id.
   "description": "Release notes and tips",
   "inviteCode": "ABC123xyz",
   "subscriberCount": 1042,
-  "picture": "https://example.com/ch.jpg",
   "verified": true,
   "createdAt": 1717200000
 }
 ```
 
-> **`picture` and `createdAt` are Baileys-only, and the lookup reaches further there.** The
-> whatsapp-web.js engine exposes no per-id channel lookup, so the adapter scans the subscribed-channel
-> list: a channel the account does not follow answers `404` even though it exists, and those two
-> fields are always absent from the payload. The Baileys engine resolves any channel by id and fills
-> both.
+> **`createdAt` is Baileys-only, and the lookup reaches further there.** The whatsapp-web.js engine
+> exposes no per-id channel lookup, so the adapter scans the subscribed-channel list: a channel the
+> account does not follow answers `404` even though it exists, and `createdAt` is always absent from
+> the payload. The Baileys engine resolves any channel by id and fills `createdAt`. Neither engine
+> fills `picture`: WhatsApp reports the channel picture as a media path, not a URL.
 
 **Errors:** `400` `Session is not started` · `401` missing/invalid API key · `404` `Channel <channelId> not found` (engine returned null; on whatsapp-web.js this includes a channel the account does not follow) · `409` conflict or engine not ready (retryable) · `503` session not ready or dependency unavailable (retryable)
 
@@ -3902,7 +3903,6 @@ Subscribe to a channel using its invite code.
   "description": "Release notes and tips",
   "inviteCode": "ABC123xyz",
   "subscriberCount": 1042,
-  "picture": "https://example.com/ch.jpg",
   "verified": true,
   "createdAt": 1717200000
 }
@@ -5334,15 +5334,17 @@ List available WhatsApp engine plugins.
 [
   {
     "id": "whatsapp-web.js",
-    "name": "WhatsApp Web.js",
+    "name": "WhatsApp Web.js Engine",
     "enabled": true,
-    "features": ["send", "receive", "media", "groups"],
+    "features": ["text-messages", "media-messages", "group-management", "labels", "channels", "status-updates"],
     "library": { "name": "whatsapp-web.js", "version": "1.34.7" }
   }
 ]
 ```
 
-`library` is optional and may be omitted per engine.
+`features` is shortened here. It is the engine plugin's own `getFeatures()` list, so it differs per engine:
+Baileys adds `catalog` and omits `labels`, while whatsapp-web.js omits `catalog`. `library` is optional and may be
+omitted per engine.
 
 **Errors:** `401` · `403`
 
@@ -6570,7 +6572,11 @@ the receive path and runs at most once per message (engine re-fires are deduplic
 
 `conditions` uses the **webhook filter format** (`message` family — see 6.4.8): a flat AND list of
 conditions over `sender`, `recipient`, `chatId`, `body`, `type`, `isGroup`, `kind`, `fromMe`, `hasMedia`, `mentions`.
-Omitted or empty conditions match every inbound message.
+Omitted or empty conditions match every inbound message except channel, broadcast-list and status
+messages: a rule answers those only when its conditions include a `kind` condition that matches
+them (for example `kind is channel`). A rule without one skips those chats, because a reply into a
+channel the account administers is published to every follower, and anywhere else WhatsApp refuses
+it.
 
 Loop safety: a rule never answers the account's own (`fromMe`) messages, messages older than
 5 minutes get no automated answer (so a reconnect never burst-replies the offline-queued backlog),
@@ -6586,13 +6592,13 @@ Create a rule. **Auth:** API key (OPERATOR)
 
 **Request body**
 
-| Field           | Type    | Required | Description                                                        |
-| --------------- | ------- | -------- | ------------------------------------------------------------------ |
-| name            | string  | yes      | Display name, max 100 chars.                                       |
-| replyText       | string  | yes      | Reply content, max 4096 chars (the send-text limit).               |
-| conditions      | object  | no       | Webhook-filter conditions (`message` family). Omitted = match all. |
-| cooldownSeconds | number  | no       | Per-chat quiet period, 0–86400. Default `60`.                      |
-| enabled         | boolean | no       | Default `true`.                                                    |
+| Field           | Type    | Required | Description                                                                                 |
+| --------------- | ------- | -------- | ------------------------------------------------------------------------------------------- |
+| name            | string  | yes      | Display name, max 100 chars.                                                                |
+| replyText       | string  | yes      | Reply content, max 4096 chars (the send-text limit).                                        |
+| conditions      | object  | no       | Webhook-filter conditions (`message` family). Omitted = match all (see above for channels). |
+| cooldownSeconds | number  | no       | Per-chat quiet period, 0–86400. Default `60`.                                               |
+| enabled         | boolean | no       | Default `true`.                                                                             |
 
 **Response** `201`
 

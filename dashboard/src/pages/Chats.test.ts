@@ -15,7 +15,7 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Session, Chat, ChatMessage } from '../services/api';
+import type { Session, Chat, ChatMessage, SearchHit } from '../services/api';
 import type { installJsdomGlobals as installJsdomGlobalsFn } from '../test-helpers/jsdom.ts';
 // socket.io-client resolves to a double under this runner (see vite-shim-hooks.mjs), which is what
 // lets a test deliver a server frame to the page's realtime handlers.
@@ -36,6 +36,14 @@ const SESSION: Session = {
 // session's fixtures (see installFetchStub), so a test can switch sessions without a second data set.
 const SESSION_2: Session = { ...SESSION, id: 'session-2', name: 'Second', phone: '15559876543' };
 let twoSessions = false;
+
+// A third session the gateway lists but that the page may not offer, with the status the list reports.
+// Its routes answer with the first session's fixtures, like session-2's.
+const SESSION_3: Session = { ...SESSION, id: 'session-3', name: 'Third', phone: '15550004444' };
+let thirdSessionStatus: Session['status'] | null = null;
+
+// Hits the global search answers with.
+let searchHits: SearchHit[] = [];
 
 // Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
 // the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
@@ -158,6 +166,9 @@ let sendGate: Promise<void> | null = null;
 // Hold Alice's first page open, so a test can write to the thread before it has any data.
 let firstPageGate: Promise<void> | null = null;
 
+// The id a text send answers with. whatsapp-web.js answers '' when it cannot read the sent id back.
+let sendTextId = 'wamid.out.1';
+
 function holdSend(): () => void {
   let release!: () => void;
   sendGate = new Promise<void>(resolve => {
@@ -248,7 +259,7 @@ function installFetchStub(): void {
     const method = init?.method ?? 'GET';
     const path = url
       .replace(/^https?:\/\/[^/]+/, '')
-      .replace(`/api/sessions/${SESSION_2.id}/`, `/api/sessions/${SESSION.id}/`);
+      .replace(new RegExp(`/api/sessions/(${SESSION_2.id}|${SESSION_3.id})/`), `/api/sessions/${SESSION.id}/`);
 
     let body: unknown;
     if (typeof init?.body === 'string') {
@@ -261,7 +272,9 @@ function installFetchStub(): void {
     fetchCalls.push({ method, path, body });
 
     if (method === 'GET' && path === '/api/sessions') {
-      return Promise.resolve(jsonResponse(twoSessions ? [SESSION, SESSION_2] : [SESSION]));
+      const listed = twoSessions ? [SESSION, SESSION_2] : [SESSION];
+      if (thirdSessionStatus) listed.push({ ...SESSION_3, status: thirdSessionStatus });
+      return Promise.resolve(jsonResponse(listed));
     }
     if (method === 'GET' && path === '/api/infra/engines/current') {
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
@@ -317,7 +330,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ success: true }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-text`) {
-      const send = () => jsonResponse({ messageId: 'wamid.out.1', timestamp: 1_700_000_100 });
+      const send = () => jsonResponse({ messageId: sendTextId, timestamp: 1_700_000_100 });
       return sendGate ? sendGate.then(send) : Promise.resolve(send());
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/messages/send-audio`) {
@@ -327,7 +340,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse({ messageId: 'wamid.out.document', timestamp: 1_700_000_100 }));
     }
     if (method === 'GET' && path.startsWith('/api/search?')) {
-      return Promise.resolve(jsonResponse({ hits: [], total: 0 }));
+      return Promise.resolve(jsonResponse({ hits: searchHits, total: searchHits.length }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/status/send-text`) {
       return Promise.resolve(jsonResponse({ success: true }));
@@ -383,8 +396,11 @@ afterEach(() => {
   olderPageGate = null;
   sendGate = null;
   firstPageGate = null;
+  sendTextId = 'wamid.out.1';
   olderPageFails = false;
   chatsResponder = null;
+  thirdSessionStatus = null;
+  searchHits = [];
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -802,6 +818,75 @@ test('text typed with an audio attachment stays in the input instead of showing 
   assert.equal(within(thread).queryByText('not a caption'), null, 'the audio bubble shows text that was never sent');
 });
 
+test('sends answered with no message id each keep their own bubble', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  sendTextId = '';
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+
+  const input = screen.getByPlaceholderText('Type a message...') as HTMLInputElement;
+  const sendPath = `/api/sessions/${SESSION.id}/messages/send-text`;
+  for (const [index, text] of ['first id-less', 'second id-less'].entries()) {
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => assert.equal(countFetchCalls('POST', sendPath), index + 1));
+    await flush();
+    await flush();
+  }
+
+  assert.ok(within(thread).queryByText('first id-less'), 'the earlier id-less send vanished from the thread');
+  assert.ok(within(thread).queryByText('second id-less'), 'the later id-less send is missing');
+});
+
+test('a caption sent with a document shows in its bubble', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  const thread = container.querySelector('.room-messages') as HTMLElement;
+  await within(thread).findByText('hello from alice');
+  await stageAttachment(container, 'contract.pdf');
+
+  const input = screen.getByPlaceholderText('Add a caption...') as HTMLInputElement;
+  fireEvent.change(input, { target: { value: 'please sign' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-document`);
+    assert.ok(call, 'expected a POST to the send-document endpoint');
+    assert.equal((call.body as { caption?: string }).caption, 'please sign');
+  });
+  await flush();
+
+  assert.equal(input.value, '');
+  assert.ok(within(thread).queryByText('please sign'), 'the caption that was sent is missing from the bubble');
+});
+
+test('a file the browser cannot type goes out as a document with a generic MIME type', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  const { container } = renderChats();
+
+  await screen.findByText('Main (15551234567)');
+  fireEvent.click(await screen.findByText('Alice'));
+  await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+  // File.type is '' for an extension the browser has no mapping for, and the gateway refuses base64
+  // without a MIME type.
+  await stageAttachment(container, 'settings.env', '');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => {
+    const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-document`);
+    assert.ok(call, 'expected a POST to the send-document endpoint');
+    assert.equal((call.body as { mimetype?: string }).mimetype, 'application/octet-stream');
+  });
+});
+
 test('the reply banner and the sent snippet name a media type in words, not as a raw token', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
@@ -924,6 +1009,42 @@ test('a staged reply is dropped when another session is opened', async () => {
   }
 });
 
+test("a send that resolves after a session switch does not promote the other session's chat", async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  twoSessions = true;
+  const releaseSend = holdSend();
+  // Session 2 lists a chat with Alice's id too (a contact both accounts share), below Carol.
+  chatsResponder = sessionId =>
+    Promise.resolve(
+      jsonResponse(sessionId === SESSION.id ? [CHAT, CHAT_2] : [CHAT_2, { ...CHAT, lastMessage: 'alice on two' }]),
+    );
+  try {
+    resetFetchCalls();
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(await screen.findByText('Alice'));
+    await within(container.querySelector('.room-messages') as HTMLElement).findByText('hello from alice');
+    fireEvent.change(screen.getByPlaceholderText('Type a message...'), { target: { value: 'from session one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => assert.ok(findFetchCall('POST', `/api/sessions/${SESSION.id}/messages/send-text`)));
+
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await screen.findByText('alice on two');
+    releaseSend();
+    await flush();
+    await flush();
+
+    const rows = [...container.querySelectorAll('.chat-item-card')];
+    assert.equal(rows[0]?.textContent?.includes('Carol'), true, "the other session's Alice row was moved to the top");
+    const alice = rows.find(row => row.textContent?.includes('Alice'));
+    assert.equal(alice?.querySelector('.chat-item-snippet')?.textContent ?? null, 'alice on two');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test('a chat list that answers after the user switched sessions does not replace the new one', async () => {
   const { screen, fireEvent, waitFor } = rtl;
   twoSessions = true;
@@ -949,6 +1070,65 @@ test('a chat list that answers after the user switched sessions does not replace
 
     assert.ok(!screen.queryByText('Alice'), "the previous session's chats replaced the selected session's list");
     assert.ok(screen.queryByText('Carol'), "the selected session's chats are gone");
+  } finally {
+    twoSessions = false;
+  }
+});
+
+test("a failed background refetch during a session switch keeps the spinner over the previous session's list", async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  let secondCalls = 0;
+  // Session 2's first list is held open; the realtime refetch that overtakes it is throttled.
+  chatsResponder = sessionId => {
+    if (sessionId === SESSION.id) return Promise.resolve(jsonResponse([CHAT]));
+    secondCalls += 1;
+    if (secondCalls === 1) return secondGate.then(() => jsonResponse([CHAT_2]));
+    return Promise.resolve(jsonResponse({ message: 'too many requests' }, 429));
+  };
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Alice');
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the switch showed no spinner'));
+
+    const DAVE = '15550009999@c.us';
+    const socket = lastSocket();
+    assert.ok(socket, 'expected the page to have opened a socket');
+    socket.receive('message', {
+      type: 'event',
+      timestamp: new Date(1_700_003_000_000).toISOString(),
+      payload: {
+        event: 'message.received',
+        sessionId: SESSION_2.id,
+        data: {
+          id: 'wamid.dave.1',
+          chatId: DAVE,
+          from: DAVE,
+          to: 'me',
+          body: 'hi',
+          type: 'text',
+          fromMe: false,
+          timestamp: 1_700_003_000,
+        },
+      },
+    });
+    await waitFor(() => assert.equal(secondCalls, 2, 'the unlisted chat did not refetch the list'));
+    await flush();
+    await flush();
+
+    assert.ok(container.querySelector('.chats-list-loading'), 'the failed refetch cleared the switch spinner');
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats showed under the selected session");
+
+    releaseSecond();
+    await screen.findByText('Carol');
+    assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
   } finally {
     twoSessions = false;
   }
@@ -1062,6 +1242,64 @@ test('every message for a chat the sidebar does not list refetches the list, and
     Promise.resolve(jsonResponse([{ ...CHAT_2, id: DAVE, name: 'Dave', lastMessage: 'hi' }, CHAT_2, CHAT]));
   receive('wamid.dave.4');
   await screen.findByText('Dave');
+});
+
+// A global-search hit in the third session, on Alice's chat.
+const THIRD_SESSION_HIT: SearchHit = {
+  messageId: 'db-9',
+  waMessageId: 'wamid.third.1',
+  sessionId: SESSION_3.id,
+  chatId: CHAT.id,
+  body: 'hello from the third session',
+  snippet: 'hello from the <mark>third</mark> session',
+  timestamp: 1_700_000_000,
+  type: 'text',
+  direction: 'incoming',
+  from: CHAT.id,
+};
+
+async function clickSearchHit(container: HTMLElement): Promise<void> {
+  const { screen, fireEvent, waitFor } = rtl;
+  fireEvent.change(screen.getByLabelText('Search messages…'), { target: { value: 'third' } });
+  const hit = await waitFor(() => {
+    const found = container.querySelector('.global-search-hit');
+    assert.ok(found, 'the search hit did not render');
+    return found;
+  });
+  fireEvent.click(hit);
+}
+
+test('a search hit in a session that is not connected stays on the selected session', async () => {
+  const { screen, waitFor } = rtl;
+  thirdSessionStatus = 'disconnected';
+  searchHits = [THIRD_SESSION_HIT];
+  resetFetchCalls();
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  await clickSearchHit(container);
+  await screen.findByText('The session of this message is not connected');
+  await waitFor(() => assert.equal(countFetchCalls('GET', '/api/sessions'), 2, 'the session list was not reread'));
+  await flush();
+  const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+  assert.equal(select.value, SESSION.id);
+  assert.ok(screen.queryByText('Alice'), 'the chat list of the selected session is gone');
+  assert.ok(!screen.queryByText('Failed to load chats'), 'the page tried to load the unconnected session');
+});
+
+test('a search hit in a session that connected after the page loaded opens it', async () => {
+  const { screen, within, waitFor } = rtl;
+  thirdSessionStatus = 'disconnected';
+  searchHits = [THIRD_SESSION_HIT];
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+
+  thirdSessionStatus = 'ready';
+  await clickSearchHit(container);
+  const select = container.querySelector('select.session-selector') as HTMLSelectElement;
+  await waitFor(() => assert.equal(select.value, SESSION_3.id));
+  await waitFor(() => assert.ok(container.querySelector('.room-header'), "the hit's chat did not open"));
+  await within(container.querySelector('.room-header') as HTMLElement).findByText('Alice');
 });
 
 test('changing the UI language keeps the selected session and the open chat', async () => {

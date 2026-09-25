@@ -893,8 +893,8 @@ func TestUpdateGroupSettingsOmitsUnsetFields(t *testing.T) {
 	}
 }
 
-// A 503 is the gateway's answer when the engine never confirmed an operation — a transport failure,
-// and the one sentinel here worth retrying. It used to have none, while the permanent 501 did.
+// A 503 is the gateway's answer when the engine never confirmed an operation: a transport failure,
+// which is worth retrying, as a 429 is. It used to have no sentinel, while the permanent 501 did.
 func TestServiceUnavailableIsRetryableSentinel(t *testing.T) {
 	rt := &recordTransport{
 		status: 503,

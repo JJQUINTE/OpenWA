@@ -12,7 +12,7 @@
     "cancel": "Annuler",
     "delete": "Supprimer",
     "create": "Créer",
-    "save": "Save",
+    "save": "Enregistrer",
     "close": "Fermer",
     "showApiKey": "Afficher la clé API",
     "hideApiKey": "Masquer la clé API",
@@ -189,7 +189,8 @@
       "react": "Échec de la réaction au message",
       "delete": "Échec de la suppression du message",
       "clickButton": "Échec du clic sur le bouton",
-      "fileTooLarge": "Le fichier est trop volumineux (max 18 Mo)"
+      "fileTooLarge": "Le fichier est trop volumineux (max 18 Mo)",
+      "searchHitSessionNotReady": "La session de ce message n'est pas connectée"
     },
     "loadMessagesError": "Impossible de charger les messages. Vérifiez les journaux du serveur.",
     "messageStatus": {
@@ -469,7 +470,7 @@
         "body": "Corps du message",
         "type": "Type de message",
         "isGroup": "Est une discussion de groupe",
-        "kind": "Chat kind",
+        "kind": "Type de discussion",
         "fromMe": "Envoyé par moi",
         "hasMedia": "Contient un média",
         "mentions": "Mentions"
@@ -683,7 +684,9 @@
     },
     "exportFailed": "Impossible d'exporter le journal d'audit",
     "exportTruncated": "L'export ne couvre que les {{rows}} entrées les plus récentes. Affinez le filtre de gravité pour exporter les plus anciennes.",
-    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export."
+    "exportThrottled": "L'export ne couvre que les {{rows}} entrées les plus récentes, car la passerelle limite les lectures du journal d'audit. Attendez une minute, puis relancez l'export.",
+    "exportNoMatches": "Aucune entrée du journal d'audit ne correspond à la recherche : rien n'a été exporté.",
+    "exportNoMatchesTruncated": "Aucune des {{rows}} entrées les plus récentes parcourues ne correspond à la recherche : rien n'a été exporté. Les entrées plus anciennes n'ont pas été parcourues."
   },
   "messageTester": {
     "title": "Testeur de messages",

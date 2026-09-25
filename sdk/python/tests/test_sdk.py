@@ -146,9 +146,9 @@ class TestClientCore:
             make_client(backend).sessions.get("missing")
 
     def test_maps_503_to_service_unavailable(self):
-        # The gateway answers 503 when the engine never confirmed an operation -- the one typed error
-        # here worth retrying. It used to fall through to the base class while the permanent 501 had a
-        # subclass of its own.
+        # The gateway answers 503 when the engine never confirmed an operation: a transport failure,
+        # which is worth retrying, as a 429 is. It used to fall through to the base class while the
+        # permanent 501 had a subclass of its own.
         backend = MockBackend()
         backend.on("GET", "/api/sessions/s1", 503, {
             "statusCode": 503, "message": "WhatsApp did not answer", "error": "Service Unavailable"

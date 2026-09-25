@@ -56,6 +56,11 @@ export function useSessionPairing({ sessions, sessionsRef, reloadSessions }: Use
   const [pairingError, setPairingError] = useState<string | null>(null);
 
   const qrRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Bumped whenever the modal opens, closes or is dismissed. A pairing-code request is not cancelled
+  // by any of those, so its answer is applied only while the modal it was sent from is still the one
+  // on screen: not in a modal since opened for another session, nor in the same session's modal reset
+  // to a blank form.
+  const pairingGen = useRef(0);
 
   const fetchQR = useCallback(
     async (sessionId: string) => {
@@ -107,6 +112,8 @@ export function useSessionPairing({ sessions, sessionsRef, reloadSessions }: Use
   }, [qrData, fetchQR]);
 
   const handleCloseQRModal = useCallback(() => {
+    pairingGen.current += 1;
+    setRequestingPairing(false);
     setQrData(null);
     setPairingMode(false);
     setPhoneNumber('');
@@ -134,15 +141,16 @@ export function useSessionPairing({ sessions, sessionsRef, reloadSessions }: Use
       setPairingError(t('sessions.pairing.invalidPhone'));
       return;
     }
+    const gen = pairingGen.current;
     try {
       setRequestingPairing(true);
       setPairingError(null);
       const res = await sessionApi.requestPairingCode(qrData.sessionId, phoneNumber.trim());
-      setPairingCode(res.pairingCode);
+      if (gen === pairingGen.current) setPairingCode(res.pairingCode);
     } catch (err) {
-      setPairingError(err instanceof Error ? err.message : t('common.errorGeneric'));
+      if (gen === pairingGen.current) setPairingError(err instanceof Error ? err.message : t('common.errorGeneric'));
     } finally {
-      setRequestingPairing(false);
+      if (gen === pairingGen.current) setRequestingPairing(false);
     }
   };
 
@@ -153,10 +161,12 @@ export function useSessionPairing({ sessions, sessionsRef, reloadSessions }: Use
     const sessionName = session?.name || '';
     // Reset any pairing sub-state from a previous open so a freshly opened modal never shows a
     // stale code/phone belonging to a different session.
+    pairingGen.current += 1;
     setPairingMode(false);
     setPhoneNumber('');
     setPairingCode(null);
     setPairingError(null);
+    setRequestingPairing(false);
     // Show loading state immediately so the modal opens and polling starts
     // even before Chromium has finished initializing.
     setQrData({ sessionId: id, sessionName, qrCode: '' });
@@ -198,6 +208,7 @@ export function useSessionPairing({ sessions, sessionsRef, reloadSessions }: Use
     setQrData(current => {
       if (current?.sessionId !== sessionId) return current;
       if (onlyIfBlank && current.qrCode) return current;
+      pairingGen.current += 1;
       return null;
     });
   }, []);

@@ -525,8 +525,27 @@ docker compose run --rm --no-deps --entrypoint /app/scripts/restore.sh \
 
 # On a PostgreSQL data store, step 2 leaves the upgraded database in place. Load the pre-upgrade dump
 # into an empty database: replayed over the upgraded tables, its CREATE statements fail and its rows
-# mix with theirs
-tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | psql "$DATABASE_URL"
+# mix with theirs. With the built-in PostgreSQL (the compose `postgres` service, or the
+# openwa-postgres container Dashboard > Infrastructure created), start only the database; openwa-api
+# stays stopped, or the rename below fails on its open connections. The upgraded database is kept
+# under a new name, as the SQLite path keeps data.pre-restore-<ts>, and an empty one takes its place.
+# The container's own POSTGRES_USER and POSTGRES_DB name the role and database the app uses. The
+# image's pg_dump 17 writes `SET transaction_timeout = 0;`, which PostgreSQL 16 rejects, so sed
+# drops that line before psql
+docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
+docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
+docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
+  -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
+  -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
+  docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+# An external PostgreSQL server: rename the upgraded database and create an empty one under the
+# DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
+# OpenWA setting: fill in your own URL for that database, such as
+# postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
+tar -xzOf "$BACKUP_DIR/openwa-backup-<timestamp>.tar.gz" ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
+  psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 3. Check out the previous release and rebuild the image
 git checkout v<old-version>
@@ -584,7 +603,9 @@ User-managed files outside that list (for example the project-level `.env`) must
 #                                                     or a pg_dump when DATABASE_TYPE=postgres)
 #   - sessions/     — whatsapp-web.js state (SESSION_DATA_PATH)
 #   - baileys/      — Baileys credentials (BAILEYS_AUTH_DIR)
-#   - media/        — local media                    (skipped automatically when STORAGE_TYPE=s3)
+#   - media/        — local media                    (STORAGE_LOCAL_PATH, archived whenever present; with
+#                                                     STORAGE_TYPE=s3 it holds only files the app could not
+#                                                     write to the bucket, so back up the bucket separately)
 #   - plugin-packages/ — installed plugin code from PLUGINS_DIR
 #   - plugin-state/    — registry + ctx.storage state under OPENWA_DATA_DIR
 #   - .env.generated / .api-key — generated configuration and bootstrap secret
@@ -599,10 +620,12 @@ User-managed files outside that list (for example the project-level `.env`) must
 # Run from the repo root (database defaults are ./data/...; state dirs follow OPENWA_DATA_DIR):
 ./scripts/backup.sh
 
-# Customize via environment:
+# Customize via environment. Keep the password out of DATABASE_URL: the URL is passed to pg_dump as
+# an argument, which every local user can read in the process list while the dump runs. pg_dump
+# takes it from PGPASSWORD (or ~/.pgpass) instead:
 OPENWA_DATA_DIR=/srv/openwa/data \
   BACKUP_DIR=/backups/openwa \
-  DATABASE_TYPE=postgres DATABASE_URL=postgres://user:pass@host:5432/openwa \
+  DATABASE_TYPE=postgres DATABASE_URL=postgres://user@host:5432/openwa PGPASSWORD='<password>' \
   ./scripts/backup.sh
 ```
 
@@ -631,7 +654,9 @@ OPENWA_DATA_DIR=/srv/openwa/data \
 >
 > The scripts resolve every other path the way the application does: an explicit environment value
 > first, then `./.env`, then `<data dir>/.env.generated`. Settings made through Dashboard >
-> Infrastructure therefore apply without being restated on the command line. Two caveats when
+> Infrastructure therefore apply without being restated on the command line. A restore reads that
+> third layer from the archive's `.env.generated` when the archive carries one, because that copy
+> replaces the target's and is the one the restored app reads. Two caveats when
 > operating directly on the host mount: a path recorded inside the container (`/app/data/...`) is not
 > host-visible, so override it in the environment; and a value written with quotes or a trailing `#`
 > comment is reported and skipped rather than guessed at, so pass those explicitly too.
@@ -680,9 +705,28 @@ docker compose down
 #    refuses to overwrite them)
 ./scripts/restore.sh ./backups/openwa-backup-<timestamp>.tar.gz
 
-# 3. (Postgres only) the archive contains database.sql — import it manually into an empty
-#    database (its CREATE statements fail against tables that already exist):
-#    psql "$DATABASE_URL" < ./data/database.sql
+# 3. (Postgres only) the archive contains database.sql. Load it into an empty database: its CREATE
+#    statements fail against tables that already exist. With the built-in PostgreSQL (the compose
+#    `postgres` service, or the openwa-postgres container Dashboard > Infrastructure created), start
+#    only the database; the app stays stopped, or the rename below fails on its open connections.
+#    The current database is kept under a new name, as the data dir is kept in data.pre-restore-<ts>,
+#    and an empty one takes its place. The container's own POSTGRES_USER and POSTGRES_DB name the
+#    role and database the app uses. The image's pg_dump 17 writes `SET transaction_timeout = 0;`,
+#    which PostgreSQL 16 rejects, so sed drops that line before psql
+docker compose --profile postgres up -d postgres   # dashboard-created: docker start openwa-postgres
+docker exec openwa-postgres sh -c 'until pg_isready -q -U "$POSTGRES_USER"; do sleep 1; done'
+docker exec openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres \
+  -c "ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_pre_restore_$(date +%Y%m%d%H%M%S)\"" \
+  -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
+  docker exec -i openwa-postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+#    An external PostgreSQL server: rename the current database and create an empty one under the
+#    DATABASE_NAME the app uses in the same way, then load the dump into it. DATABASE_URL is not an
+#    OpenWA setting: fill in your own URL for that database, such as
+#    postgres://<user>@<host>:5432/<database>, with the password in PGPASSWORD
+tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | sed '/^SET transaction_timeout = 0;$/d' |
+  psql -v ON_ERROR_STOP=1 "$DATABASE_URL"
 
 # 4. Start the app and CONFIRM an existing API key still authenticates
 docker compose up -d
@@ -747,8 +791,9 @@ curl -s -X POST -H "X-API-Key: <an-existing-key>" http://localhost:2785/api/auth
 > kubectl scale statefulset/openwa --replicas=1
 > ```
 >
-> The PostgreSQL import in step 3 then reads the dump from the archive, because `./data` on the host
-> is not the volume: `tar -xzOf ./backups/openwa-backup-<timestamp>.tar.gz ./database.sql | psql "$DATABASE_URL"`.
+> The PostgreSQL import in step 3 reads the dump from the archive, not from `./data` on the host, so
+> it works unchanged after either command. The Helm chart ships no PostgreSQL, so on Helm use the
+> external-server form of step 3 against the database the release's `DATABASE_*` settings name.
 > On Helm, run the step 4 check through `kubectl port-forward` to the release's Service.
 
 > **PostgreSQL restores are read as UTC.** From 0.23.6 the data connection binds, parses and defaults

@@ -56,6 +56,13 @@ class RestartDto {
   profilesToRemove?: string[];
 }
 
+// The env key and value that point the app at each bundled service, as /infra/status detects them.
+const BUNDLED_SERVICE_ENV: Record<string, [string, string]> = {
+  postgres: ['DATABASE_HOST', 'postgres'],
+  redis: ['REDIS_HOST', 'redis'],
+  minio: ['S3_ENDPOINT', 'http://minio:9000'],
+};
+
 // Saved infrastructure config returned to the dashboard form for hydration. Secret
 // values are never echoed back — a `*Set` boolean indicates whether one is stored.
 interface SavedConfigResponse {
@@ -404,7 +411,17 @@ export class InfraConfigController {
     removal?: object;
   }> {
     const profiles = body?.profiles || [];
-    const profilesToRemove = body?.profilesToRemove || [];
+    // Never stop a bundled service the environment pins the app to (e.g. the documented manual
+    // built-in Postgres with DATABASE_HOST=postgres in .env): that pin outranks the saved config, so
+    // the restarted app would still point at the container and fail to boot.
+    const pinnedToBundled = Object.entries(BUNDLED_SERVICE_ENV)
+      .filter(([, [key, value]]) => isEnvPinned(key) && process.env[key] === value)
+      .map(([profile]) => profile);
+    const requestedRemoval = body?.profilesToRemove || [];
+    const profilesToRemove = requestedRemoval.filter(p => !pinnedToBundled.includes(p));
+    if (profilesToRemove.length < requestedRemoval.length) {
+      this.logger.warn('Keeping profiles the environment pins the app to', { pinnedToBundled });
+    }
     let orchestrationResult: object | undefined;
     // Teardown is stop-only (see DockerService.stopManagedService): containers are stopped and
     // retained for re-enable, never deleted — the result below reports exactly that.
@@ -418,9 +435,10 @@ export class InfraConfigController {
       // Remove only the profiles the Save flow explicitly asked to remove, and never one we're about to
       // (re)start. We deliberately do NOT infer teardown from the saved *_BUILTIN flag: the default
       // data/.env.generated carries POSTGRES_BUILTIN=false, so a bare compose-profile restart would
-      // otherwise tear down the very backend the app is running on. (Known minor limitation: switching
-      // away from a built-in backend and then reloading the page before restarting can leave the old
-      // container running until the next explicit change.)
+      // otherwise tear down the very backend the app is running on. The dashboard fills this list from the
+      // live /infra/status builtIn flags at save time (running minus the new profiles). A container is
+      // left running when that status read had failed, or when an environment pin keeps the app on it
+      // (dropped above).
       // Only ever tear down OpenWA-managed services. An arbitrary profile name (or the empty string)
       // would otherwise reach stopManagedService and, via container-name matching, could stop an unrelated
       // container — so constrain teardown to the managed allowlist and drop anything else.

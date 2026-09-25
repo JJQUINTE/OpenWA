@@ -40,8 +40,12 @@ openwa_env_file_value() {
   printf '%s' "$value"
 }
 
-# openwa_resolve <key> <default> — the application's precedence: environment, then ./.env, then
-# <data dir>/.env.generated, then the built-in default. Requires DATA_DIR to be set by the caller.
+# Layer 3. Set here rather than read from the environment, so it can never arrive from an operator's
+# shell; restore.sh points it at the archive's copy, which replaces this file during the restore.
+OPENWA_GENERATED_ENV="${DATA_DIR:-./data}/.env.generated"
+
+# openwa_resolve <key> <default> - the application's precedence: environment, then ./.env, then
+# $OPENWA_GENERATED_ENV, then the built-in default. Requires DATA_DIR to be set before sourcing.
 openwa_resolve() {
   local key="$1" fallback="$2" current value layer
   current="$(printenv "$key" 2>/dev/null || true)"
@@ -49,7 +53,7 @@ openwa_resolve() {
     printf '%s' "$current"
     return 0
   fi
-  for layer in "./.env" "${DATA_DIR:-./data}/.env.generated"; do
+  for layer in "./.env" "$OPENWA_GENERATED_ENV"; do
     value="$(openwa_env_file_value "$layer" "$key")"
     if [ -n "$value" ]; then
       printf '%s' "$value"

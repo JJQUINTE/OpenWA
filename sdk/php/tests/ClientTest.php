@@ -48,6 +48,25 @@ class ClientTest extends TestCase
         }
     }
 
+    public function testInsecureHttpCheckIgnoresSchemeAndHostCase(): void
+    {
+        // parse_url returns the scheme and host as written, so a baseUrl in capitals must still warn
+        // for a remote host and stay quiet for localhost.
+        $log = (string) tempnam(sys_get_temp_dir(), 'openwa');
+        $previousLog = ini_set('error_log', $log);
+        try {
+            new \OpenWA\Client(['baseUrl' => 'HTTP://openwa:2785', 'apiKey' => 'k']);
+            $this->assertStringContainsString('insecure http://', (string) file_get_contents($log));
+
+            file_put_contents($log, '');
+            new \OpenWA\Client(['baseUrl' => 'http://LOCALHOST:2785', 'apiKey' => 'k']);
+            $this->assertSame('', file_get_contents($log));
+        } finally {
+            ini_set('error_log', (string) $previousLog);
+            unlink($log);
+        }
+    }
+
     public function testSendsApiKeyHeader(): void
     {
         $backend = (new MockBackend())->on(200, []);

@@ -12,7 +12,7 @@
     "cancel": "ביטול",
     "delete": "מחיקה",
     "create": "יצירה",
-    "save": "Save",
+    "save": "שמירה",
     "close": "סגירה",
     "showApiKey": "הצג מפתח API",
     "hideApiKey": "הסתר מפתח API",
@@ -60,7 +60,7 @@
     "sessions": "Sessions",
     "chats": "שיחות",
     "webhooks": "Webhooks",
-    "templates": "Templates",
+    "templates": "תבניות",
     "apiKeys": "מפתחות API",
     "messageTester": "בדיקת הודעות",
     "infrastructure": "תשתית",
@@ -193,7 +193,8 @@
       "react": "התגובה להודעה נכשלה",
       "delete": "מחיקת ההודעה נכשלה",
       "clickButton": "לחיצה על הכפתור נכשלה",
-      "fileTooLarge": "הקובץ גדול מדי (מקסימום 18 MB)"
+      "fileTooLarge": "הקובץ גדול מדי (מקסימום 18 MB)",
+      "searchHitSessionNotReady": "הסשן של הודעה זו אינו מחובר"
     },
     "loadMessagesError": "לא ניתן לטעון את ההודעות. בדקו את יומני השרת.",
     "messageStatus": {
@@ -474,7 +475,7 @@
         "body": "גוף ההודעה",
         "type": "סוג הודעה",
         "isGroup": "צ'אט קבוצתי",
-        "kind": "Chat kind",
+        "kind": "סוג שיחה",
         "fromMe": "נשלח על ידי",
         "hasMedia": "מכיל מדיה",
         "mentions": "אזכורים"
@@ -688,7 +689,9 @@
     },
     "exportFailed": "לא ניתן לייצא את יומן הביקורת",
     "exportTruncated": "הייצוא כולל רק את {{rows}} הרשומות האחרונות. צמצמו את מסנן החומרה כדי לייצא רשומות ישנות יותר.",
-    "exportThrottled": "הייצוא כולל רק את {{rows}} הרשומות האחרונות, כי השער מגביל קריאות של יומן הביקורת. המתינו דקה וייצאו שוב."
+    "exportThrottled": "הייצוא כולל רק את {{rows}} הרשומות האחרונות, כי השער מגביל קריאות של יומן הביקורת. המתינו דקה וייצאו שוב.",
+    "exportNoMatches": "אין רשומות ביומן הביקורת התואמות לחיפוש, ולכן לא יוצא דבר.",
+    "exportNoMatchesTruncated": "אף אחת מ-{{rows}} הרשומות האחרונות שנסרקו אינה תואמת לחיפוש, ולכן לא יוצא דבר. רשומות ישנות יותר לא נסרקו."
   },
   "messageTester": {
     "title": "בדיקת הודעות",

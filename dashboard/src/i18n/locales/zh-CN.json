@@ -12,7 +12,7 @@
     "cancel": "取消",
     "delete": "删除",
     "create": "创建",
-    "save": "Save",
+    "save": "保存",
     "close": "关闭",
     "showApiKey": "显示 API 密钥",
     "hideApiKey": "隐藏 API 密钥",
@@ -60,7 +60,7 @@
     "sessions": "会话",
     "chats": "聊天",
     "webhooks": "Webhooks",
-    "templates": "Templates",
+    "templates": "模板",
     "apiKeys": "API 密钥",
     "messageTester": "消息测试器",
     "infrastructure": "基础设施",
@@ -186,7 +186,8 @@
       "react": "回应消息失败",
       "delete": "删除消息失败",
       "clickButton": "点击按钮失败",
-      "fileTooLarge": "文件过大（最大 18 MB）"
+      "fileTooLarge": "文件过大（最大 18 MB）",
+      "searchHitSessionNotReady": "此消息所属的会话未连接"
     },
     "loadMessagesError": "无法加载消息。请检查服务器日志。",
     "messageStatus": {
@@ -353,7 +354,7 @@
     },
     "actions": {
       "view": "查看",
-      "proxy": "Proxy",
+      "proxy": "代理",
       "start": "启动",
       "stop": "停止",
       "reconnect": "重新连接",
@@ -465,7 +466,7 @@
         "body": "消息正文",
         "type": "消息类型",
         "isGroup": "是群聊",
-        "kind": "Chat kind",
+        "kind": "聊天类型",
         "fromMe": "由我发送",
         "hasMedia": "包含媒体",
         "mentions": "提及"
@@ -679,7 +680,9 @@
     },
     "exportFailed": "无法导出审计日志",
     "exportTruncated": "导出仅涵盖最新的 {{rows}} 条记录。请缩小严重级别筛选范围以导出更早的条目。",
-    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。"
+    "exportThrottled": "网关正在限制审计日志的读取频率，导出仅涵盖最新的 {{rows}} 条记录。请等待一分钟后重新导出。",
+    "exportNoMatches": "没有与搜索匹配的审计日志记录，因此未导出任何内容。",
+    "exportNoMatchesTruncated": "已扫描的最新 {{rows}} 条记录中没有与搜索匹配的条目，因此未导出任何内容。更早的条目未被搜索。"
   },
   "messageTester": {
     "title": "消息测试器",

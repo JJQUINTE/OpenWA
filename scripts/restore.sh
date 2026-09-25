@@ -70,27 +70,6 @@ done
 DATA_DIR="${OPENWA_DATA_DIR:-./data}"
 # shellcheck source=scripts/lib-env.sh
 . "$(dirname "$0")/lib-env.sh"
-# Database targets resolve exactly like the app: an explicit environment value, then ./.env, then the
-# dashboard's <data dir>/.env.generated, else the fixed ./data defaults. They may legitimately live
-# outside OPENWA_DATA_DIR. This reads the config of the install being restored INTO, which is why it
-# happens here rather than after the archive's own .env.generated is written over it further down.
-MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
-DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
-SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
-BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
-# Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
-# registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
-# too, or the archive silently omits the plugin packages.
-PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
-# Plugin registry + every plugin's persisted ctx.storage. The app puts them at <dataDir>/plugins,
-# where dataDir is PLUGIN_STATE_DIR when that is set and ./data otherwise, so the knob has to be
-# resolved here exactly like PLUGINS_DIR above. Hardcoding $DATA_DIR/plugins meant an operator who
-# moved plugin state got an archive with neither the registry nor any plugin's storage in it, and
-# a restore that put nothing back. Resolved under its own name because the knob names the ROOT,
-# not the plugins directory inside it.
-PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
-PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 RESTORE_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 RESOLVED_CWD="$(pwd -P)"
 
@@ -168,11 +147,13 @@ replace_tree() {
     return
   fi
   log "Restoring $label"
-  if [ -d "$target_dir" ] && [ ! -L "$target_dir" ]; then
+  if [ -d "$target_dir" ]; then
     # Empty the directory and refill it rather than remove it: it may be a mount point (a volume under
-    # the container's read-only root), which can be neither removed nor re-created.
-    find "$target_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-    cp -pR "$source_dir/." "$target_dir"
+    # the container's read-only root), which can be neither removed nor re-created. A symlink to a
+    # directory is refilled through the link, so an operator's layout on another disk survives. The
+    # trailing slash makes find descend into the link's target instead of stopping at the link.
+    find "$target_dir/" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+    cp -pR "$source_dir/." "$target_dir/"
   else
     rm -rf -- "$target_dir"
     mkdir -p "$(dirname "$target_dir")"
@@ -187,6 +168,7 @@ replace_tree() {
 # own mount under a read-only root has no writable place next to it.
 snapshot_external() {
   target="$1"
+  external_snapshot=""
   case "$(resolve_path "$target")" in
     "$RESOLVED_DATA_DIR"/*) return 0 ;;
   esac
@@ -208,13 +190,29 @@ snapshot_external() {
 }
 
 # restore_db <staged file> <target> <label>
+# SQLite keeps un-checkpointed transactions in <db>-wal (and a crashed transaction in <db>-journal),
+# named after the symlink-resolved file, and replays them over whatever main file it finds next to
+# them. Those sidecars belong to the database being replaced: they go into its snapshot and are
+# removed before the copy, or the restored file reads back the old install's rows.
 restore_db() {
+  resolved_db="$(resolve_path "$2")"
   if [ "$PHASE" = snapshot ]; then
     snapshot_external "$2"
+    # Empty when the target lives in the data dir, whose own snapshot already holds the sidecars.
+    if [ -n "$external_snapshot" ]; then
+      for sfx in -wal -shm -journal; do
+        for db in "$2" "$resolved_db"; do
+          if [ -f "$db$sfx" ]; then
+            cp -p "$db$sfx" "$external_snapshot$sfx"
+          fi
+        done
+      done
+    fi
     return
   fi
   log "Restoring $3 -> $2"
   mkdir -p "$(dirname "$2")"
+  rm -f -- "$2-wal" "$2-shm" "$2-journal" "$resolved_db-wal" "$resolved_db-shm" "$resolved_db-journal"
   cp "$1" "$2"
   # Owner-only, matching what the app re-tightens on every boot (sqlite-file-permissions.ts);
   # cp preserves the staged mode, and a foreign-umask extraction may leave it broader.
@@ -267,6 +265,43 @@ while IFS= read -r entry; do
   esac
 done < <(tar -tzf "$ARCHIVE")
 tar -xzf "$ARCHIVE" -C "$STAGE"
+
+# Targets resolve exactly like the app: an explicit environment value, then ./.env, then the
+# dashboard's .env.generated, else the fixed ./data defaults. They may legitimately live outside
+# OPENWA_DATA_DIR. The archive's .env.generated replaces the target's further down, so when it carries
+# one, that copy is the third layer: the restored app reads its paths, and state placed where the
+# replaced file pointed would never be opened. Resolved before anything is validated or written.
+if [ -f "$STAGE/.env.generated" ]; then
+  OPENWA_GENERATED_ENV="$STAGE/.env.generated"
+fi
+MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
+DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
+SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
+BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
+MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+# Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
+# registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
+# too, or the archive silently omits the plugin packages.
+PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
+# Plugin registry + every plugin's persisted ctx.storage. The app puts them at <dataDir>/plugins,
+# where dataDir is PLUGIN_STATE_DIR when that is set and ./data otherwise, so the knob has to be
+# resolved here exactly like PLUGINS_DIR above. Hardcoding $DATA_DIR/plugins meant an operator who
+# moved plugin state got an archive with neither the registry nor any plugin's storage in it, and
+# a restore that put nothing back. Resolved under its own name because the knob names the ROOT,
+# not the plugins directory inside it.
+PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
+PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
+
+# backup.sh archives state directories by content. An archive from before it followed symlinks
+# carries a link instead, which on this host may point at the very directory the restore empties
+# before refilling it from that link. Refuse it before any existing state is touched.
+for member in sessions baileys media plugin-packages plugin-state; do
+  if [ -L "$STAGE/$member" ]; then
+    log "ERROR: archive member $member/ is a symlink, not a directory: the backup holds no data for it"
+    log "       re-take the backup with this version of backup.sh, or extract the archive and restore by hand"
+    exit 1
+  fi
+done
 
 # A backup taken without sqlite3 .backup carries this marker: the database snapshots were
 # plain-copied from a possibly-live app and may be torn. Warn loudly and continue — unless
@@ -378,8 +413,11 @@ fi
 
 if [ -f "$STAGE/database.sql" ]; then
   cp "$STAGE/database.sql" "$DATA_DIR/database.sql"
-  log "Postgres dump present — import it manually into your Postgres instance:"
-  log "  psql \"\$DATABASE_URL\" < $DATA_DIR/database.sql"
+  log "Postgres dump present: load it into an EMPTY database, as docs/11-operational-runbooks.md"
+  log "(Restore from Backup, step 3) shows for the built-in openwa-postgres container. For an external"
+  log "server, with DATABASE_URL set to your own URL for that database:"
+  log "  sed '/^SET transaction_timeout = 0;\$/d' $DATA_DIR/database.sql | psql -v ON_ERROR_STOP=1 \"\$DATABASE_URL\""
+  log "(sed drops a setting this image's pg_dump 17 writes and PostgreSQL 16 rejects)"
 fi
 
 log "Restore complete. Start the app and confirm an existing API key still authenticates."

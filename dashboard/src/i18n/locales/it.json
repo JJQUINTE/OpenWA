@@ -189,7 +189,8 @@
       "react": "Impossibile reagire al messaggio",
       "delete": "Impossibile eliminare il messaggio",
       "clickButton": "Impossibile cliccare il pulsante",
-      "fileTooLarge": "Il file è troppo grande (max 18 MB)"
+      "fileTooLarge": "Il file è troppo grande (max 18 MB)",
+      "searchHitSessionNotReady": "La sessione di questo messaggio non è connessa"
     },
     "loadMessagesError": "Impossibile caricare i messaggi. Controlla i log del server.",
     "messageStatus": {
@@ -683,7 +684,9 @@
     },
     "exportFailed": "Impossibile esportare il log di controllo",
     "exportTruncated": "L'esportazione copre solo le {{rows}} voci più recenti. Restringi il filtro severità per esportare quelle più vecchie.",
-    "exportThrottled": "L'esportazione copre solo le {{rows}} voci più recenti perché il gateway sta limitando le letture del registro di audit. Attendi un minuto ed esporta di nuovo."
+    "exportThrottled": "L'esportazione copre solo le {{rows}} voci più recenti perché il gateway sta limitando le letture del registro di audit. Attendi un minuto ed esporta di nuovo.",
+    "exportNoMatches": "Nessuna voce del registro di audit corrisponde alla ricerca, quindi non è stato esportato nulla.",
+    "exportNoMatchesTruncated": "Nessuna delle {{rows}} voci più recenti esaminate corrisponde alla ricerca, quindi non è stato esportato nulla. Le voci più vecchie non sono state esaminate."
   },
   "messageTester": {
     "title": "Messaggio di prova",

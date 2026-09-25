@@ -197,6 +197,14 @@ export class BaileysEvents {
    */
   private readonly deletedForEveryone = new Set<string>();
 
+  /**
+   * The latest edit of a message still being processed, by id, with the key it was sent under. The
+   * edit is announced first and finds no row or preview to change, and a repeat delivery can be stored
+   * after the edit was applied, so the original is stored and announced with this text instead.
+   * Bounded like deletedForEveryone, which wins over it.
+   */
+  private readonly editedWhileInFlight = new Map<string, { envelope: WAMessageKey; body: string }>();
+
   constructor(private readonly host: BaileysEventsHost) {}
 
   /** Whether a delete for everyone of this message was accepted (see deletedForEveryone). */
@@ -403,6 +411,15 @@ export class BaileysEvents {
             editedContentType === 'stickerMessage';
           const edited: EditedMessage = buildEditedMessage(base, hasMedia);
           this.host.recordMessageEdit(remoteJid, edited.messageId, edited.body);
+          const target = this.inboundInFlight.get(edited.messageId);
+          if (target && this.mayChange(target.key, msg.key, false)) {
+            this.editedWhileInFlight.delete(edited.messageId); // re-inserted as the newest
+            this.editedWhileInFlight.set(edited.messageId, { envelope: msg.key, body: edited.body });
+            if (this.editedWhileInFlight.size > BaileysEvents.DELETED_FOR_EVERYONE_LIMIT) {
+              const [oldest] = this.editedWhileInFlight.keys();
+              this.editedWhileInFlight.delete(oldest);
+            }
+          }
           this.changeStoredMessage(edited.messageId, stored => {
             const content = this.mayChange(stored.key, msg.key, false)
               ? b.normalizeMessageContent(stored.message ?? undefined)
@@ -484,15 +501,27 @@ export class BaileysEvents {
       });
       // Stored before it is announced: whoever hears about this message may act on it at once (a quoted
       // reply, a reaction, a read receipt), and the store holds a read of an id until its write lands.
-      // A message deleted for everyone while it was being processed is stored as the delete leaves it.
+      // A message deleted for everyone or edited while it was being processed is stored as the change
+      // leaves it, and a delete wins over an edit.
       const deleted = storedId !== null && this.deletedForEveryone.has(storedId);
-      void this.host.putStoredMessage(deleted ? { ...msg, message: null } : msg)?.catch(err =>
+      const edit = storedId !== null && !deleted ? this.editedWhileInFlight.get(storedId) : undefined;
+      const editedBody = edit && this.mayChange(msg.key, edit.envelope, false) ? edit.body : undefined;
+      let toStore = deleted ? { ...msg, message: null } : msg;
+      if (editedBody !== undefined) {
+        // A copy, so the edit reaches neither Baileys' object nor anyone else holding it.
+        toStore = JSON.parse(JSON.stringify(msg, b.BufferJSON.replacer), b.BufferJSON.reviver) as WAMessage;
+        const content = b.normalizeMessageContent(toStore.message ?? undefined);
+        if (content) setBaileysText(content, editedBody);
+        incoming.body = editedBody;
+      }
+      void this.host.putStoredMessage(toStore)?.catch(err =>
         this.host.logger.warn('Failed to persist message to store', {
           error: err instanceof Error ? err.message : String(err),
         }),
       );
       // Its delete was announced first and found nothing to clear, so announcing the message now, or
-      // leaving its text as the chat preview, would publish what the sender took back.
+      // leaving its text as the chat preview, would publish what the sender took back. An edit announced
+      // first found nothing to change either, so the message carries it here and in the preview.
       if (!deleted) {
         if (msg.key.fromMe === true) {
           this.host.getOnMessageCreate()?.(incoming);
@@ -501,7 +530,11 @@ export class BaileysEvents {
         }
       }
       this.host.recordMessage(msg);
-      if (deleted) this.host.recordMessageEdit(remoteJid, storedId, '');
+      if (deleted) {
+        this.host.recordMessageEdit(remoteJid, storedId, '');
+      } else if (editedBody !== undefined && storedId !== null) {
+        this.host.recordMessageEdit(remoteJid, storedId, editedBody);
+      }
     } catch (err) {
       this.host.logger.error(
         `Unhandled error processing inbound message (id=${msg.key?.id ?? 'unknown'}); dropping`,
@@ -542,7 +575,10 @@ export class BaileysEvents {
    *
    * A reaction to a message the account sent to a broadcast list is exempt: Baileys files the
    * own-device copy under the list jid (`<id>@broadcast`), while each recipient reacts from their 1:1
-   * chat, so no chat can ever match it. Edits and revokes stay strict.
+   * chat, so no chat can ever match it. A list message the account received is filed under the list
+   * jid too, but Baileys shows it in the 1:1 chat with its sender (getChatId in process-message.js), so
+   * a reaction to it may also come from that sender's chat, whose other-dialect id Baileys puts in
+   * remoteJidAlt. Edits and revokes stay strict.
    */
   private async targetsForeignMessage(
     targetId: string | null | undefined,
@@ -554,10 +590,13 @@ export class BaileysEvents {
       ? (await this.readStoredMessage(targetId, 'checking what an edit, revoke or reaction targets'))?.key
       : undefined;
     if (!original) return false;
-    if (kind === 'reaction' && original.fromMe === true && original.remoteJid?.endsWith('@broadcast')) return false;
+    const broadcast = kind === 'reaction' && !!original.remoteJid?.endsWith('@broadcast');
+    if (broadcast && original.fromMe === true) return false;
+    const originalChats = [original.remoteJid, original.remoteJidAlt];
+    if (broadcast && original.remoteJid !== 'status@broadcast') originalChats.push(original.participant);
     const neutral = (jid: string): string => this.host.toNeutralJid(jid);
     const foreign =
-      differentWaIds([original.remoteJid, original.remoteJidAlt], [key.remoteJid, key.remoteJidAlt], neutral) ||
+      differentWaIds(originalChats, [key.remoteJid, key.remoteJidAlt], neutral) ||
       (checkAuthor &&
         ((original.fromMe === true) !== (key.fromMe === true) ||
           (key.fromMe !== true &&

@@ -987,8 +987,9 @@ class MarkChatReadRequest(TypedDict):
     # Body for mark_read.
     chatId: Jid
     # Messages to acknowledge (at most 100; an empty list is refused). Baileys acknowledges
-    # individual messages, so without this only the newest message the engine still holds in
-    # memory gets a receipt. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.
+    # individual messages, so without this only the newest received message the engine still
+    # holds in memory gets a receipt. Ignored by whatsapp-web.js, whose own sendSeen is
+    # chat-level.
     messageIds: NotRequired[list[str]]
 
 
@@ -1254,7 +1255,8 @@ class AddLabelRequest(TypedDict):
 
 
 # Mirrors the backend ``Channel`` — returned by the engine as-is, with no DTO in between.
-# ``picture``/``createdAt`` are populated by Baileys; whatsapp-web.js omits both.
+# ``createdAt`` is populated by Baileys; whatsapp-web.js omits it. ``picture`` is not currently
+# filled by either engine.
 class ChannelRecord(TypedDict, total=False):
     id: Jid
     name: str

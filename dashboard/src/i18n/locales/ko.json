@@ -12,7 +12,7 @@
     "cancel": "취소",
     "delete": "삭제",
     "create": "생성",
-    "save": "Save",
+    "save": "저장",
     "close": "닫기",
     "showApiKey": "API 키 표시",
     "hideApiKey": "API 키 숨기기",
@@ -186,7 +186,8 @@
       "react": "메시지에 반응하지 못했습니다",
       "delete": "메시지를 삭제하지 못했습니다",
       "clickButton": "버튼 클릭에 실패했습니다",
-      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)"
+      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)",
+      "searchHitSessionNotReady": "이 메시지의 세션이 연결되어 있지 않습니다"
     },
     "loadMessagesError": "메시지를 불러올 수 없습니다. 서버 로그를 확인하세요.",
     "messageStatus": {
@@ -353,7 +354,7 @@
     },
     "actions": {
       "view": "보기",
-      "proxy": "Proxy",
+      "proxy": "프록시",
       "start": "시작",
       "stop": "중지",
       "reconnect": "재연결",
@@ -465,7 +466,7 @@
         "body": "메시지 본문",
         "type": "메시지 유형",
         "isGroup": "그룹 채팅 여부",
-        "kind": "Chat kind",
+        "kind": "채팅 유형",
         "fromMe": "내가 보낸 메시지",
         "hasMedia": "미디어 포함",
         "mentions": "멘션"
@@ -679,7 +680,9 @@
     },
     "exportFailed": "감사 로그를 내보내지 못했습니다",
     "exportTruncated": "내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 이전 항목을 내보내려면 심각도 필터를 좁히세요.",
-    "exportThrottled": "게이트웨이가 감사 로그 조회를 제한하고 있어 내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 1분 후 다시 내보내세요."
+    "exportThrottled": "게이트웨이가 감사 로그 조회를 제한하고 있어 내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 1분 후 다시 내보내세요.",
+    "exportNoMatches": "검색과 일치하는 감사 로그 항목이 없어 아무것도 내보내지 않았습니다.",
+    "exportNoMatchesTruncated": "검사한 최신 항목 {{rows}}개 중 검색과 일치하는 항목이 없어 아무것도 내보내지 않았습니다. 이전 항목은 검색하지 않았습니다."
   },
   "messageTester": {
     "title": "메시지 테스터",

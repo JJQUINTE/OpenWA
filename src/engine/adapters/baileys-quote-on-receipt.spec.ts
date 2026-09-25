@@ -93,6 +93,7 @@ describe('quoting a Baileys message the moment it is announced', () => {
           normalizeMessageContent: (c: unknown) => c,
           getContentType: (c: Record<string, unknown> | undefined) => Object.keys(c ?? {})[0],
           proto: { Message: { ProtocolMessage: { Type: { REVOKE: 0, MESSAGE_EDIT: 14 } } } },
+          BufferJSON: { replacer: (_k: string, v: unknown) => v, reviver: (_k: string, v: unknown) => v },
           downloadMediaMessage: () =>
             new Promise(resolve =>
               downloads.push(() =>
@@ -321,6 +322,96 @@ describe('quoting a Baileys message the moment it is announced', () => {
 
       await expect(reply).resolves.toMatchObject({ id: 'R1' });
       expect(writtenContents('TARGET')).toEqual([photo('TARGET').message]);
+    });
+  });
+
+  describe('an edit that arrives while the original is still downloading its media', () => {
+    beforeEach(() => release()); // the held step here is the download, not the store write
+
+    const edit = (chat = CHAT): WAMessage =>
+      change({ type: 14, editedMessage: { conversation: 'fixed caption' } }, chat);
+    const caption = async (): Promise<string | null | undefined> =>
+      (await store.getMessage('s1', 'TARGET'))?.message?.imageMessage?.caption;
+
+    it('announces, stores and previews the message with its edited text', async () => {
+      const order: string[] = [];
+      const heard: string[] = [];
+      const { events } = build(
+        m => {
+          order.push('received');
+          heard.push(m.body);
+        },
+        { edited: () => order.push('edited') },
+      );
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+
+      downloads[0]();
+      await ticks();
+
+      expect(order).toEqual(['edited', 'received']);
+      expect(heard).toEqual(['fixed caption']);
+      expect(writtenContents('TARGET')).toEqual([
+        { imageMessage: { mimetype: 'image/jpeg', caption: 'fixed caption' } },
+      ]);
+      expect(await caption()).toBe('fixed caption');
+      // The edit found no preview to change, so the original, recorded after it, carries the edit.
+      expect(preview).toEqual(['edit:TARGET:fixed caption', 'record:TARGET', 'edit:TARGET:fixed caption']);
+    });
+
+    it('keeps a repeat delivery that passed the repeat check from restoring the old text', async () => {
+      const heard: string[] = [];
+      const { events } = build(m => heard.push(m.body));
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+      // Nothing is stored yet, so the repeat is not recognised as one and downloads too.
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+
+      downloads[0](); // the first delivery is stored, and the edit lands on top of it
+      await ticks();
+      downloads[1](); // then the repeat is stored
+      await ticks();
+
+      expect(await caption()).toBe('fixed caption');
+      expect(heard).toEqual(['fixed caption', 'fixed caption']);
+    });
+
+    it('lets a delete for everyone win over an earlier edit', async () => {
+      const heard = jest.fn();
+      const { events } = build(heard);
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit()], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [change({ type: 0 })], type: 'notify' });
+      await ticks();
+
+      downloads[0]();
+      await ticks();
+
+      expect(heard).not.toHaveBeenCalled();
+      expect(writtenContents('TARGET')).toEqual([null]);
+      expect(preview.slice(-1)).toEqual(['edit:TARGET:']);
+    });
+
+    it('ignores an edit of the same id sent from another chat', async () => {
+      const heard: string[] = [];
+      const { events } = build(m => heard.push(m.body));
+      events.handleMessagesUpsert({ messages: [photo('TARGET')], type: 'notify' });
+      await ticks();
+      events.handleMessagesUpsert({ messages: [edit('628999@s.whatsapp.net')], type: 'notify' });
+      await ticks();
+
+      downloads[0]();
+      await ticks();
+
+      expect(heard).toEqual(['about to be deleted']);
+      expect(await caption()).toBe('about to be deleted');
     });
   });
 });

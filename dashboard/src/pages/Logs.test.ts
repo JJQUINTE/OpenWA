@@ -190,3 +190,36 @@ test('an export stopped by the throttle says to wait, not to narrow the filter',
     restore();
   }
 });
+
+test('an export whose search matches no entry says so and downloads nothing', async () => {
+  const { screen, fireEvent } = rtl;
+  const { downloads, restore } = recordDownloads();
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.change(screen.getByPlaceholderText('Search logs...'), { target: { value: 'no-such-action' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await screen.findByText('No audit log entries match the search, so nothing was exported.');
+    assert.equal(downloads.length, 0, 'an empty export was downloaded');
+  } finally {
+    restore();
+  }
+});
+
+test('a truncated export whose search matches nothing names the entries it scanned', async () => {
+  const { screen, fireEvent } = rtl;
+  const { downloads, restore } = recordDownloads();
+  exportTotal = 60_000;
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.change(screen.getByPlaceholderText('Search logs...'), { target: { value: 'no-such-action' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await screen.findByText(/None of the newest 10,000 entries scanned match the search/, {}, { timeout: 10_000 });
+    assert.equal(screen.queryByText(/The export covers only/), null, 'the warning reads as if a file was produced');
+    assert.equal(downloads.length, 0, 'an empty export was downloaded');
+  } finally {
+    exportTotal = null;
+    restore();
+  }
+});

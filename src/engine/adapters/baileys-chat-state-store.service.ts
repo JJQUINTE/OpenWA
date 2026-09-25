@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ChatState } from './baileys-chat-state.entity';
 import { createLogger } from '../../common/services/logger.service';
 import { resolveNonNegativeIntEnv } from '../../config/configuration';
+import { KeyedMutationQueue } from '../../common/utils/keyed-mutation-queue';
 
 /** Durable chat app-state Baileys cannot re-deliver on reconnect. `muteEndTime` is canonical epoch ms. */
 export type ChatStateValue = { muteEndTime: number | null; archived: boolean; pinned: boolean };
@@ -55,6 +56,8 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
    */
   private readonly absent = new Set<string>();
   private readonly maxEntries: number;
+  /** One write chain per chat, so each remember() merges onto the state the previous one left. */
+  private readonly writes = new KeyedMutationQueue();
 
   constructor(
     @InjectRepository(ChatState, 'data')
@@ -102,8 +105,23 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     return undefined;
   }
 
-  async remember(sessionId: string, chatId: string, patch: Partial<ChatStateValue>): Promise<void> {
+  /**
+   * Serialized per chat: the caller does not await, so two patches for an uncached chat would otherwise
+   * both merge onto the same pre-change row and the later full-row write would drop the earlier patch.
+   */
+  remember(sessionId: string, chatId: string, patch: Partial<ChatStateValue>): Promise<void> {
     const k = this.key(sessionId, chatId);
+    return new Promise<void>((resolve, reject) =>
+      this.writes.enqueue(k, () => this.applyPatch(k, sessionId, chatId, patch).then(resolve, reject)),
+    );
+  }
+
+  private async applyPatch(
+    k: string,
+    sessionId: string,
+    chatId: string,
+    patch: Partial<ChatStateValue>,
+  ): Promise<void> {
     // The merge base must be the CURRENT state, not DEFAULT_STATE, or a partial `chats.update` (Baileys
     // emits single-field patches, e.g. `{ pinned }` alone) would reset the columns it omits. On a cache
     // miss the persisted row is that base: the read path warms lazily, but the write path upserts every

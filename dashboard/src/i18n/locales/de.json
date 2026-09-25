@@ -12,7 +12,7 @@
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "create": "Erstellen",
-    "save": "Save",
+    "save": "Speichern",
     "close": "Schließen",
     "showApiKey": "API-Schlüssel anzeigen",
     "hideApiKey": "API-Schlüssel ausblenden",
@@ -186,7 +186,8 @@
       "react": "Reaktion auf die Nachricht fehlgeschlagen",
       "delete": "Nachricht konnte nicht gelöscht werden",
       "clickButton": "Schaltfläche konnte nicht angeklickt werden",
-      "fileTooLarge": "Die Datei ist zu groß (max. 18 MB)"
+      "fileTooLarge": "Die Datei ist zu groß (max. 18 MB)",
+      "searchHitSessionNotReady": "Die Sitzung dieser Nachricht ist nicht verbunden"
     },
     "loadMessagesError": "Nachrichten konnten nicht geladen werden. Prüfe die Serverprotokolle.",
     "messageStatus": {
@@ -465,7 +466,7 @@
         "body": "Nachrichteninhalt",
         "type": "Nachrichtentyp",
         "isGroup": "Ist Gruppenchat",
-        "kind": "Chat kind",
+        "kind": "Chat-Typ",
         "fromMe": "Von mir gesendet",
         "hasMedia": "Enthält Medien",
         "mentions": "Erwähnungen"
@@ -679,7 +680,9 @@
     },
     "exportFailed": "Audit-Protokoll konnte nicht exportiert werden",
     "exportTruncated": "Der Export umfasst nur die neuesten {{rows}} Einträge. Grenze den Severity-Filter ein, um ältere Einträge zu exportieren.",
-    "exportThrottled": "Der Export umfasst nur die neuesten {{rows}} Einträge, weil das Gateway Abfragen des Audit-Logs drosselt. Warte eine Minute und exportiere erneut."
+    "exportThrottled": "Der Export umfasst nur die neuesten {{rows}} Einträge, weil das Gateway Abfragen des Audit-Logs drosselt. Warte eine Minute und exportiere erneut.",
+    "exportNoMatches": "Keine Einträge im Audit-Protokoll passen zur Suche, daher wurde nichts exportiert.",
+    "exportNoMatchesTruncated": "Keiner der neuesten {{rows}} durchsuchten Einträge passt zur Suche, daher wurde nichts exportiert. Ältere Einträge wurden nicht durchsucht."
   },
   "messageTester": {
     "title": "Nachrichtentester",

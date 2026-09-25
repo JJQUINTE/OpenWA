@@ -219,7 +219,7 @@ describe('assertNoDefaultSecretsInProduction', () => {
         s3SecretKey: 'minioadmin',
         minioBuiltIn: 'true',
       }),
-    ).toThrow(/S3_ACCESS_KEY, S3_SECRET_KEY/);
+    ).toThrow(/S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/);
   });
 
   it('still refuses an EXTERNAL Postgres with a default password even when MinIO is built-in', () => {
@@ -254,7 +254,7 @@ describe('assertNoDefaultSecretsInProduction', () => {
         minioBuiltIn: 'true',
         s3Endpoint: 'https://s3.amazonaws.com',
       }),
-    ).toThrow(/S3_ACCESS_KEY/);
+    ).toThrow(/S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/);
   });
 
   it('exempts the built-in defaults when the host is the internal bundled service', () => {
@@ -282,7 +282,7 @@ describe('assertNoDefaultSecretsInProduction', () => {
         s3AccessKey: 'minioadmin',
         s3SecretKey: 'minioadmin',
       }),
-    ).toThrow(/S3_ACCESS_KEY, S3_SECRET_KEY/);
+    ).toThrow(/S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/);
   });
 
   it('refuses prod with a placeholder API_MASTER_KEY', () => {

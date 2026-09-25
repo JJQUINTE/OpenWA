@@ -71,8 +71,10 @@ for hit in res["hits"]:
 A non-2xx response raises a typed `OpenWAApiError` subclass — `OpenWAAuthError` (401),
 `OpenWAForbiddenError` (403), `OpenWANotFoundError` (404), `OpenWAConflictError` (409),
 `OpenWARateLimitError` (429), `OpenWANotImplementedError` (501),
-`OpenWAServiceUnavailableError` (503 — the only retryable one) — each carrying `.status`
-and the parsed `.body`. A timeout raises `OpenWATimeoutError`. In a routed deployment only
+`OpenWAServiceUnavailableError` (503) — each carrying `.status`
+and the parsed `.body`. A timeout raises `OpenWATimeoutError`. 429 (honor `Retry-After`) and
+503 are the transient statuses, but a catalog 503 can persist because WhatsApp may never answer
+that query, so bound any retry. In a routed deployment only
 503 proves the request was never carried out: a forward that fails after the request reached
 the owner node answers 502 or 504.
 

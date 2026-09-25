@@ -135,8 +135,9 @@ class Client
     {
         $scheme = \parse_url($url, \PHP_URL_SCHEME);
         $host = \parse_url($url, \PHP_URL_HOST);
-        if ($scheme === 'http' && $host !== null && $host !== false) {
-            $host = \trim($host, '[]');
+        // parse_url keeps the case as written, and both scheme and host are case-insensitive.
+        if (\is_string($scheme) && \strtolower($scheme) === 'http' && \is_string($host)) {
+            $host = \strtolower(\trim($host, '[]'));
             if (!\in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
                 \error_log(
                     "OpenWA Client: baseUrl uses an insecure http:// URL (host: {$host}). "

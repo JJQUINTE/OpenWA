@@ -2304,6 +2304,33 @@ describe('SessionService', () => {
         jest.useRealTimers();
       }
     });
+
+    // A wedged engine the watchdog reported can recover on its own (Baileys reconnects its socket
+    // internally) before the gateway's backoff elapses. The timer armed for it must not then tear
+    // down the engine that just came back.
+    it('disarms a pending reconnect when the same engine reaches READY, keeping the reconnect state', () => {
+      jest.useFakeTimers();
+      try {
+        const i = internals();
+        const state = { attempts: 0, timer: null, maxAttempts: Number.POSITIVE_INFINITY, baseDelay: 150000 };
+        i.reconnectStates.set('sess-uuid-1', state);
+        (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+        const engine = { getStatus: jest.fn().mockReturnValue(EngineStatus.READY) };
+        i.engines.set('sess-uuid-1', engine);
+        const reconnect = jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
+
+        i.scheduleReconnect('sess-uuid-1', createMockSession());
+        i.handleEngineReady('sess-uuid-1', engine, '628123', 'Tester');
+        jest.advanceTimersByTime(151000);
+
+        expect(reconnect).not.toHaveBeenCalled();
+        expect(state.timer).toBeNull();
+        expect(i.reconnectStates.get('sess-uuid-1')).toBe(state);
+      } finally {
+        jest.clearAllTimers();
+        jest.useRealTimers();
+      }
+    });
   });
 
   describe('start() stale reconnect timer', () => {

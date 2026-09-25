@@ -1130,7 +1130,7 @@
         },
         "responses": {
           "200": {
-            "description": "Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the read receipt against the chat's last known message, so a chat it has seen no message in is reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no local history.",
+            "description": "Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the read receipt against the newest message the chat received, so a chat it has received no message in (one holding only the account's own sends included) is reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no local history.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3359,7 +3359,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Chat history (most recent messages)",
+            "description": "Chat history (most recent messages, oldest first)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4488,7 +4488,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "JSON pointing at the archive that was written under data/exports/. This route does NOT stream the tar.gz itself — fetch it from the returned `download` path.",
+            "description": "JSON pointing at the archive that was written under data/exports/. This route does NOT stream the tar.gz, and no route serves it: `download` is a server-side path to pass as `filePath` to POST /api/infra/storage/import.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7134,7 +7134,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Channel details. The whatsapp-web.js engine never fills `picture` or `createdAt`; the Baileys engine reads both off the newsletter metadata.",
+            "description": "Channel details. The Baileys engine reads `createdAt` off the newsletter metadata and the whatsapp-web.js engine never fills it. Neither engine fills `picture`: WhatsApp reports only a media path.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10743,7 +10743,7 @@
             "example": "1234567890@c.us"
           },
           "messageIds": {
-            "description": "Specific message IDs to mark read. Baileys acknowledges individual messages, so without this only the newest message the engine still holds in memory gets a receipt — a burst leaves its earlier messages unread forever, and a restarted session has no message to acknowledge at all. Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.",
+            "description": "Specific message IDs to mark read. Baileys acknowledges individual messages, so without this only the newest received message the engine still holds in memory gets a receipt — a burst leaves its earlier messages unread forever, and a restarted session has no message to acknowledge at all. Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.",
             "maxItems": 100,
             "minItems": 1,
             "example": [
@@ -11504,7 +11504,7 @@
           },
           "conditions": {
             "type": "object",
-            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message."
+            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message except channel, broadcast-list and status messages, which a rule answers only when it has a `kind` condition that matches them."
           },
           "cooldownSeconds": {
             "type": "number",
@@ -11541,7 +11541,7 @@
           },
           "conditions": {
             "type": "object",
-            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message.",
+            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message except channel, broadcast-list and status messages, which a rule answers only when it has a `kind` condition that matches them.",
             "nullable": true
           },
           "replyText": {
@@ -11585,7 +11585,7 @@
           },
           "conditions": {
             "type": "object",
-            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message."
+            "description": "Match conditions in the webhook filter format (message family: sender, recipient, chatId, body, type, isGroup, kind, fromMe, hasMedia, mentions). All conditions must match (AND). Omitted or empty means the rule matches every inbound message except channel, broadcast-list and status messages, which a rule answers only when it has a `kind` condition that matches them."
           },
           "cooldownSeconds": {
             "type": "number",
@@ -14679,12 +14679,12 @@
         "properties": {
           "message": {
             "type": "string",
-            "example": "Storage archive created."
+            "example": "Storage export completed"
           },
           "download": {
             "type": "string",
-            "description": "Path to download the archive from.",
-            "example": "/api/infra/storage/download/xyz.tar"
+            "description": "Server-side path of the archive, relative to the gateway working directory. Not a download URL: pass it as `filePath` to POST /api/infra/storage/import.",
+            "example": "data/exports/storage-export-1750000000000-abc.tar.gz"
           }
         },
         "required": [

@@ -11,7 +11,7 @@ public record ChannelRecord(
     /** Invite code from the channel link. */
     String inviteCode,
     Integer subscriberCount,
-    /** Channel picture URL. Populated by Baileys; whatsapp-web.js omits it. */
+    /** Channel picture URL. Not currently filled by either engine. */
     String picture,
     Boolean verified,
     /** Channel creation time as reported by the engine. Populated by Baileys; whatsapp-web.js omits it. */

@@ -12,7 +12,7 @@
     "cancel": "Cancelar",
     "delete": "Eliminar",
     "create": "Crear",
-    "save": "Save",
+    "save": "Guardar",
     "close": "Cerrar",
     "search": "Buscar",
     "status": "Estado",
@@ -189,7 +189,8 @@
       "react": "Error al reaccionar al mensaje",
       "delete": "Error al eliminar el mensaje",
       "clickButton": "Error al pulsar el botón",
-      "fileTooLarge": "El archivo es demasiado grande (máx. 18 MB)"
+      "fileTooLarge": "El archivo es demasiado grande (máx. 18 MB)",
+      "searchHitSessionNotReady": "La sesión de este mensaje no está conectada"
     },
     "loadMessagesError": "No se pudieron cargar los mensajes. Revisa los registros del servidor.",
     "messageStatus": {
@@ -469,7 +470,7 @@
         "body": "Cuerpo del mensaje",
         "type": "Tipo de mensaje",
         "isGroup": "Es chat de grupo",
-        "kind": "Chat kind",
+        "kind": "Tipo de chat",
         "fromMe": "Enviado por mí",
         "hasMedia": "Tiene multimedia",
         "mentions": "Menciones"
@@ -634,7 +635,9 @@
     },
     "exportFailed": "No se pudo exportar el registro de auditoría",
     "exportTruncated": "La exportación solo abarca las {{rows}} entradas más recientes. Restringe el filtro de severidad para exportar las más antiguas.",
-    "exportThrottled": "La exportación solo abarca las {{rows}} entradas más recientes porque la puerta de enlace está limitando las lecturas del registro de auditoría. Espera un minuto y vuelve a exportar."
+    "exportThrottled": "La exportación solo abarca las {{rows}} entradas más recientes porque la puerta de enlace está limitando las lecturas del registro de auditoría. Espera un minuto y vuelve a exportar.",
+    "exportNoMatches": "Ninguna entrada del registro de auditoría coincide con la búsqueda, así que no se exportó nada.",
+    "exportNoMatchesTruncated": "Ninguna de las {{rows}} entradas más recientes revisadas coincide con la búsqueda, así que no se exportó nada. Las entradas más antiguas no se revisaron."
   },
   "messageTester": {
     "title": "Probador de mensajes",

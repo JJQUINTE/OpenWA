@@ -1059,8 +1059,9 @@ export interface SubscribePresenceRequest {
 export interface MarkChatReadRequest extends MarkChatRequest {
   /**
    * Specific message IDs to acknowledge. Baileys acknowledges individual messages, so without this
-   * only the newest message the engine still holds in memory gets a receipt: a burst leaves its
-   * earlier messages unread forever, and a restarted session has no message to acknowledge at all.
+   * only the newest received message the engine still holds in memory gets a receipt: a burst
+   * leaves its earlier messages unread forever, and a restarted session has no message to
+   * acknowledge at all.
    * Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js,
    * whose own sendSeen is chat-level. At most 100 per request; an empty array is rejected.
    */
@@ -1238,7 +1239,7 @@ export interface ChannelRecord {
   /** Invite code from the channel link. */
   inviteCode?: string;
   subscriberCount?: number;
-  /** Channel picture URL. Populated by Baileys; whatsapp-web.js omits it. */
+  /** Channel picture URL. Not currently filled by either engine. */
   picture?: string;
   verified?: boolean;
   /** Channel creation time as reported by the engine. Populated by Baileys; whatsapp-web.js omits it. */

@@ -34,6 +34,14 @@ const render = (...setArgs) =>
     maxBuffer: 1 << 24,
   });
 
+/** Render with `valuesYaml` as a values file (`-f -`), which parses numbers unlike `--set`. */
+const renderValues = valuesYaml =>
+  execFileSync('docker', ['run', '-i', '--rm', '-v', `${CHARTS}:/charts:ro`, HELM_IMAGE, 'template', 'ci', '/charts/openwa', '-f', '-'], {
+    encoding: 'utf8',
+    input: valuesYaml,
+    maxBuffer: 1 << 24,
+  });
+
 const documents = out => out.split('\n---\n');
 const kindOf = doc => /^kind:\s*(\S+)/m.exec(doc)?.[1];
 const nameOf = doc => /^\s{2}name:\s*(\S+)/m.exec(doc)?.[1];
@@ -163,6 +171,34 @@ const check = (id, ok, detail) => results.push({ id, ok, detail });
     Object.keys(selector).length === 0
       ? `${nameOf(monitor) ?? 'ServiceMonitor'}: empty selector — it would match every Service in the namespace`
       : `${matched.length} Service(s) match the selector on port '${port}': ${matched.join(', ') || '(none)'}`,
+  );
+}
+
+// A values file is parsed as YAML, so an unquoted number reaches the templates as a float64, and
+// `quote` prints one of a million or more in exponent form. The app then reads "5.24288e+07" for a
+// byte limit (and refuses to boot) or "1.2345678e+07" for a password. `--set` parses integers as
+// int64, so the renders above never see it. Fractions and booleans must still pass through as written.
+{
+  const out = renderValues(
+    'env:\n  MEDIA_DOWNLOAD_MAX_BYTES: 52428800\n  CHECK_RATIO: 1.5\n  CHECK_FLAG: true\n' +
+      'secretEnv:\n  DATABASE_PASSWORD: 12345678\n',
+  );
+  const data = mapAt(byKind(out, 'ConfigMap')[0] ?? '', ['data']) ?? {};
+  const secret = mapAt(byKind(out, 'Secret')[0] ?? '', ['stringData']) ?? {};
+  const got = {
+    MEDIA_DOWNLOAD_MAX_BYTES: data.MEDIA_DOWNLOAD_MAX_BYTES,
+    CHECK_RATIO: data.CHECK_RATIO,
+    CHECK_FLAG: data.CHECK_FLAG,
+    DATABASE_PASSWORD: secret.DATABASE_PASSWORD,
+  };
+  const want = { MEDIA_DOWNLOAD_MAX_BYTES: '52428800', CHECK_RATIO: '1.5', CHECK_FLAG: 'true', DATABASE_PASSWORD: '12345678' };
+  const wrong = Object.keys(want).filter(k => got[k] !== want[k]);
+  check(
+    'values-file-numbers-render-as-written',
+    wrong.length === 0,
+    wrong.length
+      ? `values-file entries rendered differently from how they were written: ${wrong.map(k => `${k}=${JSON.stringify(got[k])}`).join(', ')}`
+      : 'unquoted numbers in a values file reach the ConfigMap and Secret as written',
   );
 }
 

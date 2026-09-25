@@ -164,7 +164,8 @@ type SessionResponse struct {
 	// EngineLoaded reports whether the gateway holds a live engine for this session -- the
 	// precondition stop/logout/force-kill require and start refuses. Not derivable from Status:
 	// "disconnected" covers both a session mid automatic-reconnect (engine present) and one stopped
-	// with no engine. Nil from a gateway that predates the field.
+	// with no engine. A gateway that predates the field omits it, which decodes as false; against
+	// such a gateway false does not mean no engine is loaded, so fall back to Status.
 	EngineLoaded bool `json:"engineLoaded"`
 }
 

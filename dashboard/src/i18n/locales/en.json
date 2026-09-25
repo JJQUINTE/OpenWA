@@ -186,7 +186,8 @@
       "react": "Failed to react to message",
       "delete": "Failed to delete message",
       "clickButton": "Failed to click button",
-      "fileTooLarge": "File is too large (max 18 MB)"
+      "fileTooLarge": "File is too large (max 18 MB)",
+      "searchHitSessionNotReady": "The session of this message is not connected"
     },
     "loadMessagesError": "Couldn't load messages. Check the server logs.",
     "messageStatus": {
@@ -679,7 +680,9 @@
     },
     "exportFailed": "Couldn't export the audit log",
     "exportTruncated": "The export covers only the newest {{rows}} entries. Narrow the severity filter to export older ones.",
-    "exportThrottled": "The export covers only the newest {{rows}} entries because the gateway is rate-limiting audit log reads. Wait a minute and export again."
+    "exportThrottled": "The export covers only the newest {{rows}} entries because the gateway is rate-limiting audit log reads. Wait a minute and export again.",
+    "exportNoMatches": "No audit log entries match the search, so nothing was exported.",
+    "exportNoMatchesTruncated": "None of the newest {{rows}} entries scanned match the search, so nothing was exported. Older entries were not searched."
   },
   "messageTester": {
     "title": "Message Tester",

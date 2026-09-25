@@ -3407,7 +3407,17 @@ describe('BaileysAdapter inbound fan-out', () => {
       expect(await deliver(original, key, reaction)).toBe(1);
       expect(await deliver(original, key, edit)).toBe(0);
       expect(await deliver(original, key, revoke)).toBe(0);
-      expect(await deliver({ ...original, fromMe: false }, key, reaction)).toBe(0);
+      expect(await deliver({ ...original, fromMe: false, participant: bob }, key, reaction)).toBe(0);
+    });
+
+    // A broadcast-list message the account received is filed under the list jid with its sender as
+    // participant, and Baileys shows it, and files reactions to it, in the 1:1 chat with that sender.
+    it('keeps a reaction to a received broadcast-list message from its sender chat, but not from another', async () => {
+      const original = { remoteJid: '1700000000@broadcast', fromMe: false, participant: alice };
+      expect(await deliver(original, { remoteJid: alice, fromMe: true }, reaction)).toBe(1);
+      expect(await deliver(original, { remoteJid: alice, fromMe: false }, reaction)).toBe(1);
+      expect(await deliver(original, { ...original }, reaction)).toBe(1);
+      expect(await deliver(original, { remoteJid: bob, fromMe: false }, reaction)).toBe(0);
     });
 
     it('keeps an edit whose chat is an unresolved lid, since it may be the stored phone-number chat', async () => {
@@ -4374,27 +4384,33 @@ describe('BaileysAdapter store-backed ops', () => {
     expect(fakeSock.sendMessage).toHaveBeenCalledWith('484848@lid', expect.objectContaining({ pin: stored.key }));
   });
 
-  it('getChannelById maps newsletterMetadata(jid) → Channel (optionals only when present)', async () => {
+  // newsletterMetadata hands back the raw GraphQL node (parseNewsletterMetadata returns it as-is), nested
+  // under thread_metadata with string counts; only newsletterCreate flattens. Recorded live in
+  // scripts/patch-baileys-newsletter-create.spec.js.
+  it('getChannelById maps the raw newsletterMetadata(jid) node → Channel (optionals only when present)', async () => {
     fakeSock.newsletterMetadata.mockResolvedValue({
       id: '120363N@newsletter',
-      name: 'Announcements',
-      description: 'News',
-      invite: 'ABC123',
-      subscribers: 421,
-      picture: { url: 'https://x/p.png' },
-      verification: 'VERIFIED',
-      creation_time: 1700000000,
+      thread_metadata: {
+        name: { text: 'Announcements' },
+        creation_time: '1700000000',
+        description: { text: 'News' },
+        invite: 'ABC123',
+        subscribers_count: '421',
+        verification: 'VERIFIED',
+        picture: { direct_path: '/v/t61/p', id: '1', type: 'IMAGE' },
+      },
+      viewer_metadata: { mute: 'OFF' },
     });
     const adapter = await ready();
     const channel = await adapter.getChannelById('120363N@newsletter');
     expect(fakeSock.newsletterMetadata).toHaveBeenCalledWith('jid', '120363N@newsletter');
+    // No picture: neither shape carries a URL, only a direct path.
     expect(channel).toEqual({
       id: '120363N@newsletter',
       name: 'Announcements',
       description: 'News',
       inviteCode: 'ABC123',
       subscriberCount: 421,
-      picture: 'https://x/p.png',
       verified: true,
       createdAt: 1700000000,
     });
@@ -4407,12 +4423,31 @@ describe('BaileysAdapter store-backed ops', () => {
   });
 
   it('subscribeToChannel resolves invite→jid via newsletterMetadata then follows', async () => {
-    fakeSock.newsletterMetadata.mockResolvedValue({ id: '120363S@newsletter', name: 'Solo', invite: 'CODE1' });
+    fakeSock.newsletterMetadata.mockResolvedValue({
+      id: '120363S@newsletter',
+      thread_metadata: {
+        name: { text: 'Solo' },
+        creation_time: '1786405315',
+        description: null,
+        invite: 'CODE1',
+        subscribers_count: '1',
+        verification: 'UNVERIFIED',
+        picture: null,
+      },
+      viewer_metadata: { mute: 'off' },
+    });
     const adapter = await ready();
     const channel = await adapter.subscribeToChannel('CODE1');
     expect(fakeSock.newsletterMetadata).toHaveBeenCalledWith('invite', 'CODE1');
     expect(fakeSock.newsletterFollow).toHaveBeenCalledWith('120363S@newsletter');
-    expect(channel).toEqual({ id: '120363S@newsletter', name: 'Solo', inviteCode: 'CODE1' });
+    expect(channel).toEqual({
+      id: '120363S@newsletter',
+      name: 'Solo',
+      inviteCode: 'CODE1',
+      subscriberCount: 1,
+      verified: false,
+      createdAt: 1786405315,
+    });
   });
 
   it('subscribeToChannel throws ChannelNotFoundError when the invite resolves null', async () => {
@@ -4515,6 +4550,46 @@ describe('BaileysAdapter store-backed ops', () => {
       const adapter = await sendLast();
       await adapter.deleteMessage('628111@s.whatsapp.net', 'OUT_LATER', forEveryone);
       expect(await preview(adapter)).toBe('');
+    });
+  });
+
+  describe('an API send addressed in another dialect than the chat is keyed by', () => {
+    /** Baileys keys the sent message by exactly the jid it was handed, whatever its dialect. */
+    const echoSend = () =>
+      fakeSock.sendMessage.mockImplementation((jid: string, content: { text?: string }) =>
+        Promise.resolve({
+          key: { id: 'OUT', remoteJid: jid, fromMe: true },
+          message: { extendedTextMessage: { text: content.text } },
+          messageTimestamp: 1700000100,
+        }),
+      );
+    afterEach(() => {
+      fakeSock.signalRepository = undefined;
+    });
+
+    it.each([
+      ['an unmapped @c.us id to a phone-keyed chat', '628111@c.us', '628111@s.whatsapp.net', null],
+      ['a phone id to a phone-keyed chat whose lid is known', '628111@c.us', '628111@s.whatsapp.net', '484848@lid'],
+      ['a phone id to a lid-keyed chat', '628111@s.whatsapp.net', '484848@lid', '484848@lid'],
+    ])('%s still becomes the chat preview and sort time', async (_label, sendTo, chatKey, lid) => {
+      fakeSock.signalRepository = { lidMapping: { getLIDForPN: jest.fn().mockResolvedValue(lid) } };
+      echoSend();
+      const adapter = await ready();
+      fakeSock.fire('chats.upsert', [{ id: chatKey, conversationTimestamp: 1700000000 }]);
+      await adapter.sendTextMessage(sendTo, 'on its way');
+      expect(await adapter.getChats()).toEqual([
+        expect.objectContaining({ id: '628111@c.us', timestamp: 1700000100, lastMessage: 'on its way' }),
+      ]);
+
+      fakeStore.getMessage.mockResolvedValue({
+        key: { id: 'OUT', remoteJid: lid ?? sendTo, fromMe: true },
+        message: { extendedTextMessage: { text: 'on its way' } },
+        messageTimestamp: 1700000100,
+      });
+      await adapter.editMessage('628111@c.us', 'OUT', 'arriving tomorrow');
+      expect((await adapter.getChats())[0]?.lastMessage).toBe('arriving tomorrow');
+      await adapter.deleteMessage('628111@c.us', 'OUT', true);
+      expect((await adapter.getChats())[0]?.lastMessage).toBe('');
     });
   });
 
@@ -5995,6 +6070,40 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     ]);
   });
 
+  it.each([
+    ['@c.us', '628111@c.us'],
+    ['@s.whatsapp.net', '628111@s.whatsapp.net'],
+  ])('sendSeen after an API reply to %s acknowledges the received message', async (_l, chatId) => {
+    fakeSock.sendMessage.mockImplementation((jid: string) =>
+      Promise.resolve({
+        key: { id: 'OUT', remoteJid: jid, fromMe: true },
+        message: { extendedTextMessage: { text: 'reply' } },
+        messageTimestamp: 1700000100,
+      }),
+    );
+    const adapter = await readyWithMessage();
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net' }]);
+    await adapter.sendTextMessage(chatId, 'reply');
+    expect(await adapter.sendSeen(chatId)).toBe(true);
+    expect(fakeSock.readMessages).toHaveBeenCalledWith([
+      { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+    ]);
+    expect(await adapter.getChats()).toEqual([expect.objectContaining({ lastMessage: 'reply' })]);
+  });
+
+  it('sendSeen returns false when the only known message is an own send', async () => {
+    fakeSock.sendMessage.mockResolvedValue({
+      key: { id: 'OUT', remoteJid: '628111@s.whatsapp.net', fromMe: true },
+      messageTimestamp: 1700000100,
+    });
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    await adapter.sendTextMessage('628111@c.us', 'hello');
+    expect(await adapter.sendSeen('628111@c.us')).toBe(false);
+    expect(fakeSock.readMessages).not.toHaveBeenCalled();
+  });
+
   it('sendSeen returns false when no last message is known', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});
@@ -6060,6 +6169,37 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
         ],
       },
       '628111@s.whatsapp.net',
+    );
+  });
+
+  it.each([
+    ['markUnread', (a: BaileysAdapter) => a.markUnread('628111@c.us')],
+    ['clearChatMessages', (a: BaileysAdapter) => a.clearChatMessages('628111@c.us')],
+    ['archiveChat', (a: BaileysAdapter) => a.archiveChat('628111@c.us', true)],
+    ['deleteChat', (a: BaileysAdapter) => a.deleteChat('628111@c.us')],
+  ])('%s addresses a lid-keyed chat by its lid when called with the listed @c.us id', async (_n, act) => {
+    const adapter = newAdapter();
+    await adapter.initialize({});
+    fakeSock.fire('connection.update', { connection: 'open' });
+    fakeSock.fire('chats.upsert', [{ id: '484848@lid' }]);
+    fakeSock.fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        {
+          key: { remoteJid: '484848@lid', remoteJidAlt: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+          message: { conversation: 'hi' },
+          messageTimestamp: 1700000020,
+        },
+      ],
+    });
+    await new Promise(r => setImmediate(r));
+    expect((await adapter.getChats())[0]?.id).toBe('628111@c.us');
+    await expect(act(adapter)).resolves.toBe(true);
+    expect(fakeSock.chatModify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastMessages: [{ key: expect.objectContaining({ id: 'M1' }) as unknown, messageTimestamp: 1700000020 }],
+      }),
+      '484848@lid',
     );
   });
 
@@ -6230,7 +6370,7 @@ describe('BaileysAdapter status posting', () => {
     });
     expect(fakeSock.sendMessage).toHaveBeenCalledWith(
       'status@broadcast',
-      { text: 'hello' },
+      { text: 'hello', linkPreview: null },
       {
         statusJidList: ['628111@s.whatsapp.net', '628222@lid'],
         backgroundColor: '#25D366',
@@ -6953,6 +7093,26 @@ describe('BaileysAdapter channel administration', () => {
 
     expect(fakeSock.newsletterCreate).toHaveBeenCalledWith('Product updates', 'Release notes');
     expect(channel).toMatchObject({ id: CHANNEL, name: 'Product updates', inviteCode: 'ABC123' });
+  });
+
+  // parseNewsletterCreateResponse flattens with parseInt, so a field WhatsApp left out arrives as NaN,
+  // which would serialize as null in a field the contract types as a number.
+  it('drops a count or timestamp the flattened create response could not parse', async () => {
+    fakeSock.newsletterCreate.mockResolvedValue({
+      id: CHANNEL,
+      name: 'Product updates',
+      creation_time: Number.NaN,
+      subscribers: Number.NaN,
+      picture: { id: '1', directPath: '/v/t61/p' },
+      verification: 'UNVERIFIED',
+    });
+    const adapter = await readyAdapter();
+
+    await expect(adapter.createChannel('Product updates')).resolves.toEqual({
+      id: CHANNEL,
+      name: 'Product updates',
+      verified: false,
+    });
   });
 
   it('deletes a channel by id', async () => {

@@ -823,7 +823,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       BUILTIN_MINIO_ENV,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -840,7 +840,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       undefined,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -1226,6 +1226,62 @@ describe('InfraConfigController.requestRestart constrains teardown to managed pr
       errors: ['Failed to stop redis'],
     });
     expect(JSON.stringify(result.removal)).not.toContain('removed');
+  });
+
+  describe('a service the environment pins the app to', () => {
+    const KEYS = ['DATABASE_HOST', 'REDIS_HOST', 'S3_ENDPOINT'];
+    let savedEnv: Array<[string, string | undefined]>;
+
+    beforeEach(() => {
+      savedEnv = KEYS.map(k => [k, process.env[k]]);
+    });
+    afterEach(() => {
+      for (const [k, v] of savedEnv) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      // Back to the no-snapshot default the rest of the file assumes.
+      recordPinnedEnvKeys(process.env);
+    });
+
+    it('is never stopped, since the restarted app would still point at it', async () => {
+      // The documented manual built-in Postgres setup: DATABASE_HOST=postgres in .env or on the host.
+      process.env.DATABASE_HOST = 'postgres';
+      process.env.REDIS_HOST = 'redis';
+      process.env.S3_ENDPOINT = 'http://minio:9000';
+      recordPinnedEnvKeys(process.env);
+      const stopManagedService = jest.fn().mockResolvedValue(true);
+      const controller = buildController({
+        isDockerAvailable: () => true,
+        stopManagedService,
+        orchestrateProfiles: jest.fn().mockResolvedValue({}),
+      });
+
+      const result = await controller.requestRestart({ profilesToRemove: ['postgres', 'redis', 'minio'] });
+
+      expect(stopManagedService).not.toHaveBeenCalled();
+      expect(result.profilesToRemove).toEqual([]);
+    });
+
+    it('is still stopped when the pin names a different host', async () => {
+      process.env.DATABASE_HOST = 'db.example.internal';
+      delete process.env.REDIS_HOST;
+      delete process.env.S3_ENDPOINT;
+      recordPinnedEnvKeys(process.env);
+      const stopManagedService = jest.fn().mockResolvedValue(true);
+      const controller = buildController({
+        isDockerAvailable: () => true,
+        stopManagedService,
+        orchestrateProfiles: jest.fn().mockResolvedValue({}),
+      });
+
+      await controller.requestRestart({ profilesToRemove: ['postgres', 'redis'] });
+
+      expect(stopManagedService.mock.calls.map(call => String((call as unknown[])[0])).sort()).toEqual([
+        'postgres',
+        'redis',
+      ]);
+    });
   });
 
   it('starts only allowlisted profiles, never an unknown entry (symmetry with teardown)', async () => {

@@ -570,7 +570,11 @@ export class MessageController {
       '(whatsapp-web.js only; loads earlier messages on demand). Forces metadata-only (includeMedia ' +
       'is ignored). Large/slow requests may increase WhatsApp rate-limiting risk; default false.',
   })
-  @ApiResponse({ status: 200, description: 'Chat history (most recent messages)', type: [ChatHistoryMessageDto] })
+  @ApiResponse({
+    status: 200,
+    description: 'Chat history (most recent messages, oldest first)',
+    type: [ChatHistoryMessageDto],
+  })
   @ApiResponse({ status: 409, description: ENGINE_NOT_READY_409 })
   @ApiResponse({ status: 501, description: ENGINE_NOT_SUPPORTED_501 })
   @ApiResponse({

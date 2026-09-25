@@ -102,9 +102,9 @@ describe('OpenWAClient', () => {
   });
 
   it('maps a 503 to OpenWAServiceUnavailableError', async () => {
-    // The gateway answers 503 when the engine never confirmed an operation. It is the only typed error
-    // here that is worth retrying, and it used to fall through to the base class while 501 — which is
-    // permanent — had a subclass of its own.
+    // The gateway answers 503 when the engine never confirmed an operation: a transport failure, which
+    // is worth retrying, as a 429 is. It used to fall through to the base class while 501, which is
+    // permanent, had a subclass of its own.
     const t = new MockTransport().on('POST', '/api/sessions/s1/messages/send-text', {
       status: 503,
       body: { statusCode: 503, message: 'WhatsApp did not answer in time', error: 'Service Unavailable' },

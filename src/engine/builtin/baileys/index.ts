@@ -1,6 +1,6 @@
 /**
  * Baileys Engine Plugin
- * Built-in engine plugin that wraps the @whiskeysockets/baileys library (minimal slice).
+ * Built-in engine plugin that wraps the @whiskeysockets/baileys library.
  */
 
 import { PluginContext, PluginType, IEnginePlugin } from '../../../core/plugins';

@@ -102,6 +102,8 @@ function resetFetchCalls(): void {
   startResult = null;
   stopFailure = null;
   qrGate = null;
+  listGate = null;
+  pairingGate = null;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -132,6 +134,11 @@ let stopFailure: { status: number; message: string } | null = null;
 let startGate: Promise<void> | null = null;
 // When set, GET .../qr for that one session answers only once `until` settles.
 let qrGate: { sessionId: string; until: Promise<void> } | null = null;
+// When set, the next GET /api/sessions reads the rows as they are when it arrives but answers only once
+// this settles, so a test can land an older read after a newer one. Spent by that one read.
+let listGate: Promise<void> | null = null;
+// When set, POST .../pairing-code answers only once this settles.
+let pairingGate: Promise<void> | null = null;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -162,6 +169,12 @@ function installFetchStub(): void {
           ? `gateway unavailable (${sessionListFailures})`
           : 'gateway unavailable';
         return Promise.resolve(jsonResponse({ message }, 503));
+      }
+      if (listGate) {
+        const until = listGate;
+        listGate = null;
+        const snapshot: unknown = JSON.parse(JSON.stringify(SESSIONS));
+        return until.then(() => jsonResponse(snapshot));
       }
       return Promise.resolve(jsonResponse(SESSIONS));
     }
@@ -236,7 +249,9 @@ function installFetchStub(): void {
 
     const pairingMatch = path.match(/^\/api\/sessions\/([^/]+)\/pairing-code$/);
     if (method === 'POST' && pairingMatch) {
-      return Promise.resolve(jsonResponse({ pairingCode: '12345678', status: 'qr_ready' }));
+      const answer = () => jsonResponse({ pairingCode: '12345678', status: 'qr_ready' });
+      if (pairingGate) return pairingGate.then(answer);
+      return Promise.resolve(answer());
     }
 
     const lifecycleMatch = path.match(/^\/api\/sessions\/([^/]+)\/(start|stop|logout|force-kill)$/);
@@ -577,6 +592,48 @@ test('a QR answer that lands after its modal closed changes nothing', async () =
     await new Promise(resolve => setTimeout(resolve, 50));
     const dialog = screen.getByRole('dialog');
     assert.ok(within(dialog).queryByText('second-device'), "a late QR answer replaced another session's modal");
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// Closing the modal does not cancel a pairing-code request either (whatsapp-web.js can take seconds to
+// answer). Its code must not appear in a modal opened since, for another session or for the same one
+// reset to a blank form, and that modal must not start with Generate stuck on the old request.
+test('a pairing code that lands after its modal closed changes nothing', async () => {
+  const { screen, fireEvent, within, act } = rtl;
+  resetFetchCalls();
+  const other: Session = { ...SESSION_QR, id: 'sess-qr-3', name: 'third-device' };
+  SESSIONS.push(other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const otherCard = screen.getByText('third-device').closest('.session-card') as HTMLElement;
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+
+    for (const reopen of [otherCard, card]) {
+      let release: () => void = () => {};
+      pairingGate = new Promise<void>(resolve => (release = resolve));
+      fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+      await screen.findByAltText('QR');
+      fireEvent.click(screen.getByRole('tab', { name: 'Link with Phone Number' }));
+      fireEvent.change(screen.getByLabelText('Phone Number'), { target: { value: '919876543210' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate Pairing Code' }));
+      await screen.findByText('Generating pairing code...');
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+
+      fireEvent.click(within(reopen).getByRole('button', { name: 'Show QR' }));
+      await screen.findByAltText('QR');
+      fireEvent.click(screen.getByRole('tab', { name: 'Link with Phone Number' }));
+      const dialog = screen.getByRole('dialog');
+      assert.ok(!within(dialog).queryByText('Generating pairing code...'), 'Generate stayed stuck on the old request');
+      release();
+      await settle();
+
+      assert.ok(!dialog.querySelector('.pairing-code-display'), 'a late pairing code landed in a modal opened since');
+      assert.ok(within(dialog).queryByRole('tab', { name: 'QR Code' }), 'a late pairing code hid the tab bar');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    }
   } finally {
     SESSIONS.pop();
   }
@@ -1018,6 +1075,213 @@ test('a disconnected push keeps the QR modal when the re-read fails', async () =
     // Let the re-read's continuation run and any state it sets render before looking.
     await act(() => new Promise<void>(resolve => setTimeout(resolve, 0)));
     assert.ok(screen.queryByRole('dialog'), 'the QR modal closed on a re-read that failed');
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// Another card's push starts a newer read while the disconnect's read is in flight, and the older read
+// answers first and is dropped. The close decision must still get a server answer, not the pushed rows.
+test('a disconnect re-read overtaken by a newer read still closes the QR modal', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = {
+    ...SESSION_QR,
+    id: 'sess-overtaken-1',
+    name: 'overtaken',
+    status: 'qr_ready',
+    engineLoaded: true,
+  };
+  const other: Session = { ...SESSION_QR, id: 'sess-overtaker-1', name: 'overtaker', status: 'authenticating' };
+  SESSIONS.push(row, other);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('overtaken')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Show QR' }));
+    await screen.findByAltText('QR');
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    let releaseDisconnect: () => void = () => {};
+    listGate = new Promise<void>(resolve => (releaseDisconnect = resolve));
+    Object.assign(row, { status: 'disconnected', engineLoaded: false });
+    const before = reads();
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    let releaseReady: () => void = () => {};
+    listGate = new Promise<void>(resolve => (releaseReady = resolve));
+    Object.assign(other, { status: 'ready' });
+    pushSessionStatus(other.id, 'ready');
+    await waitFor(() => assert.equal(reads(), before + 2));
+
+    releaseDisconnect();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    releaseReady();
+    await waitFor(() => assert.ok(!screen.queryByRole('dialog'), 'the QR modal stayed open with no engine left'));
+  } finally {
+    SESSIONS.pop();
+    SESSIONS.pop();
+  }
+});
+
+// Two reads of the list can be in flight at once, one per status push, and nothing makes them answer
+// in the order they were sent. The older one must not put its snapshot back over the newer.
+test('a list read that answers after a newer one does not overwrite it', async () => {
+  const { screen, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-flap-1', name: 'flapping', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('flapping')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    // The ready push's read sees the row ready, then answers late.
+    let release: () => void = () => {};
+    listGate = new Promise<void>(resolve => (release = resolve));
+    Object.assign(row, { status: 'ready' });
+    const before = reads();
+    pushSessionStatus(row.id, 'ready');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    // The session drops straight away; this read answers first.
+    Object.assign(row, { status: 'disconnected', engineLoaded: false });
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 2));
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(within(card).queryByText('Disconnected'));
+
+    release();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(within(card).queryByText('Disconnected'), 'an older list read put the session back to ready');
+    assert.ok(
+      within(card).queryByRole('button', { name: 'Start' }),
+      'an older list read put the session back to ready',
+    );
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// A status push carries no fields but the status, and a push that starts no read of its own (qr_ready,
+// initializing, connecting) is newer than a read already in flight. That read must not undo it.
+test('a list read that started before a status push does not undo the pushed status', async () => {
+  const { screen, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-backoff-2', name: 'bouncing', status: 'ready', phone: '15550004444' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('bouncing')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+
+    // The disconnect's read sees the row disconnected, then answers late.
+    let release: () => void = () => {};
+    listGate = new Promise<void>(resolve => (release = resolve));
+    Object.assign(row, { status: 'disconnected' });
+    const before = reads();
+    pushSessionStatus(row.id, 'disconnected');
+    await waitFor(() => assert.equal(reads(), before + 1));
+
+    // The engine is already reconnecting when that answer arrives.
+    Object.assign(row, { status: 'initializing' });
+    pushSessionStatus(row.id, 'initializing');
+    await within(card).findByText('Starting...');
+
+    release();
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    assert.ok(
+      within(card).queryByText('Starting...'),
+      'a read older than the push put the session back to disconnected',
+    );
+  } finally {
+    SESSIONS.pop();
+  }
+});
+
+// The page's own writes (a created row, a stop's answer, a deleted row) are newer than any list read
+// already in flight, the same as a status push.
+test('a list read in flight does not undo a create, a stop or a delete', async () => {
+  const { screen, fireEvent, within, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const qrRow = { ...SESSION_QR };
+  const staleIndex = SESSIONS.indexOf(SESSION_STALE_ENGINE);
+  try {
+    renderSessions();
+    const qrCard = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    const reads = () => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+    const settle = () => act(() => new Promise<void>(resolve => setTimeout(resolve, 20)));
+    // Starts a read (the push's own) that snapshots the rows now and answers only on release.
+    const holdRead = async (): Promise<() => void> => {
+      let release: () => void = () => {};
+      listGate = new Promise<void>(resolve => (release = resolve));
+      const before = reads();
+      pushSessionStatus(SESSION_TIMELOCKED.id, 'action_required');
+      await waitFor(() => assert.equal(reads(), before + 1));
+      return release;
+    };
+
+    let release = await holdRead();
+    fireEvent.click(within(qrCard).getByRole('button', { name: 'Stop' }));
+    await within(qrCard).findByRole('button', { name: 'Start' });
+    Object.assign(SESSION_QR, { status: 'disconnected', engineLoaded: false });
+    release();
+    await settle();
+    assert.ok(
+      within(qrCard).queryByRole('button', { name: 'Start' }),
+      'a read older than the stop put the engine back',
+    );
+
+    release = await holdRead();
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('e.g., marketing-bot'), { target: { value: 'late-bot' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await screen.findByText('late-bot');
+    SESSIONS.push({ ...SESSION_QR, id: 'sess-new-late-bot', name: 'late-bot', status: 'created' as Session['status'] });
+    release();
+    await settle();
+    assert.ok(screen.queryByText('late-bot'), 'a read older than the create dropped the new row');
+    SESSIONS.pop();
+
+    release = await holdRead();
+    const staleCard = screen.getByText('stale-engine').closest('.session-card') as HTMLElement;
+    fireEvent.click(within(staleCard).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => assert.ok(!screen.queryByText('stale-engine')));
+    SESSIONS.splice(staleIndex, 1);
+    release();
+    await settle();
+    assert.ok(!screen.queryByText('stale-engine'), 'a read older than the delete brought the row back');
+  } finally {
+    Object.assign(SESSION_QR, qrRow);
+    if (!SESSIONS.includes(SESSION_STALE_ENGINE)) SESSIONS.splice(staleIndex, 0, SESSION_STALE_ENGINE);
+  }
+});
+
+// The detail modal shows the row as it is now, not as it was when View was clicked.
+test('an open detail modal follows its session status and phone', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-viewed-1', name: 'viewed', status: 'authenticating' };
+  SESSIONS.push(row);
+  try {
+    renderSessions();
+    const card = (await screen.findByText('viewed')).closest('.session-card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'View' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Not connected');
+
+    Object.assign(row, { status: 'ready', phone: '15550005555' });
+    pushSessionStatus(row.id, 'ready');
+
+    await waitFor(() => within(dialog).getByText('15550005555'));
+    assert.ok(within(dialog).queryByText('Connected'), 'the detail modal kept the status it was opened with');
   } finally {
     SESSIONS.pop();
   }

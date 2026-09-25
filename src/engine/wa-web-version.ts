@@ -19,11 +19,12 @@ export const WA_VERSION_REGISTRY_URL =
 
 const DEFAULT_REMOTE_TEMPLATE = 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html';
 
-// Module-level cache: undefined = not yet resolved, string = the resolved current build. A failed
-// fetch is NOT cached permanently — but to avoid re-stalling every call (e.g. each /infra/status poll
-// and every session start/reconnect) on a firewalled/offline host, a failure is rate-limited by
-// `lastFailureAt`: subsequent calls return null instantly for FAILURE_BACKOFF_MS, then retry. `inFlight`
-// dedupes concurrent resolves into a single fetch.
+// Module-level cache: undefined = not yet resolved, string = the resolved current build (refreshed
+// after CACHE_TTL_MS). A failed fetch is NOT cached permanently — but to avoid re-stalling every
+// call (e.g. each /infra/status poll and every session start/reconnect) on a firewalled/offline
+// host, a failure is rate-limited by `lastFailureAt`: subsequent calls skip the fetch for
+// FAILURE_BACKOFF_MS and answer the previously resolved build (null if none), then retry.
+// `inFlight` dedupes concurrent resolves into a single fetch.
 const FAILURE_BACKOFF_MS = 60_000;
 // Minimum age a WhatsApp Web build must reach before we'll auto-pin it. The registry's
 // `currentVersion` tracks the latest build, which can be minutes old and unvalidated; a build
@@ -194,7 +195,8 @@ export async function resolveCurrentWebVersion(fetcher: typeof fetch = fetch): P
  * - Explicit `WWEBJS_WEB_VERSION` (a version string)  → pin it exactly (no network call).
  * - `off`                                             → no pin; whatsapp-web.js native auto-select.
  * - unset / `auto` / `latest`                         → auto-resolve the current known-good build
- *   from the wa-version registry and pin it; if that fetch fails, fall back to native auto-select.
+ *   from the wa-version registry and pin it; if that fetch fails, keep the previously resolved
+ *   build, or fall back to native auto-select when none was ever resolved.
  * `WWEBJS_WEB_VERSION_REMOTE_PATH` overrides the HTML URL template (`{version}` placeholder).
  * The auto-resolve replaces whatsapp-web.js's unreliable default that caused #488 (scan → stuck →
  * disconnect loop) on Docker setups where no version was pinned.

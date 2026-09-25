@@ -329,7 +329,7 @@ export interface PluginEngineReadCapability {
   getContactById(sessionId: string, contactId: string): Promise<...>;
   checkNumberExists(sessionId: string, phone: string): Promise<...>;
   getChats(sessionId: string): Promise<...>;
-  // Recent messages for a chat, both directions (history backfill). `limit` is clamped host-side to 1-100.
+  // Recent messages for a chat, both directions, oldest first (history backfill). `limit` is clamped host-side to 1-100.
   getChatHistory(sessionId: string, chatId: string, limit?: number, includeMedia?: boolean): Promise<...>;
   // Canonical form of a chat id: resolves a known '@lid' privacy id to its stable '<phone>@c.us',
   // otherwise returns the id unchanged (best-effort).

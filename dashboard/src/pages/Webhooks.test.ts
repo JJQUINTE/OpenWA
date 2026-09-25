@@ -9,16 +9,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 let webhooksStatus = 200;
 let webhookList: unknown[] = [];
+let sessionList: unknown[] = [];
+let createCalls = 0;
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 function installFetchStub(): void {
-  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, '');
-    if (path === '/api/sessions') return Promise.resolve(jsonResponse([]));
+    if (path === '/api/sessions') return Promise.resolve(jsonResponse(sessionList));
+    if (init?.method === 'POST' && path === '/api/sessions/sess-1/webhooks') {
+      // Never answers: the create stays in flight, like one held up by the gateway's URL check.
+      createCalls++;
+      return new Promise<Response>(() => {});
+    }
     if (path === '/api/webhooks') {
       if (webhooksStatus === 403) {
         return Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: operator' }, 403));
@@ -54,6 +61,9 @@ afterEach(() => {
   queryClient?.clear();
   queryClient = undefined;
   webhookList = [];
+  sessionList = [];
+  createCalls = 0;
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
 });
 
 function renderWebhooks(): void {
@@ -130,4 +140,27 @@ test('the filter badge popover names enum values in words, like the filter build
     // A contact field has no labels; its JIDs are shown as they are.
     'Sender is 628123@c.us',
   ]);
+});
+
+test('a second click on Create while the first create is in flight sends nothing', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  webhooksStatus = 200;
+  sessionList = [{ id: 'sess-1', name: 'Main', status: 'ready', createdAt: '2026-01-01T00:00:00.000Z' }];
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  renderWebhooks();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Webhook' }));
+  const sessionSelect = screen.getByLabelText<HTMLSelectElement>('Session');
+  await rtl.findByText(sessionSelect, 'Main');
+  fireEvent.change(sessionSelect, { target: { value: 'sess-1' } });
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.test/hook' } });
+
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: 'Create' });
+  fireEvent.click(create);
+  await waitFor(() => assert.equal(createCalls, 1));
+  // A double click lands a moment later, after the pending create has rendered.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  fireEvent.click(create);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(createCalls, 1);
 });

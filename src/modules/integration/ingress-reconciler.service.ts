@@ -4,7 +4,12 @@ import { Repository } from 'typeorm';
 import { IngressEvent } from './entities/ingress-event.entity';
 import { IntegrationDeliveryFailure } from './entities/integration-delivery-failure.entity';
 import { PluginInstance } from './entities/plugin-instance.entity';
-import { IngressEnqueueService, buildIngressDeadLetterRow } from './ingress-enqueue.service';
+import {
+  EnqueueOutcome,
+  IngressEnqueueService,
+  buildIngressDeadLetterRow,
+  resolveIngressJobOptions,
+} from './ingress-enqueue.service';
 import { extractConversationId } from './ingress.service';
 import { PluginInstanceService } from './plugin-instance.service';
 import { PluginLoaderService } from '../../core/plugins/plugin-loader.service';
@@ -51,8 +56,9 @@ export interface IngressReconcileStats {
  *
  * The reconciler sweeps small batches of stale 'pending' rows and re-dispatches them through the
  * exact same IngressEnqueueService the live path uses (same deliveryId as BullMQ jobId, so a replay
- * is idempotent against a job that did get enqueued). Re-dispatch from the row is sound because a
- * 'pending' row IS the full verified request: payload carries headers/query/body/rawBody,
+ * is idempotent against a job that did get enqueued; one that already failed is left to the DLQ,
+ * never counted as delivered). Re-dispatch from the row is sound because a 'pending' row IS the
+ * full verified request: payload carries headers/query/body/rawBody,
  * providerDeliveryId is the delivery id, and the manifest route re-derives the conversation lane.
  * (The payload is retired to NULL the moment an outcome is recorded — 'dispatched' rows and DLQ'd
  * 'failed' rows no longer need it — so only 'pending' rows, which always carry it, are replayable.)
@@ -187,15 +193,34 @@ export class IngressReconcilerService implements OnModuleInit, OnModuleDestroy {
     now: Date,
   ): Promise<'replayed' | 'failed'> {
     const jobData = this.jobDataFor(row);
-    // jobId = the ORIGINAL deliveryId: BullMQ dedups a replay against a job that did get enqueued
-    // before the crash, so re-dispatch never double-delivers on the queue path.
-    const { outcome, error } = await this.ingressEnqueue.enqueue(jobData, row.providerDeliveryId);
+    // jobId = the ORIGINAL deliveryId, so the replay lands on any job the live path did enqueue before
+    // its outcome mark was lost. BullMQ resolves a duplicate add() whatever that job's state, so look
+    // first: a live job already owns the delivery, and a failed one would swallow the replay.
+    const existing = await this.ingressEnqueue.existingJobState(jobData, row.providerDeliveryId);
+    if (existing === 'failed') {
+      // Every queue attempt already ran and IngressProcessor dead-lettered the delivery. Nothing is
+      // dispatched: the DLQ row stays redrivable (written here if the processor's write was lost, and
+      // before the payload is retired, since it becomes the payload's only home).
+      await this.ensureDeadLetterRow(jobData, resolveIngressJobOptions().attempts, 'ingress queue job failed');
+      await this.events.update({ id: row.id }, { lastDispatchAt: now, dispatchState: 'failed', payload: null });
+      this.logger.warn('Stranded ingress event already failed in the queue; left for redrive', {
+        pluginId: row.pluginId,
+        instanceId: row.instanceId,
+        deliveryId: row.providerDeliveryId,
+        action: 'ingress_event_reconcile_job_failed',
+      });
+      return 'failed';
+    }
+    const { outcome, error }: EnqueueOutcome = existing
+      ? { outcome: 'queued' }
+      : await this.ingressEnqueue.enqueue(jobData, row.providerDeliveryId);
     if (outcome !== 'failed') {
       // Retire the payload with the outcome: the dispatch tier owns the delivery from here (the
       // BullMQ job data, or a DLQ row on an in-tier failure), so the dedup row slims to its marker.
       await this.events.update({ id: row.id }, { dispatchState: 'dispatched', lastDispatchAt: now, payload: null });
       // Retire any dead-letter row the live path already wrote for this delivery (the inline-failure
-      // case) — the replay just delivered it, so a later manual redrive must not deliver it again.
+      // case): the replay, or the job still live in the queue, delivers it, so a later manual redrive
+      // must not deliver it again.
       await this.failures.update(
         {
           direction: 'inbound',

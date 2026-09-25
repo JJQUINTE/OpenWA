@@ -81,7 +81,14 @@ export function Infrastructure() {
         !!infraStatus &&
         (configForm.storageConfig.type !== infraStatus.storage.type ||
           (configForm.storageConfig.type === 's3' && configForm.storageConfig.builtIn !== infraStatus.storage.builtIn));
-      restartFlow.open({ profiles, dbSwitch, storageSwitch });
+      // The built-in containers running now, so the restart stops each one the new config dropped. With no
+      // status read there is nothing to go on, and nothing is stopped.
+      const running = [
+        infraStatus?.database.type === 'postgres' && infraStatus.database.builtIn && 'postgres',
+        infraStatus?.redis.builtIn && 'redis',
+        infraStatus?.storage.type === 's3' && infraStatus.storage.builtIn && 'minio',
+      ].filter((p): p is string => typeof p === 'string');
+      restartFlow.open({ profiles, running, dbSwitch, storageSwitch });
     },
   });
 

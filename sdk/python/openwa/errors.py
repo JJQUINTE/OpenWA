@@ -82,8 +82,9 @@ class OpenWAServiceUnavailableError(OpenWAApiError):
     """503 Service Unavailable -- a transport failure, not a refusal.
 
     The gateway answers this when the engine did not confirm the operation in time: WhatsApp never
-    replied, the socket was down, or the request budget ran out. Retryable, unlike every other typed
-    error here. The non-idempotent sends are deliberately left unbounded by the gateway so a slow
+    replied, the socket was down, or the request budget ran out. Retryable, as is a 429 (honor its
+    Retry-After), but a catalog 503 can persist because WhatsApp may never answer that query, so bound
+    any retry. The non-idempotent sends are deliberately left unbounded by the gateway so a slow
     WhatsApp reply never answers one, and in a multi-node deployment a forwarded request answers 503
     only when the owner node was never reached. A forward that fails after the request was sent
     answers 502 or 504 instead (a plain OpenWAApiError): the owner may already have carried it out, so

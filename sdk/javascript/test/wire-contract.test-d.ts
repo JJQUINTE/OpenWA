@@ -50,7 +50,7 @@ interface WireStatus {
   expiresAt: string;
 }
 
-/** `Channel` — `picture`/`createdAt` come from the Baileys `toChannel()` path; wwjs omits both. */
+/** `Channel` — `createdAt` comes from the Baileys `toChannel()` path; wwjs omits it. No engine fills `picture`. */
 interface WireChannel {
   id: string;
   name: string;

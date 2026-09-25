@@ -223,6 +223,62 @@ describe('SessionAuthDirMigration', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  // On an upgrade straight from the name-keyed layout, the directory a live-id name points at is that
+  // row's own login, and the id owner's login is still under its name. Holding the misnamed row back
+  // left its login at the owner's id, where the owner's engine then opened it.
+  it.each([
+    ['the id owner first', false],
+    ['the misnamed row first', true],
+  ])('untangles a name that is another session id on a pre-migration layout, %s', async (_case, reversed) => {
+    seed(path.join(sessionsDir, 'session-alice'), 'wwjs-alice');
+    seed(path.join(sessionsDir, `session-${ALICE_ID}`), 'wwjs-bob');
+    seed(path.join(baileysDir, 'alice'), 'baileys-alice');
+    seed(path.join(baileysDir, ALICE_ID), 'baileys-bob');
+    const rows = [
+      { id: ALICE_ID, name: 'alice' },
+      { id: BOB_ID, name: ALICE_ID },
+    ];
+    const migration = buildMigration(reversed ? rows.reverse() : rows);
+    const warn = jest
+      .spyOn((migration as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    await migration.onModuleInit();
+
+    expect(markerAt(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe('wwjs-alice');
+    expect(markerAt(path.join(sessionsDir, `session-${BOB_ID}`))).toBe('wwjs-bob');
+    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-alice');
+    expect(markerAt(path.join(baileysDir, BOB_ID))).toBe('baileys-bob');
+    expect(fs.existsSync(path.join(sessionsDir, 'session-alice'))).toBe(false);
+    expect(fs.existsSync(path.join(baileysDir, 'alice'))).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ action: 'auth_dir_migration_id_named', sessionId: BOB_ID, engine: 'baileys' }),
+    );
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ action: 'auth_dir_migration_conflict' }),
+    );
+  });
+
+  // The decision is per engine: one base can already be id-keyed while the other is not.
+  it('untangles a live-id name only under the engine whose layout is still name-keyed', async () => {
+    seed(path.join(sessionsDir, `session-${ALICE_ID}`), 'wwjs-alice');
+    seed(path.join(sessionsDir, `session-${BOB_ID}`), 'wwjs-bob');
+    seed(path.join(baileysDir, 'alice'), 'baileys-alice');
+    seed(path.join(baileysDir, ALICE_ID), 'baileys-bob');
+
+    await buildMigration([
+      { id: ALICE_ID, name: 'alice' },
+      { id: BOB_ID, name: ALICE_ID },
+    ]).onModuleInit();
+
+    expect(markerAt(path.join(sessionsDir, `session-${ALICE_ID}`))).toBe('wwjs-alice');
+    expect(markerAt(path.join(sessionsDir, `session-${BOB_ID}`))).toBe('wwjs-bob');
+    expect(markerAt(path.join(baileysDir, ALICE_ID))).toBe('baileys-alice');
+    expect(markerAt(path.join(baileysDir, BOB_ID))).toBe('baileys-bob');
+  });
+
   // Only an exact live id is held back. On an upgrade from a release that keyed directories by name,
   // a session named after, say, a tenant UUID owns the directory its name points at, and leaving it
   // there would bring the session back at a QR code.

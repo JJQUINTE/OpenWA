@@ -21,7 +21,8 @@ export class PluginInstance {
   @Column()
   secret!: string; // host-minted ingress HMAC secret; stored plaintext, masked to '***' on API reads
   // (via PluginInstanceService.maskedView + the provisioning controller's reveal flag), exposed
-  // in full only on mint and regenerate-secret. Note: instance `config` is NOT secret-redacted.
+  // in full only in the create and regenerate-secret responses. Config fields flagged `secret` in
+  // the plugin's configSchema are masked by maskedView on every read, those responses included.
 
   @Column({ type: 'varchar', nullable: true })
   verifyToken!: string | null; // optional provider challenge token

@@ -12,7 +12,7 @@
     "cancel": "Cancelar",
     "delete": "Excluir",
     "create": "Criar",
-    "save": "Save",
+    "save": "Salvar",
     "close": "Fechar",
     "search": "Pesquisar",
     "status": "Status",
@@ -189,7 +189,8 @@
       "react": "Erro ao reagir à mensagem",
       "delete": "Erro ao excluir a mensagem",
       "clickButton": "Erro ao clicar no botão",
-      "fileTooLarge": "O arquivo é muito grande (máx. 18 MB)"
+      "fileTooLarge": "O arquivo é muito grande (máx. 18 MB)",
+      "searchHitSessionNotReady": "A sessão desta mensagem não está conectada"
     },
     "loadMessagesError": "Não foi possível carregar as mensagens. Verifique os registros do servidor.",
     "messageStatus": {
@@ -469,7 +470,7 @@
         "body": "Corpo da mensagem",
         "type": "Tipo de mensagem",
         "isGroup": "É chat de grupo",
-        "kind": "Chat kind",
+        "kind": "Tipo de chat",
         "fromMe": "Enviado por mim",
         "hasMedia": "Tem mídia",
         "mentions": "Menções"
@@ -634,7 +635,9 @@
     },
     "exportFailed": "Não foi possível exportar o registro de auditoria",
     "exportTruncated": "A exportação cobre apenas as {{rows}} entradas mais recentes. Restrinja o filtro de severidade para exportar as mais antigas.",
-    "exportThrottled": "A exportação cobre apenas as {{rows}} entradas mais recentes porque o gateway está limitando as leituras do log de auditoria. Aguarde um minuto e exporte novamente."
+    "exportThrottled": "A exportação cobre apenas as {{rows}} entradas mais recentes porque o gateway está limitando as leituras do log de auditoria. Aguarde um minuto e exporte novamente.",
+    "exportNoMatches": "Nenhuma entrada do log de auditoria corresponde à busca, então nada foi exportado.",
+    "exportNoMatchesTruncated": "Nenhuma das {{rows}} entradas mais recentes verificadas corresponde à busca, então nada foi exportado. As entradas mais antigas não foram verificadas."
   },
   "messageTester": {
     "title": "Testador de mensagens",

@@ -12,7 +12,7 @@
     "cancel": "取消",
     "delete": "刪除",
     "create": "建立",
-    "save": "Save",
+    "save": "儲存",
     "close": "關閉",
     "showApiKey": "顯示 API 金鑰",
     "hideApiKey": "隱藏 API 金鑰",
@@ -60,7 +60,7 @@
     "sessions": "工作階段",
     "chats": "聊天",
     "webhooks": "Webhooks",
-    "templates": "Templates",
+    "templates": "範本",
     "apiKeys": "API 金鑰",
     "messageTester": "訊息測試器",
     "infrastructure": "基礎架構",
@@ -186,7 +186,8 @@
       "react": "回應訊息失敗",
       "delete": "刪除訊息失敗",
       "clickButton": "點擊按鈕失敗",
-      "fileTooLarge": "檔案過大（最大 18 MB）"
+      "fileTooLarge": "檔案過大（最大 18 MB）",
+      "searchHitSessionNotReady": "此訊息所屬的工作階段未連線"
     },
     "loadMessagesError": "無法載入訊息。請檢查伺服器日誌。",
     "messageStatus": {
@@ -353,7 +354,7 @@
     },
     "actions": {
       "view": "查看",
-      "proxy": "Proxy",
+      "proxy": "代理",
       "start": "啟動",
       "stop": "停止",
       "reconnect": "重新連線",
@@ -465,7 +466,7 @@
         "body": "訊息內容",
         "type": "訊息類型",
         "isGroup": "是群組聊天",
-        "kind": "Chat kind",
+        "kind": "聊天類型",
         "fromMe": "由我傳送",
         "hasMedia": "包含媒體",
         "mentions": "提及"
@@ -679,7 +680,9 @@
     },
     "exportFailed": "無法匯出審計記錄",
     "exportTruncated": "匯出僅涵蓋最新的 {{rows}} 條記錄。請收窄嚴重程度篩選範圍以匯出較早的項目。",
-    "exportThrottled": "閘道正在限制審計記錄的讀取頻率，匯出僅涵蓋最新的 {{rows}} 條記錄。請等待一分鐘後重新匯出。"
+    "exportThrottled": "閘道正在限制審計記錄的讀取頻率，匯出僅涵蓋最新的 {{rows}} 條記錄。請等待一分鐘後重新匯出。",
+    "exportNoMatches": "沒有與搜尋相符的審計記錄，因此未有匯出任何內容。",
+    "exportNoMatchesTruncated": "已掃描的最新 {{rows}} 條記錄中沒有與搜尋相符的項目，因此未有匯出任何內容。較早的項目未被搜尋。"
   },
   "messageTester": {
     "title": "訊息測試器",

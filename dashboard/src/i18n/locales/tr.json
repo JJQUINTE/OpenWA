@@ -12,7 +12,7 @@
     "cancel": "İptal",
     "delete": "Sil",
     "create": "Oluştur",
-    "save": "Save",
+    "save": "Kaydet",
     "close": "Kapat",
     "showApiKey": "API anahtarını göster",
     "hideApiKey": "API anahtarını gizle",
@@ -186,7 +186,8 @@
       "react": "Mesaja tepki verilemedi",
       "delete": "Mesaj silinemedi",
       "clickButton": "Düğmeye tıklanamadı",
-      "fileTooLarge": "Dosya çok büyük (maks 18 MB)"
+      "fileTooLarge": "Dosya çok büyük (maks 18 MB)",
+      "searchHitSessionNotReady": "Bu mesajın oturumu bağlı değil"
     },
     "loadMessagesError": "Mesajlar yüklenemedi. Sunucu kayıtlarını kontrol edin.",
     "messageStatus": {
@@ -465,7 +466,7 @@
         "body": "Mesaj içeriği",
         "type": "Mesaj türü",
         "isGroup": "Grup sohbeti mi",
-        "kind": "Chat kind",
+        "kind": "Sohbet türü",
         "fromMe": "Benim tarafımdan gönderildi",
         "hasMedia": "Medya içeriyor",
         "mentions": "Bahsetmeler"
@@ -679,7 +680,9 @@
     },
     "exportFailed": "Denetim kaydı dışa aktarılamadı",
     "exportTruncated": "Dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Daha eski kayıtları dışa aktarmak için önem filtresini daraltın.",
-    "exportThrottled": "Ağ geçidi denetim günlüğü okumalarını sınırladığı için dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Bir dakika bekleyip yeniden dışa aktarın."
+    "exportThrottled": "Ağ geçidi denetim günlüğü okumalarını sınırladığı için dışa aktarma yalnızca en yeni {{rows}} kaydı kapsar. Bir dakika bekleyip yeniden dışa aktarın.",
+    "exportNoMatches": "Aramayla eşleşen denetim kaydı yok, bu yüzden hiçbir şey dışa aktarılmadı.",
+    "exportNoMatchesTruncated": "Taranan en yeni {{rows}} kaydın hiçbiri aramayla eşleşmiyor, bu yüzden hiçbir şey dışa aktarılmadı. Daha eski kayıtlar taranmadı."
   },
   "messageTester": {
     "title": "Mesaj Test Aracı",

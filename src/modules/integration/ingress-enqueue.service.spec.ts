@@ -41,6 +41,43 @@ describe('IngressEnqueueService', () => {
     expect(loader.dispatchWebhookForInstance).not.toHaveBeenCalled();
   });
 
+  describe('existingJobState', () => {
+    it('reads the state of the job under the same namespaced jobId enqueue() would use', async () => {
+      (config.get as jest.Mock).mockReturnValue(true);
+      const getJobState = jest.fn().mockResolvedValue('failed');
+      const svc = new IngressEnqueueService(
+        loader as PluginLoaderService,
+        config as ConfigService,
+        {
+          ...queue,
+          getJobState,
+        } as never,
+      );
+
+      expect(await svc.existingJobState(data, 'd1')).toBe('failed');
+      expect(getJobState).toHaveBeenCalledWith(sanitizeIngressJobId('d1', 'chatwoot\u0000acct1'));
+    });
+
+    it('reports no job when the queue holds none, is off, or cannot answer', async () => {
+      (config.get as jest.Mock).mockReturnValue(true);
+      const getJobState = jest.fn().mockResolvedValueOnce('unknown').mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const svc = new IngressEnqueueService(
+        loader as PluginLoaderService,
+        config as ConfigService,
+        {
+          ...queue,
+          getJobState,
+        } as never,
+      );
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+
+      (config.get as jest.Mock).mockReturnValue(false);
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+      expect(getJobState).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // BullMQ refuses integer jobIds and colon ids that do not split into exactly 3 parts; before the
   // sanitizer those throws read as "Redis unreachable" in the catch-all and silently degraded the
   // delivery to inline dispatch (no retry, no backoff, blocked redrive loop).
