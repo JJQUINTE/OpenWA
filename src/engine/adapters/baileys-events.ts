@@ -1054,25 +1054,35 @@ export class BaileysEvents {
   }
 
   /**
-   * Reject a currently-ringing call. The entry is evicted on ANY attempt (a rejected/ended call
-   * will not become rejectable again); an unknown id or an expired entry maps to CallNotFoundError
-   * (HTTP 404). A failure of the library's rejectCall() itself propagates as-is.
+   * Reject a currently-ringing call. The entry is evicted before the attempt, so an outcome that
+   * arrives meanwhile cannot publish a second one, and a rejected call does not become rejectable
+   * again. A failed attempt leaves the call ringing, so its entry is put back for a retry unless the
+   * id rang again meanwhile. An unknown id or an expired entry maps to CallNotFoundError (HTTP 404).
+   * A failure of the library's rejectCall() itself propagates as-is.
    */
   async rejectCall(callId: string): Promise<void> {
     const entry = this.liveCalls.get(callId);
-    this.liveCalls.delete(callId);
     if (!entry || entry.expiresAt <= Date.now()) {
+      this.liveCalls.delete(callId);
       throw new CallNotFoundError(callId);
     }
     const sock = this.host.getSocketOrNull();
     if (!sock) {
       throw new EngineNotReadyError('Cannot reject a call before the engine is initialized.');
     }
-    await withQueryDeadline(
-      sock.rejectCall(callId, entry.callFrom),
-      BAILEYS_QUERY_BUDGET_MS,
-      'WhatsApp did not confirm the call rejection in time',
-    );
+    this.liveCalls.delete(callId);
+    try {
+      await withQueryDeadline(
+        sock.rejectCall(callId, entry.callFrom),
+        BAILEYS_QUERY_BUDGET_MS,
+        'WhatsApp did not confirm the call rejection in time',
+      );
+    } catch (err) {
+      // Known limit: an outcome that ended the call during the attempt found no entry and left no
+      // trace, so the handle comes back even then, until its TTL runs out.
+      if (!this.liveCalls.has(callId) && entry.expiresAt > Date.now()) this.liveCalls.set(callId, entry);
+      throw err;
+    }
     // A rejection made HERE produces no inbound `reject` signal to observe, so without this the
     // one outcome the caller definitely knows about — the one they asked for — was the only one
     // never published. Emitted only after the socket accepted it, and the entry is already evicted,

@@ -7280,6 +7280,38 @@ describe('BaileysAdapter call outcomes', () => {
     expect(onCallOutcome).not.toHaveBeenCalled();
   });
 
+  // A failed attempt leaves the call ringing and answers 503, which invites a retry: the retry must
+  // still find the call rather than answer 404.
+  it('keeps the call rejectable after the socket fails to reject it', async () => {
+    const onCallOutcome = jest.fn();
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome });
+    fakeSock.rejectCall.mockRejectedValueOnce(new Error('Connection Closed'));
+
+    await expect(adapter.rejectCall(CALL_ID)).rejects.toThrow('Connection Closed');
+    await adapter.rejectCall(CALL_ID);
+
+    expect(fakeSock.rejectCall).toHaveBeenCalledTimes(2);
+    expect(onCallOutcome).toHaveBeenCalledTimes(1);
+    expect(onCallOutcome).toHaveBeenCalledWith(expect.objectContaining({ callId: CALL_ID, outcome: 'rejected' }));
+  });
+
+  it('does not replace a call that rang again while the failed rejection was pending', async () => {
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome: jest.fn() });
+    let fail!: (err: Error) => void;
+    fakeSock.rejectCall.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+
+    const attempt = adapter.rejectCall(CALL_ID);
+    // A new ring under the same id meanwhile owns the handle; the failed attempt must not replace it.
+    fakeSock.fire('call', [
+      { id: CALL_ID, from: '628222@s.whatsapp.net', chatId: CALLER, status: 'offer', offline: false, date: new Date() },
+    ]);
+    fail(new Error('Connection Closed'));
+    await expect(attempt).rejects.toThrow('Connection Closed');
+
+    await adapter.rejectCall(CALL_ID);
+    expect(fakeSock.rejectCall).toHaveBeenLastCalledWith(CALL_ID, '628222@s.whatsapp.net');
+  });
+
   // WhatsApp replays signalling for calls that ended while the session was disconnected. Announcing
   // those would report last week's declined call as if it had just happened.
   it('drops an offline-replayed outcome', async () => {
