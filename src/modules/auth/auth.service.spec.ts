@@ -53,6 +53,18 @@ describe('resolveSeedApiKey (first-boot default admin key)', () => {
     expect(resolveSeedApiKey()).toBe('my-explicit-master-key');
   });
 
+  // validateApiKey hashes the trimmed key, so a seed hashed with a trailing newline (a Kubernetes secret
+  // made --from-file) could never authenticate, and the non-empty table meant it was never reseeded.
+  it('trims surrounding whitespace from API_MASTER_KEY so the seeded key can authenticate', () => {
+    process.env.API_MASTER_KEY = '  my-explicit-master-key\n';
+    expect(resolveSeedApiKey()).toBe('my-explicit-master-key');
+  });
+
+  it('treats a whitespace-only API_MASTER_KEY as unset and generates a key', () => {
+    process.env.API_MASTER_KEY = '   ';
+    expect(resolveSeedApiKey()).toMatch(/^owa_k1_[a-f0-9]{64}$/);
+  });
+
   it('generates a random owa_k1_ key by default (no opt-in)', () => {
     expect(resolveSeedApiKey()).toMatch(/^owa_k1_[a-f0-9]{64}$/);
   });
