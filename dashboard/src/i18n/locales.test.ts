@@ -78,9 +78,25 @@ test('chats.channels.subscribers: count=1 renders singular, count>1 renders plur
   assert.equal(i18n.t('chats.channels.subscribers', { count: 4 }), '4 subscribers');
 });
 
+test('common.minAgo and common.hoursAgo agree with the count', () => {
+  assert.equal(i18n.t('common.hoursAgo', { count: 1 }), '1 hour ago');
+  assert.equal(i18n.t('common.hoursAgo', { count: 2 }), '2 hours ago');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 1 }), 'Il y a 1 heure');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 3 }), 'Il y a 3 heures');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'he', count: 2 }), 'לפני שעתיים');
+  assert.equal(i18n.t('common.minAgo', { lng: 'te', count: 5 }), '5 నిమిషాల క్రితం');
+  assert.equal(i18n.t('common.minAgo', { lng: 'ar', count: 3 }), 'منذ 3 دقائق');
+});
+
 test('count badges resolve to a non-key, interpolated string in every locale', () => {
   for (const lng of LOCALE_IDS) {
-    for (const key of ['webhooks.filters.badge', 'chats.unreadBadge', 'chats.channels.subscribers']) {
+    for (const key of [
+      'webhooks.filters.badge',
+      'chats.unreadBadge',
+      'chats.channels.subscribers',
+      'common.minAgo',
+      'common.hoursAgo',
+    ]) {
       for (const count of [1, 2]) {
         const value = i18n.t(key, { lng, count });
         assert.ok(value && !value.startsWith(key), `${lng} ${key} count=${count} did not resolve (got "${value}")`);
