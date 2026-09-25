@@ -429,7 +429,8 @@ curl -H "X-API-Key: $API_KEY" \
 #    $BACKUP_DIR as openwa-backup-<timestamp>.tar.gz, where the Rollback block reads it. Both compose
 #    files name the container openwa-api. Running ./scripts/backup.sh on the host instead archives
 #    ./data in the checkout, which the production compose never reads (see Runbook: Database Backup).
-#    An image older than 0.19.0 has no scripts/backup.sh: see 14 - Known Upgrade Hazards
+#    An image older than 0.19.0 has no scripts/backup.sh, and on PostgreSQL one older than 0.22.0 has
+#    no pg_dump: see 14 - Known Upgrade Hazards
 export BACKUP_DIR="/backups/openwa"
 mkdir -p "$BACKUP_DIR"
 docker exec -e BACKUP_DIR=/app/data/backups -e TMPDIR=/app/data/backups openwa-api ./scripts/backup.sh
