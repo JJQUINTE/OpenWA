@@ -15917,7 +15917,7 @@
           "chatName": {
             "type": "string",
             "nullable": true,
-            "description": "Null when no name is known for the chat."
+            "description": "The contact's push name for a 1:1 chat, taken from its incoming messages. Null for a group chat, or when no name is known."
           },
           "messageCount": {
             "type": "number",
@@ -16030,7 +16030,7 @@
           "chatName": {
             "type": "string",
             "nullable": true,
-            "description": "Null when no name is known for the chat."
+            "description": "The contact's push name for a 1:1 chat, taken from its incoming messages. Null for a group chat, or when no name is known."
           },
           "count": {
             "type": "number",
