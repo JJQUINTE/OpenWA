@@ -322,6 +322,9 @@ describe('quoting a Baileys message the moment it is announced', () => {
 
       await expect(reply).resolves.toMatchObject({ id: 'R1' });
       expect(writtenContents('TARGET')).toEqual([photo('TARGET').message]);
+      // The declined delete is written through update(), after the reply, so read the row it left.
+      await ticks();
+      expect((await store.getMessage('s1', 'TARGET'))?.message).toEqual(photo('TARGET').message);
     });
   });
 
