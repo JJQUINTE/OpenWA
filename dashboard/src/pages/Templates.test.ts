@@ -8,6 +8,7 @@ import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 let templatesStatus = 200;
+let sessionsStatus = 200;
 let templates: Array<{ id: string; name: string; body: string }> = [];
 const deleted: string[] = [];
 
@@ -20,6 +21,7 @@ function installFetchStub(): void {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, '');
     if (path === '/api/sessions') {
+      if (sessionsStatus !== 200) return Promise.resolve(jsonResponse({ message: 'gateway restarting' }, 502));
       return Promise.resolve(
         jsonResponse([
           {
@@ -73,6 +75,7 @@ afterEach(() => {
   rtl.cleanup();
   queryClient?.clear();
   queryClient = undefined;
+  sessionsStatus = 200;
 });
 
 function renderTemplates(): void {
@@ -138,4 +141,14 @@ test('a successful empty read still shows the empty state', async () => {
   templatesStatus = 200;
   renderTemplates();
   await rtl.screen.findByText('No templates saved');
+});
+
+test('a failed sessions read shows the error, not "no sessions available"', async () => {
+  sessionsStatus = 502;
+  renderTemplates();
+  const alert = await rtl.screen.findByRole('alert');
+  rtl.within(alert).getByText('Failed to load data');
+  rtl.within(alert).getByText('gateway restarting');
+  assert.equal(rtl.screen.queryByText('No sessions available'), null);
+  assert.equal(rtl.screen.queryByRole('option', { name: 'No sessions' }), null);
 });

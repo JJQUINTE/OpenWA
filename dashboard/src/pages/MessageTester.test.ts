@@ -537,3 +537,40 @@ test('a media file that cannot be read is reported and not attached', async () =
     globalThis.FileReader.prototype.readAsDataURL = readAsDataURL;
   }
 });
+
+function renderTesterAsWriter(): void {
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
+  rtl.render(
+    createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
+  );
+}
+
+test('a failed sessions read is reported, not shown as "no ready sessions"', async () => {
+  globalThis.fetch = ((): Promise<Response> =>
+    Promise.resolve(jsonResponse({ message: 'gateway restarting' }, 502))) as typeof fetch;
+  renderTesterAsWriter();
+
+  const alert = await rtl.screen.findByRole('alert');
+  rtl.within(alert).getByText(/Failed to load data/);
+  rtl.within(alert).getByText(/gateway restarting/);
+  assert.equal(rtl.screen.queryByRole('option', { name: 'No ready sessions' }), null);
+});
+
+test('a failed groups read is reported, not shown as "no groups found"', async () => {
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(jsonResponse([{ id: 's1', name: 'Main', status: 'ready', phone: '15550000000' }]));
+    }
+    if (url.endsWith('/sessions/s1/groups')) return Promise.resolve(jsonResponse({ message: 'engine busy' }, 500));
+    return Promise.resolve(jsonResponse([]));
+  }) as typeof fetch;
+  renderTesterAsWriter();
+  await rtl.screen.findByRole('option', { name: /Main/ });
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Group' }));
+
+  const alert = await rtl.screen.findByRole('alert');
+  rtl.within(alert).getByText(/Failed to load data/);
+  assert.equal(rtl.screen.queryByText('No groups found'), null);
+});
