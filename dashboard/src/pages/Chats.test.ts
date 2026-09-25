@@ -1525,12 +1525,6 @@ test('an omitted media bubble fetches the bytes from the per-message media route
   });
 });
 
-/**
- * Two omitted bubbles can be downloading at once — nothing stops a viewer clicking one, then the
- * next. Each must own its own lifecycle: with a single shared slot the second click overwrote the
- * first, and then whichever settled first cleared the other's state, re-enabling a button whose
- * download was still open and letting a later failure mark the wrong bubble.
- */
 test('the media viewer saves an image under its file name, not its caption', async () => {
   const { screen, fireEvent, waitFor } = rtl;
   firstPageExtra = [
@@ -1616,6 +1610,12 @@ test('a channel post or status caption carrying mention delimiters renders them 
   assert.ok(!caption.querySelector('bdi'), 'the status caption rendered a mention');
 });
 
+/**
+ * Two omitted bubbles can be downloading at once, and nothing stops a viewer clicking one, then the
+ * next. Each must own its own lifecycle: with a single shared slot the second click overwrote the
+ * first, and then whichever settled first cleared the other's state, re-enabling a button whose
+ * download was still open and letting a later failure mark the wrong bubble.
+ */
 test('two media downloads in flight do not clobber each other', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;
   resetFetchCalls();
