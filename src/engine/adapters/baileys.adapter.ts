@@ -593,9 +593,10 @@ export class BaileysAdapter implements IWhatsAppEngine {
   // WhatsApp Business only — Baileys rejects these on personal accounts. The label must already
   // exist (use getLabels on an engine that lists them); addChatLabel/removeChatLabel associate it
   // with a chat, they do not create/edit the label definition.
-  // Fold @c.us -> @s.whatsapp.net first: chatModify (which both calls wrap) keys the label
-  // app-state index by the RAW jid, so a neutral @c.us would label a phantom chat the phone never
-  // reads — reported as success. Same class of no-op the deleteForMe/star folds fixed.
+  // Resolve to the jid the chat is keyed under first (its lid for a lid-migrated contact, the engine
+  // form for a chat the store does not know): chatModify (which both calls wrap) keys the label
+  // app-state index by the RAW jid, so any other spelling labels a phantom chat the phone never
+  // reads, reported as success.
   /**
    * Labels are a Business-account chat feature and WhatsApp has no concept of labelling a channel.
    * whatsapp-web.js refuses a channel jid outright; this engine forwarded it and answered success
