@@ -74,10 +74,14 @@ export interface SessionResponse {
    */
   restriction?: AccountRestriction | null;
   /**
-   * Whether the gateway holds a live engine for this session right now — the precondition `stop`,
-   * `logout` and `force-kill` require and `start` refuses. Not derivable from `status`:
-   * `disconnected` covers both a session mid automatic-reconnect (engine present) and one stopped
-   * with no engine. Absent from a gateway that predates the field.
+   * Whether the gateway holds a live engine for this session: an engine in the answering process
+   * or, in a multi-node deployment, a live claim by the node running it. On the node running the
+   * session, `true` means `stop`, `logout` and `force-kill` can act and `start` is refused. For a
+   * session another node runs, those routes act only when request routing (`NODE_URL` on every
+   * node) forwards them; without it, other nodes answer 409 to `start` and `stop` and 400 to
+   * `logout` and `force-kill`. Not derivable from `status`: `disconnected` covers both a session
+   * mid automatic-reconnect (engine present) and one stopped with no engine. Absent from a gateway
+   * that predates the field.
    */
   engineLoaded: boolean;
 }
