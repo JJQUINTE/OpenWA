@@ -32,6 +32,7 @@
 #   DATABASE_TYPE     sqlite (default) | postgres
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   BOOTSTRAP_KEY_FILE  the plaintext admin key to archive (default: <data dir>/.api-key)
 #   For postgres: DATABASE_URL, or DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME
 #                     DATABASE_URL is read by this script only (the app uses the DATABASE_* keys)
 #                     and wins over them when set. It is passed to pg_dump as an argument, which
@@ -81,7 +82,8 @@ PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
 PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
 PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 GENERATED_ENV="$DATA_DIR/.env.generated"
-ADMIN_KEY_FILE="$DATA_DIR/.api-key"
+# The app writes the generated admin key to BOOTSTRAP_KEY_FILE when that is set.
+ADMIN_KEY_FILE="$(openwa_resolve BOOTSTRAP_KEY_FILE "$DATA_DIR/.api-key")"
 
 log() { echo "[backup] $*"; }
 

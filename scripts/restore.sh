@@ -24,6 +24,7 @@
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   BOOTSTRAP_KEY_FILE  where the plaintext admin key goes (default: <data dir>/.api-key)
 #   OPENWA_RESTORE_SNAPSHOT_DIR
 #                     where the safety snapshots go (default: next to the data dir, and next to
 #                     each target outside it); needed when a parent is read-only, as in the
@@ -176,8 +177,8 @@ replace_tree() {
 }
 
 # The data-dir safety snapshot below cannot cover a target that lives OUTSIDE it (a custom
-# MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH or
-# PLUGINS_DIR). Preserve such a target separately, so a restore pointed at the wrong archive remains
+# MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH,
+# PLUGINS_DIR or BOOTSTRAP_KEY_FILE). Preserve such a target separately, so a restore pointed at the wrong archive remains
 # recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is set: a target on its
 # own mount under a read-only root has no writable place next to it.
 snapshot_external() {
@@ -313,6 +314,8 @@ PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
 # not the plugins directory inside it.
 PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
 PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
+# The app reads the plaintext admin key from BOOTSTRAP_KEY_FILE when that is set.
+ADMIN_KEY_FILE="$(openwa_resolve BOOTSTRAP_KEY_FILE "$DATA_DIR/.api-key")"
 
 # backup.sh archives state directories by content. An archive from before it followed symlinks
 # carries a link instead, which on this host may point at the very directory the restore empties
@@ -415,6 +418,23 @@ restore_targets() {
       replace_tree "$STAGE/plugin-state" "$PLUGIN_STATE_DIR" "plugin registry and persisted state"
     fi
   fi
+  if [ -f "$STAGE/.api-key" ]; then
+    restore_admin_key
+  fi
+}
+
+# The plaintext admin key goes where the app reads it. Checked and, outside the data dir, snapshotted
+# with the other targets: it may be the only plaintext copy of a key the replaced main.sqlite accepts.
+restore_admin_key() {
+  if [ "$PHASE" = snapshot ]; then
+    openwa_writable "$ADMIN_KEY_FILE" || refuse_unwritable "$ADMIN_KEY_FILE" "admin key (BOOTSTRAP_KEY_FILE)"
+    snapshot_external "$ADMIN_KEY_FILE"
+    return
+  fi
+  log "Restoring plaintext admin key -> $ADMIN_KEY_FILE"
+  mkdir -p "$(dirname "$ADMIN_KEY_FILE")"
+  cp "$STAGE/.api-key" "$ADMIN_KEY_FILE"
+  chmod 0600 "$ADMIN_KEY_FILE"
 }
 
 PHASE=snapshot
@@ -426,12 +446,6 @@ if [ -f "$STAGE/.env.generated" ]; then
   log "Restoring dashboard-generated configuration"
   cp "$STAGE/.env.generated" "$DATA_DIR/.env.generated"
   chmod 0600 "$DATA_DIR/.env.generated"
-fi
-
-if [ -f "$STAGE/.api-key" ]; then
-  log "Restoring plaintext admin key"
-  cp "$STAGE/.api-key" "$DATA_DIR/.api-key"
-  chmod 0600 "$DATA_DIR/.api-key"
 fi
 
 if [ -f "$STAGE/database.sql" ]; then

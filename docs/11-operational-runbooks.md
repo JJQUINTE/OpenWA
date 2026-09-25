@@ -609,6 +609,7 @@ User-managed files outside that list (for example the project-level `.env`) must
 #   - plugin-packages/ — installed plugin code from PLUGINS_DIR
 #   - plugin-state/    — registry + ctx.storage state under OPENWA_DATA_DIR
 #   - .env.generated / .api-key — generated configuration and bootstrap secret
+#                                  (.api-key from BOOTSTRAP_KEY_FILE when that is set)
 #
 # The database paths resolve exactly like the app: the explicit MAIN_DATABASE_NAME /
 # DATABASE_NAME env path wins, otherwise the fixed ./data defaults — they are NOT derived from

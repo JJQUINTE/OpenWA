@@ -34,6 +34,8 @@
 #   (v) a leftover STORAGE_LOCAL_PATH=./uploads the app cannot create falls back to ./data/media in
 #       both scripts, and a missing media dir is reported (skipped as root)
 #   (w) the default colocated plugins dir is rebuilt from both archive members, even when they differ
+#   (x) a relocated BOOTSTRAP_KEY_FILE is archived and restored there, and an unwritable one is refused
+#       before any database is written (that half skipped as root)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -43,7 +45,7 @@ set -euo pipefail
 # would aim a case at a real install, and restore replaces the state directories wholesale, so every
 # case starts from none of them and sets exactly the paths it uses.
 unset OPENWA_DATA_DIR BACKUP_DIR DATABASE_TYPE MAIN_DATABASE_NAME DATABASE_NAME SESSION_DATA_PATH \
-  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR OPENWA_RESTORE_SNAPSHOT_DIR
+  BAILEYS_AUTH_DIR STORAGE_LOCAL_PATH PLUGINS_DIR PLUGIN_STATE_DIR OPENWA_RESTORE_SNAPSHOT_DIR BOOTSTRAP_KEY_FILE
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP="$REPO_ROOT/scripts/backup.sh"
@@ -1061,6 +1063,54 @@ mkdir -p "$W/dst2"
 )
 check_plugins "$W/dst2/data/plugins" "default round trip"
 pass "(w) the colocated plugins dir gets packages and state, and loses what the archive does not carry"
+
+echo ""
+echo "==> (x) a BOOTSTRAP_KEY_FILE outside the data dir is archived and restored there"
+# The app writes and reads the generated admin key at BOOTSTRAP_KEY_FILE. The scripts only looked at
+# <data dir>/.api-key, so a relocated key was left out of the archive without a word, and an archived
+# one went back to a path the app never reads.
+X="$WORK/x"
+mkdir -p "$X/src/data" "$X/src/secrets" "$X/dst" "$X/ro/data"
+make_fixture "$X/src/data/main.sqlite" "xray-main"
+make_fixture "$X/src/data/openwa.sqlite" "xray-data"
+printf 'xray-key\n' >"$X/src/secrets/admin.key"
+printf 'BOOTSTRAP_KEY_FILE=%s\n' "$X/src/secrets/admin.key" >"$X/src/.env"
+(
+  cd "$X/src"
+  BACKUP_DIR="$X/out" "$BACKUP" >/dev/null
+)
+ARCHIVE_X="$(ls "$X"/out/openwa-backup-*.tar.gz)"
+if [ "$(tar -xOzf "$ARCHIVE_X" ./.api-key 2>/dev/null || true)" != "xray-key" ]; then
+  fail "(x) backup left out the admin key BOOTSTRAP_KEY_FILE names"
+fi
+(
+  cd "$X/dst"
+  BOOTSTRAP_KEY_FILE="$X/dst/secrets/admin.key" "$RESTORE" "$ARCHIVE_X" >/dev/null
+)
+if [ "$(cat "$X/dst/secrets/admin.key" 2>/dev/null || true)" != "xray-key" ]; then
+  fail "(x) restore did not put the admin key where BOOTSTRAP_KEY_FILE points"
+fi
+if [ -e "$X/dst/data/.api-key" ]; then
+  fail "(x) restore also wrote the admin key to the data dir, where the app does not read it"
+fi
+if [ "$(id -u)" -ne 0 ]; then
+  # A key path the restore cannot write is refused with the other targets, before any database.
+  make_fixture "$X/ro/data/main.sqlite" "xray-live-main"
+  mkdir -p "$X/ro/secrets"
+  chmod a-w "$X/ro/secrets"
+  set +e
+  OUT_X="$(cd "$X/ro" && BOOTSTRAP_KEY_FILE="$X/ro/secrets/admin.key" "$RESTORE" "$ARCHIVE_X" --force 2>&1)"
+  RC_X=$?
+  set -e
+  chmod u+w "$X/ro/secrets"
+  if [ "$RC_X" -eq 0 ] || ! printf '%s' "$OUT_X" | grep -q 'cannot write'; then
+    fail "(x) an unwritable BOOTSTRAP_KEY_FILE was not refused: $OUT_X"
+  fi
+  if [ "$(db_fingerprint "$X/ro/data/main.sqlite")" != "xray-live-main" ]; then
+    fail "(x) the main DB was overwritten before the unwritable key path stopped the restore"
+  fi
+fi
+pass "(x) BOOTSTRAP_KEY_FILE is honoured by backup and by restore"
 
 echo ""
 echo "All smoke tests passed!"
