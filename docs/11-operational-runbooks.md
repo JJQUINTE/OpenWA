@@ -616,7 +616,7 @@ User-managed files outside that list (for example the project-level `.env`) must
 #                                  (.api-key from BOOTSTRAP_KEY_FILE when that is set)
 #
 # The database paths resolve exactly like the app: MAIN_DATABASE_NAME / DATABASE_NAME from the
-# environment, then ./.env, then <data dir>/.env.generated, otherwise the fixed ./data defaults — they
+# environment, then ./.env, then <data dir>/.env.generated, otherwise the fixed ./data defaults; they
 # are NOT derived from OPENWA_DATA_DIR. A missing source database fails the run (no silent empty
 # backup), the finished archive is checked to contain every configured database, and with the sqlite3
 # CLI present the databases are snapshotted online via .backup (otherwise plain-copied with a

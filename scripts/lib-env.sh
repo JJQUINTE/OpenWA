@@ -18,7 +18,7 @@
 # Deliberately conservative: only a plain `KEY=value` line is honoured. Blanks around the `=` and the
 # value, and CRLF line endings, are tolerated as dotenv tolerates them. A value carrying quotes or a
 # `#`, and a `KEY: value` line, are reported and skipped rather than guessed at, because a silently
-# mis-parsed path is the exact failure this exists to prevent. Nothing here exports anything — each
+# mis-parsed path is the exact failure this exists to prevent. Nothing here exports anything: each
 # key is looked up by name, so a stray entry in an operator's .env can never reach the script's own
 # environment.
 

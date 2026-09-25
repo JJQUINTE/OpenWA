@@ -20,7 +20,7 @@
 #                       Both resolve EXACTLY like the app: the environment first, then ./.env, then
 #                       .env.generated (the archive's copy when it carries one, else the data dir's),
 #                       otherwise the fixed ./data default (see lib-env.sh). They are NOT derived
-#                       from OPENWA_DATA_DIR — restoring there would write databases the app never
+#                       from OPENWA_DATA_DIR; restoring there would write databases the app never
 #                       reads (fresh-empty boot + new master key).
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
@@ -182,9 +182,9 @@ replace_tree() {
 
 # The data-dir safety snapshot below cannot cover a target that lives OUTSIDE it (a custom
 # MAIN_DATABASE_NAME / DATABASE_NAME, SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH,
-# PLUGINS_DIR or BOOTSTRAP_KEY_FILE). Preserve such a target separately, so a restore pointed at the wrong archive remains
-# recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is set: a target on its
-# own mount under a read-only root has no writable place next to it.
+# PLUGINS_DIR or BOOTSTRAP_KEY_FILE). Preserve such a target separately, so a restore pointed at the
+# wrong archive remains recoverable. OPENWA_RESTORE_SNAPSHOT_DIR takes these snapshots too when it is
+# set: a target on its own mount under a read-only root has no writable place next to it.
 snapshot_external() {
   target="$1"
   external_snapshot=""
