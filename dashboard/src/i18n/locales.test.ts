@@ -84,6 +84,8 @@ test('common.minAgo and common.hoursAgo agree with the count', () => {
   assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 1 }), 'Il y a 1 heure');
   assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 3 }), 'Il y a 3 heures');
   assert.equal(i18n.t('common.hoursAgo', { lng: 'he', count: 2 }), 'לפני שעתיים');
+  // 'पहले' governs the oblique case, so Hindi keeps 'घंटे' for one hour too.
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'hi', count: 1 }), '1 घंटे पहले');
   assert.equal(i18n.t('common.minAgo', { lng: 'te', count: 5 }), '5 నిమిషాల క్రితం');
   assert.equal(i18n.t('common.minAgo', { lng: 'ar', count: 3 }), 'منذ 3 دقائق');
 });
