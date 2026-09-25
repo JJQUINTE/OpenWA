@@ -33,6 +33,7 @@
 #       (skipped as root)
 #   (v) a leftover STORAGE_LOCAL_PATH=./uploads the app cannot create falls back to ./data/media in
 #       both scripts, and a missing media dir is reported (skipped as root)
+#   (w) the default colocated plugins dir is rebuilt from both archive members, even when they differ
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -1007,6 +1008,59 @@ if [ "$(id -u)" -ne 0 ]; then
 else
   echo "SKIP: (v) running as root, which ignores the permission bits this case relies on"
 fi
+
+echo ""
+echo "==> (w) the default colocated plugins dir is rebuilt from both archive members"
+# Every default and Docker install keeps plugin packages and plugin state in one ./data/plugins, which
+# restore replaces once from a merge of the two members. An archive from a split layout makes the
+# members differ, so a merge that is skipped or a half that replaces the other shows up here.
+W="$WORK/w"
+mkdir -p "$W/split/data" "$W/split/pkgs/pkg-a" "$W/split/state/plugins/chatwoot" "$W/dst/data/plugins/old"
+make_fixture "$W/split/data/main.sqlite" "whiskey-main"
+make_fixture "$W/split/data/openwa.sqlite" "whiskey-data"
+printf 'whiskey-code\n' >"$W/split/pkgs/pkg-a/index.js"
+printf '{"plugins":[{"id":"chatwoot"}]}' >"$W/split/state/plugins/registry.json"
+printf 'whiskey-state\n' >"$W/split/state/plugins/chatwoot/k.json"
+printf 'whiskey-stale\n' >"$W/dst/data/plugins/old/x"
+(
+  cd "$W/split"
+  PLUGINS_DIR="$W/split/pkgs" PLUGIN_STATE_DIR="$W/split/state" BACKUP_DIR="$W/out" "$BACKUP" >/dev/null
+)
+(
+  cd "$W/dst"
+  "$RESTORE" "$(ls "$W"/out/openwa-backup-*.tar.gz)" >/dev/null
+)
+# check_plugins <dir> <label>: the package, the registry and the plugin's storage all landed in <dir>.
+check_plugins() {
+  if [ "$(cat "$1/pkg-a/index.js" 2>/dev/null || true)" != "whiskey-code" ]; then
+    fail "(w) $2: the installed plugin package is missing from the colocated plugins dir"
+  fi
+  if [ ! -f "$1/registry.json" ]; then
+    fail "(w) $2: the plugin registry is missing from the colocated plugins dir"
+  fi
+  if [ "$(cat "$1/chatwoot/k.json" 2>/dev/null || true)" != "whiskey-state" ]; then
+    fail "(w) $2: a plugin's persisted ctx.storage is missing from the colocated plugins dir"
+  fi
+}
+check_plugins "$W/dst/data/plugins" "split archive"
+if [ -e "$W/dst/data/plugins/old/x" ]; then
+  fail "(w) a plugin entry the archive does not carry survived the restore"
+fi
+if [ "$(cat "$W"/dst/data.pre-restore-*/plugins/old/x 2>/dev/null || true)" != "whiskey-stale" ]; then
+  fail "(w) the data-dir snapshot does not hold the plugins dir the restore replaced"
+fi
+# And the plain round trip of that default layout keeps all three.
+(
+  cd "$W/dst"
+  BACKUP_DIR="$W/out-default" "$BACKUP" >/dev/null
+)
+mkdir -p "$W/dst2"
+(
+  cd "$W/dst2"
+  "$RESTORE" "$(ls "$W"/out-default/openwa-backup-*.tar.gz)" >/dev/null
+)
+check_plugins "$W/dst2/data/plugins" "default round trip"
+pass "(w) the colocated plugins dir gets packages and state, and loses what the archive does not carry"
 
 echo ""
 echo "All smoke tests passed!"
