@@ -7312,6 +7312,32 @@ describe('BaileysAdapter call outcomes', () => {
     expect(fakeSock.rejectCall).toHaveBeenLastCalledWith(CALL_ID, '628222@s.whatsapp.net');
   });
 
+  // A teardown ends the socket, which fails the pending attempt; the handle died with the connection
+  // and must not come back, or a retry after a restart would reject a call from the old connection.
+  it.each([
+    ['a disconnect', (adapter: BaileysAdapter) => adapter.disconnect()],
+    [
+      'a terminal close that keeps the socket',
+      () =>
+        fakeSock.fire('connection.update', {
+          connection: 'close',
+          lastDisconnect: { error: { output: { statusCode: 440 } } },
+        }),
+    ],
+  ])('does not bring the call back when %s ends the pending rejection', async (_label, teardown) => {
+    const adapter = await ringing({ onCall: jest.fn(), onCallOutcome: jest.fn(), onError: jest.fn() });
+    let fail!: (err: Error) => void;
+    fakeSock.rejectCall.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+
+    const attempt = adapter.rejectCall(CALL_ID);
+    await teardown(adapter);
+    fail(new Error('Connection Closed'));
+    await expect(attempt).rejects.toThrow('Connection Closed');
+
+    await expect(adapter.rejectCall(CALL_ID)).rejects.toBeInstanceOf(CallNotFoundError);
+    expect(fakeSock.rejectCall).toHaveBeenCalledTimes(1);
+  });
+
   // WhatsApp replays signalling for calls that ended while the session was disconnected. Announcing
   // those would report last week's declined call as if it had just happened.
   it('drops an offline-replayed outcome', async () => {

@@ -166,6 +166,17 @@ export interface BaileysEventsHost {
   getOnCallOutcome(): EngineEventCallbacks['onCallOutcome'];
 }
 
+/** Every teardown clears the live-call map; counting those clears lets a reject in flight tell that its
+ *  connection was torn down meanwhile. */
+class LiveCallMap<V> extends Map<string, V> {
+  clears = 0;
+
+  override clear(): void {
+    this.clears++;
+    super.clear();
+  }
+}
+
 export class BaileysEvents {
   /** How long a received call's handle stays rejectable. Calls ring for roughly a minute, so
    *  two minutes covers the ringing window with margin without pinning dead calls for long. */
@@ -174,10 +185,13 @@ export class BaileysEvents {
   /** Live incoming calls by call id, holding the raw `from` JID sock.rejectCall() needs — the
    *  call event is long gone by the time a reject arrives, so it must be cached at event time.
    *  Readonly reference, owned here; the adapter's lifecycle clears it on teardown. */
-  readonly liveCalls = new Map<
-    string,
-    { callFrom: string; expiresAt: number; from: string; isVideo: boolean; isGroup: boolean }
-  >();
+  readonly liveCalls = new LiveCallMap<{
+    callFrom: string;
+    expiresAt: number;
+    from: string;
+    isVideo: boolean;
+    isGroup: boolean;
+  }>();
 
   /** How many ids the record of deletes for everyone keeps before it forgets the oldest. */
   static readonly DELETED_FOR_EVERYONE_LIMIT = 5_000;
@@ -1057,7 +1071,7 @@ export class BaileysEvents {
    * Reject a currently-ringing call. The entry is evicted before the attempt, so an outcome that
    * arrives meanwhile cannot publish a second one, and a rejected call does not become rejectable
    * again. A failed attempt leaves the call ringing, so its entry is put back for a retry unless the
-   * id rang again meanwhile. An unknown id or an expired entry maps to CallNotFoundError (HTTP 404).
+   * id rang again or the connection was torn down meanwhile. An unknown id or an expired entry maps to CallNotFoundError (HTTP 404).
    * A failure of the library's rejectCall() itself propagates as-is.
    */
   async rejectCall(callId: string): Promise<void> {
@@ -1071,6 +1085,7 @@ export class BaileysEvents {
       throw new EngineNotReadyError('Cannot reject a call before the engine is initialized.');
     }
     this.liveCalls.delete(callId);
+    const clears = this.liveCalls.clears;
     try {
       await withQueryDeadline(
         sock.rejectCall(callId, entry.callFrom),
@@ -1078,9 +1093,12 @@ export class BaileysEvents {
         'WhatsApp did not confirm the call rejection in time',
       );
     } catch (err) {
+      // A teardown meanwhile ended the connection and its call handles, so the handle stays gone.
       // Known limit: an outcome that ended the call during the attempt found no entry and left no
       // trace, so the handle comes back even then, until its TTL runs out.
-      if (!this.liveCalls.has(callId) && entry.expiresAt > Date.now()) this.liveCalls.set(callId, entry);
+      if (this.liveCalls.clears === clears && !this.liveCalls.has(callId) && entry.expiresAt > Date.now()) {
+        this.liveCalls.set(callId, entry);
+      }
       throw err;
     }
     // A rejection made HERE produces no inbound `reject` signal to observe, so without this the
