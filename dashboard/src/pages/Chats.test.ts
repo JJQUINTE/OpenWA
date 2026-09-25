@@ -15,7 +15,8 @@ import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Session, Chat, ChatMessage, SearchHit } from '../services/api';
+import type { Session, Chat, ChatMessage, SearchHit, Channel, ChannelMessage, StatusUpdate } from '../services/api';
+import { MENTION_CLOSE, MENTION_OPEN } from '../utils/messageFormatter.ts';
 import type { installJsdomGlobals as installJsdomGlobalsFn } from '../test-helpers/jsdom.ts';
 // socket.io-client resolves to a double under this runner (see vite-shim-hooks.mjs), which is what
 // lets a test deliver a server frame to the page's realtime handlers.
@@ -44,6 +45,13 @@ let thirdSessionStatus: Session['status'] | null = null;
 
 // Hits the global search answers with.
 let searchHits: SearchHit[] = [];
+
+// The engine the gateway reports: only whatsapp-web.js lists channels.
+let engineType = 'baileys';
+// The subscribed channels, the posts every channel's feed answers with, and the stored statuses.
+let channels: Channel[] = [];
+let channelPosts: ChannelMessage[] = [];
+let statuses: StatusUpdate[] = [];
 
 // Answers a session's chat list in place of the fixture, keyed by the session id in the URL (before
 // the rewrite below folds session-2 onto session-1), so a test can land two lists in any order.
@@ -285,10 +293,13 @@ function installFetchStub(): void {
       if (window.sessionStorage.getItem('openwa_user_role') !== 'admin') {
         return Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: admin' }, 403));
       }
-      return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
+      return Promise.resolve(jsonResponse({ engineType }));
+    }
+    if (method === 'GET' && path.startsWith(`/api/sessions/${SESSION.id}/channels/`)) {
+      return Promise.resolve(jsonResponse(channelPosts));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/channels`) {
-      return Promise.resolve(jsonResponse([CHANNEL]));
+      return Promise.resolve(jsonResponse(channels));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/chats`) {
       if (chatsResponder) return chatsResponder(url.includes(`/sessions/${SESSION_2.id}/`) ? SESSION_2.id : SESSION.id);
@@ -338,7 +349,7 @@ function installFetchStub(): void {
       return Promise.resolve(jsonResponse([]));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/status`) {
-      return Promise.resolve(jsonResponse({ statuses: [] }));
+      return Promise.resolve(jsonResponse({ statuses }));
     }
     if (method === 'POST' && path === `/api/sessions/${SESSION.id}/chats/read`) {
       return Promise.resolve(jsonResponse({ success: true }));
@@ -418,6 +429,10 @@ afterEach(() => {
   chatsResponder = null;
   thirdSessionStatus = null;
   searchHits = [];
+  engineType = 'baileys';
+  channels = [CHANNEL];
+  channelPosts = [];
+  statuses = [];
 });
 
 function renderChats(): { container: HTMLElement } {
@@ -1558,6 +1573,47 @@ test('the media viewer saves an image under its file name, not its caption', asy
   }
   assert.equal(links.length, 1, 'expected one download link');
   assert.equal(links[0].download, 'photo.png');
+});
+
+test('a channel post or status caption carrying mention delimiters renders them as nothing, not as a mention', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  // Only resolveMentions may place the delimiters; raw text carrying them is stripped before render.
+  const raw = `${MENTION_OPEN}@Mallory${MENTION_CLOSE} says hi`;
+  engineType = 'whatsapp-web.js';
+  window.sessionStorage.setItem('openwa_engine_type', engineType);
+  channels = [{ id: '120363000000000001@newsletter', name: 'News' }];
+  channelPosts = [{ id: 'post-1', body: raw, timestamp: 1_700_000_000, hasMedia: false }];
+  const now = Date.now();
+  statuses = [
+    {
+      id: 'status-1',
+      contact: { id: CONTACT.id, name: 'Bob' },
+      type: 'image',
+      caption: raw,
+      timestamp: new Date(now).toISOString(),
+      expiresAt: new Date(now + 86_400_000).toISOString(),
+    },
+  ];
+  const { container } = renderChats();
+  await screen.findByText('Alice');
+  const bubbleText = async (): Promise<Element> =>
+    waitFor(() => {
+      const found = container.querySelector('.channel-room .message-bubble .message-text');
+      assert.ok(found, 'the post did not render');
+      return found;
+    });
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Channels' }));
+  fireEvent.click(await screen.findByText('News'));
+  const post = await bubbleText();
+  assert.equal(post.textContent, '@Mallory says hi');
+  assert.ok(!post.querySelector('bdi'), 'the channel post rendered a mention');
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+  fireEvent.click(await screen.findByText('Bob'));
+  const caption = await bubbleText();
+  assert.equal(caption.textContent, '@Mallory says hi');
+  assert.ok(!caption.querySelector('bdi'), 'the status caption rendered a mention');
 });
 
 test('two media downloads in flight do not clobber each other', async () => {

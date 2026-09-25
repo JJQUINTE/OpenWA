@@ -1,5 +1,6 @@
 // Render test for the chat thread's write actions. The gateway answers reply, react, delete and a
-// prompt-button tap only for an operator key, so a read-only key must not be offered them.
+// prompt-button tap only for an operator key, so a read-only key must not be offered them. It also
+// checks the thread, not just the helpers, resolves an @mention in a body and in a quote.
 import '../../test-helpers/register-hooks.ts';
 import { test, before, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,6 +59,7 @@ const PROMPT: ChatMessageView = {
 function renderThread(
   role: string,
   messages: ChatMessageView[] = [PROMPT],
+  activeChat: Chat = CHAT,
 ): { clicks: string[]; container: HTMLElement } {
   window.sessionStorage.setItem('openwa_user_role', role);
   const clicks: string[] = [];
@@ -68,7 +70,7 @@ function renderThread(
       null,
       createElement(ChatThread, {
         sessionId: 's1',
-        activeChat: CHAT,
+        activeChat,
         messages,
         loadingMessages: false,
         messagesError: false,
@@ -119,4 +121,33 @@ test('an optimistic bubble with no WhatsApp id yet offers no reply, react or del
     assert.ok(!container.querySelector('.message-actions-menu'), `a ${status} placeholder offered actions`);
     rtl.cleanup();
   }
+});
+
+test('an @mention of a participant who posted in the thread shows their first name, in the body and the quote', () => {
+  const GROUP: Chat = { ...CHAT, id: '120363000000000000@g.us', name: 'Team', isGroup: true, kind: 'group' };
+  const fromBob: ChatMessageView = {
+    ...PROMPT,
+    id: 'db-bob',
+    waMessageId: 'wamid.bob',
+    chatId: GROUP.id,
+    from: GROUP.id,
+    author: '15551230000@c.us',
+    chatName: 'Bob Smith',
+    body: 'hello',
+    metadata: undefined,
+  };
+  const mentioning: ChatMessageView = {
+    ...fromBob,
+    id: 'db-mention',
+    waMessageId: 'wamid.mention',
+    author: '15559990000@c.us',
+    chatName: 'Ann',
+    body: 'thanks @15551230000',
+    timestamp: 1_700_000_001,
+    metadata: { quotedMessage: { id: 'wamid.bob', body: 'ping @15551230000' } },
+  };
+  const { container } = renderThread('viewer', [fromBob, mentioning], GROUP);
+  const body = [...container.querySelectorAll('.message-text')].find(el => el.textContent?.startsWith('thanks'));
+  assert.equal(body?.querySelector('bdi')?.textContent, '@Bob');
+  assert.equal(container.querySelector('.quote-body bdi')?.textContent, '@Bob');
 });
