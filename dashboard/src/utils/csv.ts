@@ -7,7 +7,7 @@
  *    (Excel/LibreOffice/Sheets). Audit rows carry attacker-influenced strings (request paths,
  *    error messages, API-key names), so a logged request like `GET /=HYPERLINK("https://evil…")`
  *    would become a live formula in the operator's spreadsheet. Neutralize by prefixing an
- *    apostrophe — the spreadsheet then shows the value as text. This mangles the export only (the
+ *    apostrophe: the spreadsheet then shows the value as text. This mangles the export only (the
  *    dashboard UI shows the raw value).
  * 2. Structural quoting (pre-existing rule): a value containing `"`, `,`, a newline or a carriage
  *    return is wrapped in double quotes with inner quotes doubled.
