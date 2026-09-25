@@ -1409,6 +1409,17 @@ describe('BaileysAdapter reconnect socket teardown (no leak)', () => {
     expect(adapter.getStatus()).not.toBe(EngineStatus.FAILED);
   });
 
+  it('detaches the chat listeners of the previous socket on an internal reconnect', async () => {
+    await initWithRealTimers();
+    jest.useFakeTimers();
+    fireRecoverableClose();
+    await jest.runAllTimersAsync();
+    // The fake hands back the same socket, so a listener the teardown missed would now be doubled.
+    for (const event of ['chats.upsert', 'chats.update', 'chats.delete']) {
+      expect(fakeSock.emitter.listenerCount(event)).toBe(1);
+    }
+  });
+
   it('tearing down the previous socket does not trigger a spurious second reconnect', async () => {
     const adapter = await initWithRealTimers();
     jest.useFakeTimers();
@@ -4606,6 +4617,7 @@ describe('BaileysAdapter store-backed ops', () => {
       remember: jest.fn().mockResolvedValue(undefined),
       reload: jest.fn().mockResolvedValue(undefined),
       clearSession: jest.fn(),
+      forget: jest.fn().mockResolvedValue(undefined),
       forgetAbsent: jest.fn(),
     };
     const linked = async (onDisconnected = jest.fn()): Promise<BaileysAdapter> => {
@@ -6263,6 +6275,15 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
       await act(adapter);
       expect(fakeSock.chatModify).toHaveBeenCalledWith(expect.anything(), '484848@lid');
     });
+  });
+
+  it('drops a chat Baileys reports deleted from the listing', async () => {
+    const adapter = await readyWithMessage();
+    fakeSock.fire('chats.upsert', [{ id: '628111@s.whatsapp.net' }]);
+    expect(await adapter.getChats()).toHaveLength(1);
+    fakeSock.fire('chats.delete', ['628111@s.whatsapp.net']);
+    expect(await adapter.getChats()).toEqual([]);
+    expect(await adapter.deleteChat('628111@c.us')).toBe(false);
   });
 
   it('clearChatMessages returns false for a chat with no known history', async () => {

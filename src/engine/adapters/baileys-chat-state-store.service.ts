@@ -23,6 +23,8 @@ export interface ChatStateStore {
   reload(): Promise<void>;
   /** Forget every chat state of one session (an unlink: the next account to link it starts clean). */
   clearSession(sessionId: string): Promise<void>;
+  /** Forget the named chats of one session (a deleted chat: one a later message re-creates starts clean). */
+  forget(sessionId: string, chatIds: string[]): Promise<void>;
   /** Re-read a session's chats known to have no row (a start: another node may have written them since). */
   forgetAbsent(sessionId: string): void;
 }
@@ -172,6 +174,28 @@ export class ChatStateStoreService implements ChatStateStore, OnModuleInit {
     for (const k of [...this.states.keys()]) {
       if (k.startsWith(prefix)) this.states.delete(k);
     }
+  }
+
+  /** Queued behind each chat's pending writes, so a patch still in flight cannot re-create the row. */
+  async forget(sessionId: string, chatIds: string[]): Promise<void> {
+    await Promise.all(
+      chatIds.map(chatId => {
+        const k = this.key(sessionId, chatId);
+        return new Promise<void>(resolve =>
+          this.writes.enqueue(k, async () => {
+            try {
+              await this.repo.delete({ sessionId, chatId });
+            } catch (err) {
+              this.logger.warn(
+                `Failed to forget chat state for ${chatId}: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+            this.states.delete(k);
+            resolve();
+          }),
+        );
+      }),
+    );
   }
 
   forgetAbsent(sessionId: string): void {

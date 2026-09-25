@@ -814,7 +814,7 @@ OpenWA consumes events by normalizing them into `EngineEventCallbacks`; anything
 | `messaging-history.set`     | ✅                                                  |     | `messaging-history.status`       | ❌                              |
 | `chats.upsert`              | ✅                                                  |     | `newsletter-participants.update` | ❌                              |
 | `chats.update`              | ✅                                                  |     | `newsletter-settings.update`     | ❌                              |
-| `chats.delete`              | ❌                                                  |     | `newsletter.reaction`            | ❌                              |
+| `chats.delete`              | ✅                                                  |     | `newsletter.reaction`            | ❌                              |
 | `contacts.upsert`           | ✅                                                  |     | `newsletter.view`                | ❌                              |
 | `contacts.update`           | ✅                                                  |     | `settings.update`                | ❌                              |
 | `groups.update`             | ✅                                                  |     | `blocklist.set`                  | ❌                              |

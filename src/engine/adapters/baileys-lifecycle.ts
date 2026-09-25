@@ -140,6 +140,8 @@ export interface BaileysLifecycleHost {
   upsertContacts: BaileysSessionStore['upsertContacts'];
   /** Persist chat records pushed by the socket (chats.upsert/update, messaging-history.set). */
   upsertChats: BaileysSessionStore['upsertChats'];
+  /** Drop chats the socket reports deleted (chats.delete). */
+  removeChats: BaileysSessionStore['removeChats'];
   /** Learn lid<->phone mappings pushed by the socket (messaging-history.set, lid-mapping.update). */
   addLidMappings: BaileysSessionStore['addLidMappings'];
   handleMessagesUpsert: BaileysEvents['handleMessagesUpsert'];
@@ -312,7 +314,7 @@ export class BaileysLifecycle {
     }
 
     // An internal reconnect (transient drop) overwrites this.sock WITHOUT going through
-    // disconnect/logout/destroy, so the previous socket's WebSocket and the 16 ev listeners we
+    // disconnect/logout/destroy, so the previous socket's WebSocket and the 17 ev listeners we
     // register below would leak on every reconnect. Tear the prior socket down first. Detach OUR
     // connection.update listener BEFORE end(): Baileys' own end() synchronously emits a synthetic
     // connection.update {connection:'close'}, which — if still wired — would re-enter
@@ -328,6 +330,7 @@ export class BaileysLifecycle {
         previous.ev.removeAllListeners('contacts.update');
         previous.ev.removeAllListeners('chats.upsert');
         previous.ev.removeAllListeners('chats.update');
+        previous.ev.removeAllListeners('chats.delete');
         previous.ev.removeAllListeners('messaging-history.set');
         previous.ev.removeAllListeners('lid-mapping.update');
         previous.ev.removeAllListeners('group-participants.update');
@@ -465,6 +468,14 @@ export class BaileysLifecycle {
         count: updates?.length ?? 0,
       });
       this.host.upsertChats(updates);
+    });
+    sock.ev.on('chats.delete', ids => {
+      this.host.logger.debug('Baileys chats event', {
+        action: 'baileys_chats',
+        event: 'delete',
+        count: ids?.length ?? 0,
+      });
+      this.host.removeChats(ids);
     });
     sock.ev.on('group-participants.update', event => this.host.handleGroupParticipantsUpdate(event));
     sock.ev.on('groups.update', updates => this.host.handleGroupsUpdate(updates));

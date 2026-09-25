@@ -61,6 +61,10 @@ class LruMap<K, V> {
     return this.map.has(key);
   }
 
+  delete(key: K): void {
+    this.drop(key);
+  }
+
   get(key: K): V | undefined {
     if (!this.map.has(key)) {
       return undefined;
@@ -289,6 +293,25 @@ export class BaileysSessionStore {
       const existing = this.chats.get(r.id) ?? { id: r.id };
       this.chats.set(r.id, { ...existing, ...r });
       this.persistChatState(r.id, r);
+    }
+  }
+
+  /**
+   * Drop chats Baileys reports deleted (`chats.delete`: an API delete replayed locally, or one made on
+   * the phone), with their preview and last inbound message, under every spelling: the id comes from
+   * the app-state index, which need not be the twin the chat or its messages are keyed under. The
+   * persisted mute/archive/pin goes too: a chat a later message re-creates is a new chat on WhatsApp,
+   * and the row would otherwise lay the deleted chat's state over it.
+   */
+  removeChats(ids: string[] = []): void {
+    const keys = new Set(ids.flatMap(id => this.chatTwins(id)));
+    for (const key of keys) {
+      this.chats.delete(key);
+      this.lastMessages.delete(key);
+      this.lastInbound.delete(key);
+    }
+    if (keys.size && this.chatStateStore && this.sessionId) {
+      void this.chatStateStore.forget(this.sessionId, [...keys]);
     }
   }
 

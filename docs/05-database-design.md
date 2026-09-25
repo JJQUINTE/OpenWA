@@ -664,7 +664,7 @@ The data connection also owns:
 - **`integration_delivery_failures`** — DLQ-of-record for both inbound (ingress) and outbound (provider egress) delivery failures (`src/modules/integration/entities/integration-delivery-failure.entity.ts`).
 - **`baileys_stored_messages`** — Baileys engine message store — the serialized WAMessage proto (`src/engine/adapters/baileys-stored-message.entity.ts`); present only when the Baileys engine is used. (Credentials live on the filesystem, not here.)
 - **`lid_mappings`** — LID↔phone-number identity mappings (`src/engine/identity/lid-mapping.entity.ts`).
-- **`chat_states`** (engine): per-session mute, archive and pin state of each Baileys chat (`src/engine/adapters/baileys-chat-state.entity.ts`), keyed `(sessionId, chatId)`. WhatsApp does not re-deliver that state, so it is kept in backups.
+- **`chat_states`** (engine): per-session mute, archive and pin state of each Baileys chat (`src/engine/adapters/baileys-chat-state.entity.ts`), keyed `(sessionId, chatId)`. WhatsApp does not re-deliver that state, so it is kept in backups. A chat deleted on the phone or through the API loses its row, so a later message starts it clean.
 
 Additionally, the `AddMessagesFts` migration creates the full-text-search structures over `messages` (a FTS5 virtual table on SQLite, a generated `body_ts` `tsvector` column plus GIN index on PostgreSQL) that back the `/search` endpoint.
 

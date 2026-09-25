@@ -26,8 +26,9 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
       rows.set(KEY(v.sessionId, v.chatId), { ...rows.get(KEY(v.sessionId, v.chatId)), ...v });
       return Promise.resolve(undefined);
     }),
-    delete: jest.fn(({ sessionId }: { sessionId: string }) => {
-      for (const [k, r] of rows) if (r.sessionId === sessionId) rows.delete(k);
+    delete: jest.fn(({ sessionId, chatId }: { sessionId: string; chatId?: string }) => {
+      for (const [k, r] of rows)
+        if (r.sessionId === sessionId && (chatId === undefined || r.chatId === chatId)) rows.delete(k);
       return Promise.resolve(undefined);
     }),
   };
@@ -170,6 +171,28 @@ describe('ChatStateStoreService', () => {
     await tick();
     expect(svc.get('s', 'c')).toEqual(expect.objectContaining({ archived: true }));
     expect(repo.findOne).toHaveBeenCalledTimes(3); // 't' is still skipped
+  });
+
+  it('forget drops the named chats of one session from the table and the cache, after their pending writes', async () => {
+    const repo = makeRepo([
+      { sessionId: 's', chatId: 'd', pinned: true },
+      { sessionId: 't', chatId: 'c', pinned: true },
+    ]);
+    const svc = svcWith(repo);
+    await svc.reload();
+    const pending = svc.remember('s', 'c', { archived: true }); // not awaited, as the session store calls it
+    await svc.forget('s', ['c', 'd']);
+    await pending;
+    expect([...repo.rows.keys()]).toEqual([KEY('t', 'c')]);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    expect(svc.get('s', 'd')).toBeUndefined();
+    expect(svc.get('t', 'c')).toEqual(expect.objectContaining({ pinned: true }));
+  });
+
+  it('forget swallows a repo error', async () => {
+    const repo = makeRepo();
+    repo.delete.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    await expect(svcWith(repo).forget('s', ['c'])).resolves.toBeUndefined();
   });
 
   it('keeps both of two concurrent patches for a chat that is not cached yet', async () => {
