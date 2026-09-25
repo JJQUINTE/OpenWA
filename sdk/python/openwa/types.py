@@ -1204,6 +1204,7 @@ class HealthReadyResponse(TypedDict, total=False):
 class AuthValidateResponse(TypedDict, total=False):
     valid: bool
     role: str
+    engineType: str
 
 
 # ── Template ──────────────────────────────────────────────────────

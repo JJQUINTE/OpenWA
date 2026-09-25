@@ -119,10 +119,10 @@ All resources are accessed as properties on the client (`client.<resource>.<meth
 
 The top-level client also exposes:
 
-| Method    | Signature                    | Description                                                                |
-| --------- | ---------------------------- | -------------------------------------------------------------------------- |
-| `auth`    | `client.auth()`              | Validate the configured API key and resolve its role (`{ valid, role? }`). |
-| `request` | `client.request<T>(options)` | Raw escape hatch — issue an arbitrary request against the API.             |
+| Method    | Signature                    | Description                                                                                                    |
+| --------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `auth`    | `client.auth()`              | Validate the configured API key and resolve its role and the running engine (`{ valid, role?, engineType? }`). |
+| `request` | `client.request<T>(options)` | Raw escape hatch — issue an arbitrary request against the API.                                                 |
 
 #### `sessions`
 

@@ -10309,6 +10309,11 @@
               "viewer"
             ],
             "description": "The key's role; present only when valid."
+          },
+          "engineType": {
+            "type": "string",
+            "description": "Engine the process resolved at boot; present only when valid.",
+            "example": "baileys"
           }
         },
         "required": [

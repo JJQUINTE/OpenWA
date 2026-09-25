@@ -1189,6 +1189,7 @@ export interface HealthReadyResponse {
 export interface AuthValidateResponse {
   valid: boolean;
   role?: string;
+  engineType?: string;
 }
 
 // ── Template ──────────────────────────────────────────────────────

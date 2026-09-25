@@ -1278,7 +1278,7 @@ curl -X DELETE "$BASE/api/auth/api-keys/3f2a1c9e-1b2d-4a5f-9c8e-aa11bb22cc33" \
 
 #### POST /api/auth/validate
 
-Validate the supplied key and report its role (empty body; key read from the header).
+Validate the supplied key and report its role and the running engine (`engineType`); empty body, key read from the header.
 
 ```bash
 curl -X POST "$BASE/api/auth/validate" \

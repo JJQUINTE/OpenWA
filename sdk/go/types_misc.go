@@ -26,8 +26,9 @@ type HealthReadyResponse struct {
 
 // AuthValidateResponse reports whether the API key is valid and its role.
 type AuthValidateResponse struct {
-	Valid bool   `json:"valid"`
-	Role  string `json:"role,omitempty"`
+	Valid      bool   `json:"valid"`
+	Role       string `json:"role,omitempty"`
+	EngineType string `json:"engineType,omitempty"`
 }
 
 // ── Template ───────────────────────────────────────────
