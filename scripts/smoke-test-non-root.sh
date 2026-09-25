@@ -55,7 +55,10 @@ echo "    PID 1: $PID1"
 if echo "$PID1" | grep -q "dumb-init"; then
   echo "PASS: dumb-init is PID 1"
 else
-  echo "WARN: PID 1 is '$PID1' (expected dumb-init) — check entrypoint chain"
+  # Without it as PID 1 nothing reaps Chromium's exited children or forwards signals past Node.
+  echo "FAIL: PID 1 is '$PID1' (expected dumb-init), check the ENTRYPOINT chain" >&2
+  cleanup
+  exit 1
 fi
 
 cleanup
