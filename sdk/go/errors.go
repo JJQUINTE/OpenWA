@@ -28,22 +28,25 @@ var (
 	ErrNotFound = errors.New("openwa: not found")
 	// ErrConflict is returned for a 409 (typically an engine-not-ready condition).
 	ErrConflict = errors.New("openwa: conflict")
-	// ErrRateLimited is returned for a 429 (too many requests).
+	// ErrRateLimited is returned for a 429 (too many requests). The global rate
+	// limiter's 429 clears within seconds; its delay is only in the Retry-After
+	// response header, which APIError does not carry but WithRetry honors. A
+	// 429 whose Body has code "SEND_PACING_LIMITED" is not transient: do not
+	// retry it before the body's retryAfterSeconds, which can be hours.
 	ErrRateLimited = errors.New("openwa: rate limited")
 	// ErrNotImplemented is returned for a 501 (the active engine does not
 	// support this operation).
 	ErrNotImplemented = errors.New("openwa: not implemented")
 	// ErrServiceUnavailable is returned for a 503 — a transport failure rather
 	// than a refusal: WhatsApp never replied, the socket was down, or the
-	// request budget ran out. It is retryable, as is ErrRateLimited (honor
-	// its Retry-After), but a catalog 503 can persist because WhatsApp may
-	// never answer that query, so bound any retry. The non-idempotent sends
-	// are deliberately left unbounded by the gateway so a slow WhatsApp reply
-	// never answers one, and in a multi-node deployment a forwarded request
-	// answers 503 only when the owner node was never reached. A forward that
-	// fails after the request was sent answers 502 or 504 instead: the owner
-	// may already have carried it out, so do not repeat a non-idempotent send
-	// on those unchecked.
+	// request budget ran out. It is retryable, but a catalog 503 can persist
+	// because WhatsApp may never answer that query, so bound any retry. The
+	// non-idempotent sends are deliberately left unbounded by the gateway so a
+	// slow WhatsApp reply never answers one, and in a multi-node deployment a
+	// forwarded request answers 503 only when the owner node was never reached.
+	// A forward that fails after the request was sent answers 502 or 504
+	// instead: the owner may already have carried it out, so do not repeat a
+	// non-idempotent send on those unchecked.
 	ErrServiceUnavailable = errors.New("openwa: service unavailable")
 )
 

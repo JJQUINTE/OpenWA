@@ -102,12 +102,15 @@ case err != nil:
 
 Sentinels: `ErrUnauthorized` (401), `ErrForbidden` (403), `ErrNotFound` (404),
 `ErrConflict` (409), `ErrRateLimited` (429), `ErrNotImplemented` (501),
-`ErrServiceUnavailable` (503). 429 (honor `Retry-After`) and 503 are the
-transient statuses, but a catalog 503 can persist because WhatsApp may never
-answer that query, so bound any retry. A timeout
-surfaces as `*openwa.TimeoutError`. In a routed deployment only 503 proves
-the request was never carried out: a forward that fails after the request
-reached the owner node answers 502 or 504.
+`ErrServiceUnavailable` (503). 503 is transient, but a catalog 503 can persist
+because WhatsApp may never answer that query, so bound any retry. A 429 from
+the global rate limiter clears within seconds; its delay is only in the
+`Retry-After` response header, which `APIError` does not carry but `WithRetry`
+honors. A 429 whose body has `code: "SEND_PACING_LIMITED"` is not transient:
+do not retry it before the body's `retryAfterSeconds`, which can be hours. A
+timeout surfaces as `*openwa.TimeoutError`. In a routed deployment only 503
+proves the request was never carried out: a forward that fails after the
+request reached the owner node answers 502 or 504.
 
 ## Retries
 
