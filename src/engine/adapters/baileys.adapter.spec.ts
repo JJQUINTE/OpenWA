@@ -3797,6 +3797,8 @@ describe('BaileysAdapter media sends', () => {
       a.sendVideoMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
     audio: (a: BaileysAdapter, url: string) =>
       a.sendAudioMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url }),
+    document: (a: BaileysAdapter, url: string) =>
+      a.sendDocumentMessage('628111@s.whatsapp.net', { mimetype: PLACEHOLDER, data: url, filename: 'm.docx' }),
   };
   const sentMimetype = (): unknown =>
     (fakeSock.sendMessage.mock.calls[0] as [string, { mimetype?: string }])[1].mimetype;
@@ -3808,6 +3810,9 @@ describe('BaileysAdapter media sends', () => {
     ['video', 'video/mp4', 'Application/Octet-Stream'],
     ['audio', 'audio/mpeg', ''],
     ['audio', 'audio/mpeg', 'binary/octet-stream'],
+    // Baileys labels a document with no type as application/pdf, so a .docx would arrive unopenable.
+    ['document', 'application/octet-stream', ''],
+    ['document', 'application/octet-stream', 'binary/octet-stream'],
   ] as const)('labels an undeclared %s URL as %s when the host answers %j', async (kind, fallback, fetchedType) => {
     (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: fetchedType });
     const adapter = await ready();
@@ -3822,15 +3827,11 @@ describe('BaileysAdapter media sends', () => {
     expect(sentMimetype()).toBe('image/png');
   });
 
-  it('leaves a document with the type it was fetched with', async () => {
-    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: PLACEHOLDER });
+  it('keeps a specific fetched type for an undeclared document URL', async () => {
+    (loadRemoteMediaBuffer as jest.Mock).mockResolvedValue({ data: Buffer.from([1]), mimetype: 'application/zip' });
     const adapter = await ready();
-    await adapter.sendDocumentMessage('628111@s.whatsapp.net', {
-      mimetype: PLACEHOLDER,
-      data: 'https://cdn.example/m',
-      filename: 'm.bin',
-    });
-    expect(sentMimetype()).toBe(PLACEHOLDER);
+    await sendByKind.document(adapter, 'https://cdn.example/m');
+    expect(sentMimetype()).toBe('application/zip');
   });
 
   it('uses the caller-declared mimetype over the fetched content-type for a URL', async () => {

@@ -165,8 +165,9 @@ const GENERIC_FETCHED_TYPES = new Set(['', 'application/octet-stream', 'binary/o
  * `sessionProxyUrl` is this session's egress proxy, which the URL fetch leaves through (#1626). It
  * is required, not optional, so a new call site cannot fetch direct on a proxied session by omission.
  *
- * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg), used for a URL whose type
- * neither the caller nor the host names. A document send passes none and keeps what it was given.
+ * `fallbackType` is the kind's default (image/jpeg, video/mp4, audio/mpeg, application/octet-stream for a
+ * document), used for a URL whose type neither the caller nor the host names. A document needs one too:
+ * Baileys labels a document with an empty type as application/pdf.
  */
 export async function resolveMediaBuffer(
   media: MediaInput,
@@ -401,7 +402,7 @@ export class BaileysMessaging {
 
   async sendDocumentMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
     this.host.ensureReady();
-    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl());
+    const { data, mimetype } = await resolveMediaBuffer(media, this.host.sessionProxyUrl(), 'application/octet-stream');
     return this.sendContent(
       chatId,
       {
