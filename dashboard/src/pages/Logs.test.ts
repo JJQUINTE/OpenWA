@@ -57,6 +57,13 @@ let exportFailure: number | null = null;
 let exportTotal: number | null = null;
 // When set, every export page from this offset on is refused with a 429, as a tripped minute tier does.
 let exportThrottledFrom: number | null = null;
+// When set, the export walks a 300-row table that gains a newest row after its first page is read.
+let exportGrowsMidWalk = false;
+
+/** Row `i` of a table walked newest first; every row has its own id, as the gateway's rows do. */
+function exportRow(i: number): AuditLog {
+  return { ...LOG_FAILED_SEND, id: `row-${i}`, errorMessage: `err-${i}` };
+}
 
 function installFetchStub(): void {
   globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
@@ -69,7 +76,15 @@ function installFetchStub(): void {
       return Promise.resolve(new Response(JSON.stringify({ message: 'Too Many Requests' }), { status: 429 }));
     }
     if (exportTotal && url.includes('limit=200')) {
-      return Promise.resolve(jsonResponse({ data: Array(200).fill(LOG_FAILED_SEND), total: exportTotal }));
+      const data = Array.from({ length: 200 }, (_, i) => exportRow(offset + i));
+      return Promise.resolve(jsonResponse({ data, total: exportTotal }));
+    }
+    if (exportGrowsMidWalk && url.includes('limit=200')) {
+      // The second page is read after a new row landed on top, so every older row sits one further down.
+      if (offset === 0)
+        return Promise.resolve(jsonResponse({ data: [...Array(200).keys()].map(exportRow), total: 300 }));
+      const shifted = [exportRow(-1), ...[...Array(300).keys()].map(exportRow)];
+      return Promise.resolve(jsonResponse({ data: shifted.slice(offset), total: 301 }));
     }
     return Promise.resolve(jsonResponse({ data: LOGS, total: LOGS.length }));
   }) as typeof fetch;
@@ -220,6 +235,24 @@ test('a truncated export whose search matches nothing names the entries it scann
     assert.equal(downloads.length, 0, 'an empty export was downloaded');
   } finally {
     exportTotal = null;
+    restore();
+  }
+});
+
+test('a row written while the export walks the pages is not exported twice', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  const { downloads, restore } = recordDownloads();
+  exportGrowsMidWalk = true;
+  try {
+    renderLogs();
+    await screen.findByText('infra.restart');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await waitFor(() => assert.equal(downloads.length, 1));
+    const lines = (await downloads[0].text()).split('\n');
+    assert.equal(lines.length, 1 + 300, 'one header line and one line per distinct row');
+    assert.equal(lines.filter(line => line.endsWith(',err-199')).length, 1, 'the row the shift repeated');
+  } finally {
+    exportGrowsMidWalk = false;
     restore();
   }
 });

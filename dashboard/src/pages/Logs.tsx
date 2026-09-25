@@ -95,11 +95,12 @@ export function Logs() {
     if (exporting) return;
     setExporting(true);
     try {
-      const {
-        items: all,
-        truncated,
-        throttled,
-      } = await fetchAllPages<AuditLog>((limit, offset) => auditApi.list({ severity: severityParam, limit, offset }));
+      const { items, truncated, throttled } = await fetchAllPages<AuditLog>((limit, offset) =>
+        auditApi.list({ severity: severityParam, limit, offset }),
+      );
+      // The walk pages by offset over a live table, newest first: a row written between two pages pushes
+      // the older ones down, so the next page starts with one already fetched. Keep each id once.
+      const all = [...new Map(items.map(log => [log.id, log])).values()];
       const q = searchQuery.toLowerCase();
       const rows = q
         ? all.filter(l => l.action.toLowerCase().includes(q) || (l.errorMessage || '').toLowerCase().includes(q))
