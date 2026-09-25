@@ -6,7 +6,8 @@
  *   1. KEY PARITY (hard fail): every nested key path in en.json exists in each locale.
  *   2. PLACEHOLDER PARITY (hard fail): a translated string carries the SAME `{{token}}` interpolation
  *      placeholders as the reference — a localized/renamed token (e.g. `{{nombre}}` instead of
- *      `{{name}}`) silently breaks interpolation, which a key-presence check can't see.
+ *      `{{name}}`) silently breaks interpolation, which a key-presence check can't see. A plural form
+ *      only the locale has (fr `_many`, ar `_few`) may use no token its base's `_other` lacks.
  *   3. UNTRANSLATED PROSE (warning): a long leaf value byte-identical to en.json is very likely still
  *      English — surfaced as a non-fatal drift signal (short coincidental matches are ignored).
  *   4. PLURAL FORMS (hard fail): for every plural key in en.json (one with an `_other` variant), a
@@ -21,7 +22,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const LOCALES_DIR = join(__dirname, '..', 'src', 'i18n', 'locales');
+// An optional directory argument points the check at a copy of the catalogues (used by its own test).
+const LOCALES_DIR = process.argv[2] ?? join(__dirname, '..', 'src', 'i18n', 'locales');
 const REFERENCE = 'en.json';
 // A leaf value identical to the reference is only flagged when at least this long — short UI words
 // (e.g. "Media", "OK") legitimately coincide across languages, full sentences almost never do.
@@ -71,6 +73,8 @@ function load(file) {
 const referenceKeys = flatten(load(REFERENCE));
 const referenceEntries = flattenEntries(load(REFERENCE));
 const pluralBases = [...referenceKeys].filter((k) => k.endsWith('_other')).map((k) => k.slice(0, -'_other'.length));
+const pluralBaseSet = new Set(pluralBases);
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 const localeFiles = readdirSync(LOCALES_DIR)
   .filter((f) => f.endsWith('.json') && f !== REFERENCE)
   .sort();
@@ -88,14 +92,24 @@ for (const file of localeFiles) {
     .sort();
   const extra = [...keys].filter((k) => !referenceKeys.has(k) && !pluralForms.has(k)).sort();
 
-  const placeholderMismatches = [];
+  const placeholderMismatches = new Map(); // path -> expected tokens
   const untranslated = [];
   for (const [path, refVal] of referenceEntries) {
     if (typeof refVal !== 'string') continue;
     const val = entries.get(path);
     if (typeof val !== 'string') continue;
-    if (!setsEqual(placeholders(refVal), placeholders(val))) placeholderMismatches.push(path);
+    if (!setsEqual(placeholders(refVal), placeholders(val))) placeholderMismatches.set(path, placeholders(refVal));
     if (refVal === val && refVal.length >= UNTRANSLATED_MIN_LEN) untranslated.push(path);
+  }
+  // A plural form en.json has no counterpart for (fr `_many`, ar `_few`, he `_two`) is held to the
+  // tokens of the base's `_other`. A subset, not equality: a form for one exact number may spell the
+  // number out ("two filters") and drop `{{count}}`, but a token the reference lacks renders literally.
+  for (const [path, val] of entries) {
+    if (referenceEntries.has(path) || typeof val !== 'string') continue;
+    const base = path.replace(PLURAL_SUFFIX, '');
+    if (base === path || !pluralBaseSet.has(base)) continue;
+    const expected = placeholders(referenceEntries.get(`${base}_other`));
+    if ([...placeholders(val)].some((t) => !expected.has(t))) placeholderMismatches.set(path, expected);
   }
 
   if (missing.length > 0) {
@@ -106,11 +120,11 @@ for (const file of localeFiles) {
     console.log(`[OK]   ${file}: all ${referenceKeys.size} keys present`);
   }
 
-  if (placeholderMismatches.length > 0) {
+  if (placeholderMismatches.size > 0) {
     hasErrors = true;
-    console.error(`[FAIL] ${file}: ${placeholderMismatches.length} key(s) with mismatched {{placeholders}}:`);
-    for (const k of placeholderMismatches) {
-      console.error(`  ! ${k}: expected ${[...placeholders(referenceEntries.get(k))].join(', ') || '(none)'}`);
+    console.error(`[FAIL] ${file}: ${placeholderMismatches.size} key(s) with mismatched {{placeholders}}:`);
+    for (const [k, expected] of placeholderMismatches) {
+      console.error(`  ! ${k}: expected ${[...expected].join(', ') || '(none)'}`);
     }
   }
 
