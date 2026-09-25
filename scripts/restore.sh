@@ -115,6 +115,13 @@ if [ "$RESOLVED_DATA_DIR" = "$RESOLVED_USER_HOME" ]; then
   exit 1
 fi
 
+# refuse_unwritable <path> <label>: stop in the snapshot phase, before the first database is replaced.
+refuse_unwritable() {
+  log "ERROR: cannot write the $2 target: $1"
+  log "       nothing has been restored yet; fix its permissions or point the setting at a writable path, then re-run"
+  exit 1
+}
+
 replace_tree() {
   source_dir="$1"
   target_dir="$2"
@@ -143,6 +150,13 @@ replace_tree() {
       ;;
   esac
   if [ "$PHASE" = snapshot ]; then
+    # An existing directory is emptied before it is refilled, which needs every directory in it.
+    openwa_writable "$target_dir" || refuse_unwritable "$target_dir" "$label"
+    if [ -d "$target_dir" ]; then
+      blocked="$(find "$target_dir/" -type d \
+        -exec sh -c 'for d do [ -w "$d" ] || { echo "$d"; exit 1; }; done' sh {} + 2>/dev/null)" || true
+      [ -z "$blocked" ] || refuse_unwritable "${blocked%%$'\n'*}" "$label"
+    fi
     snapshot_external "$target_dir"
     return
   fi
@@ -197,6 +211,14 @@ snapshot_external() {
 restore_db() {
   resolved_db="$(resolve_path "$2")"
   if [ "$PHASE" = snapshot ]; then
+    openwa_writable "$2" || refuse_unwritable "$2" "$3"
+    for db in "$2" "$resolved_db"; do
+      for sfx in -wal -shm -journal; do
+        if [ -e "$db$sfx" ] && [ ! -w "$(dirname "$db")" ]; then
+          refuse_unwritable "$(dirname "$db")" "$3"
+        fi
+      done
+    done
     snapshot_external "$2"
     # Empty when the target lives in the data dir, whose own snapshot already holds the sidecars.
     if [ -n "$external_snapshot" ]; then
@@ -364,8 +386,9 @@ if [ -d "$STAGE/plugin-packages" ] && [ -d "$STAGE/plugin-state" ] &&
 fi
 
 # Runs twice: PHASE=snapshot checks every target and snapshots the ones outside the data dir, then
-# PHASE=apply writes them. A target that cannot be snapshotted or is refused stops the restore
-# before the first database is written, instead of halfway through with a mixed install left behind.
+# PHASE=apply writes them. A target that is refused, or cannot be snapshotted or written, stops the
+# restore before the first database is written, instead of halfway through with a mixed install left
+# behind.
 restore_targets() {
   if [ -f "$STAGE/main.sqlite" ]; then
     restore_db "$STAGE/main.sqlite" "$MAIN_DB" "auth/audit DB"

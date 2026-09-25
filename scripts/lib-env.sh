@@ -51,6 +51,18 @@ openwa_env_file_value() {
   printf '%s' "$value"
 }
 
+# openwa_writable <path> - whether <path> can be written, or created when it does not exist yet (its
+# nearest existing ancestor is then the directory that has to take it).
+openwa_writable() {
+  local p="$1"
+  if [ -e "$p" ]; then
+    [ -w "$p" ]
+    return
+  fi
+  while [ ! -e "$p" ]; do p="$(dirname "$p")"; done
+  [ -d "$p" ] && [ -w "$p" ]
+}
+
 # Layer 3. Set here rather than read from the environment, so it can never arrive from an operator's
 # shell; restore.sh points it at the archive's copy, which replaces this file during the restore.
 OPENWA_GENERATED_ENV="${DATA_DIR:-./data}/.env.generated"

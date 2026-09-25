@@ -29,6 +29,8 @@
 #   (s) restored state lands where the restored data/.env.generated points, below ./.env
 #   (t) ./.env lines with CRLF endings, blanks around = or trailing blanks resolve as dotenv reads them,
 #       and a `KEY: value` line is reported
+#   (u) a state or database target the restore cannot write stops it before any database is written
+#       (skipped as root)
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -888,6 +890,66 @@ if [ -n "$(find "$T/dst/data" -name "*$(printf '\r')*" 2>/dev/null)" ]; then
   fail "(t) restore created a file whose name ends in a carriage return"
 fi
 pass "(t) CRLF, spaced and blank-padded ./.env lines resolve like dotenv, and \`KEY: value\` is reported"
+
+echo ""
+echo "==> (u) a target the restore cannot write stops it before any database is written"
+# The snapshot pass skipped a target that did not exist yet and never asked whether one could be
+# written, so the databases were replaced first and the run died on the state directory after them,
+# leaving the archive's databases beside the old sessions, media and configuration.
+if [ "$(id -u)" -ne 0 ]; then
+  U="$WORK/u"
+  mkdir -p "$U/src/data/sessions/session-s1" "$U/live" "$U/ro" "$U/busy/sessions/session-s1"
+  make_fixture "$U/src/data/main.sqlite" "uniform-archive-main"
+  make_fixture "$U/src/data/openwa.sqlite" "uniform-archive-data"
+  printf 'uniform-archive\n' >"$U/src/data/sessions/session-s1/marker"
+  (
+    cd "$U/src"
+    BACKUP_DIR="$U/out" "$BACKUP" >/dev/null
+  )
+  ARCHIVE_U="$(ls "$U"/out/openwa-backup-*.tar.gz)"
+  make_fixture "$U/live/main.sqlite" "uniform-live-main"
+  printf 'uniform-live\n' >"$U/busy/sessions/session-s1/marker"
+
+  # restore_u <sessions dir> <data-store path>: a forced restore of ARCHIVE_U over $U/live. Output
+  # lands in OUT, the exit code in RC.
+  restore_u() {
+    set +e
+    OUT="$(cd "$U" && MAIN_DATABASE_NAME="$U/live/main.sqlite" DATABASE_NAME="$2" OPENWA_DATA_DIR="$U/live" \
+      SESSION_DATA_PATH="$1" OPENWA_RESTORE_SNAPSHOT_DIR="$U/snapshots" "$RESTORE" "$ARCHIVE_U" --force 2>&1)"
+    RC=$?
+    set -e
+  }
+  # expect_untouched <label>: the refused restore must fail, say why, and leave the main DB alone.
+  expect_untouched() {
+    if [ "$RC" -eq 0 ]; then
+      fail "(u) restore exited 0 with an unwritable $1 target"
+    fi
+    if ! printf '%s' "$OUT" | grep -q 'cannot write'; then
+      fail "(u) the refusal for an unwritable $1 target does not say so: $OUT"
+    fi
+    if [ "$(db_fingerprint "$U/live/main.sqlite")" != "uniform-live-main" ]; then
+      fail "(u) the main DB was overwritten before the unwritable $1 target stopped the restore"
+    fi
+  }
+
+  chmod a-w "$U/ro"
+  restore_u "$U/ro/sessions" "$U/live/openwa.sqlite"
+  expect_untouched "missing sessions"
+  restore_u "$U/busy/sessions" "$U/ro/openwa.sqlite"
+  expect_untouched "data store"
+  chmod u+w "$U/ro"
+  # An existing directory is emptied before it is refilled, which needs every directory in it.
+  chmod a-w "$U/busy/sessions/session-s1"
+  restore_u "$U/busy/sessions" "$U/live/openwa.sqlite"
+  chmod u+w "$U/busy/sessions/session-s1"
+  expect_untouched "non-empty sessions"
+  if [ "$(cat "$U/busy/sessions/session-s1/marker")" != "uniform-live" ]; then
+    fail "(u) the refused restore changed the live sessions"
+  fi
+  pass "(u) an unwritable state or database target stops the restore before anything is written"
+else
+  echo "SKIP: (u) running as root, which ignores the permission bits this case relies on"
+fi
 
 echo ""
 echo "All smoke tests passed!"
