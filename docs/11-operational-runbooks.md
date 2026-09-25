@@ -659,7 +659,8 @@ OPENWA_DATA_DIR=/srv/openwa/data \
 > replaces the target's and is the one the restored app reads. Two caveats when
 > operating directly on the host mount: a path recorded inside the container (`/app/data/...`) is not
 > host-visible, so override it in the environment; and a value written with quotes or a trailing `#`
-> comment is reported and skipped rather than guessed at, so pass those explicitly too.
+> comment, or a `KEY: value` line, is reported and skipped rather than guessed at, so pass those
+> explicitly too. Blanks around `=` and CRLF line endings are read as the app reads them.
 
 **Verification:**
 

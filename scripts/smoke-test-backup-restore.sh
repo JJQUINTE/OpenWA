@@ -27,6 +27,8 @@
 #   (r) a symlinked state dir is archived by content and restored through the link, and an archive
 #       member that is itself a symlink is refused
 #   (s) restored state lands where the restored data/.env.generated points, below ./.env
+#   (t) ./.env lines with CRLF endings, blanks around = or trailing blanks resolve as dotenv reads them,
+#       and a `KEY: value` line is reported
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -826,6 +828,66 @@ if [ "$(cat "$S/dst-env/data/env-sessions/session-s1/marker" 2>/dev/null || true
   fail "(s) a SESSION_DATA_PATH in ./.env lost to the restored data/.env.generated"
 fi
 pass "(s) restored state follows the restored data/.env.generated, and ./.env still wins"
+
+echo ""
+echo "==> (t) ./.env lines with CRLF endings, spaces around = or trailing blanks read as the app reads them"
+# The app loads ./.env with dotenv, which drops a CR, trims the value and accepts `KEY = value`. The
+# scripts kept the CR and the blanks in the path and skipped the spaced line without a word, so a
+# backup fell back to a stale default and a restore wrote `custom.sqlite<CR>` beside the database the
+# app opens, past a live-target guard that probed the wrong name.
+T="$WORK/t"
+mkdir -p "$T/src/data/sess/session-s1" "$T/src/live" "$T/dst/data"
+make_fixture "$T/src/live/auth.sqlite" "tango-main"
+make_fixture "$T/src/live/store.sqlite" "tango-data"
+make_fixture "$T/src/data/main.sqlite" "STALE-main"
+make_fixture "$T/src/data/openwa.sqlite" "STALE-data"
+printf 'tango-session\n' >"$T/src/data/sess/session-s1/marker"
+printf 'MAIN_DATABASE_NAME = %s\r\nDATABASE_NAME=%s\r\nSESSION_DATA_PATH=./data/sess  \r\nBAILEYS_AUTH_DIR: ./data/bl\r\n' \
+  "$T/src/live/auth.sqlite" "$T/src/live/store.sqlite" >"$T/src/.env"
+set +e
+OUT_T="$(cd "$T/src" && BACKUP_DIR="$T/out" "$BACKUP" 2>&1)"
+RC_T=$?
+set -e
+if [ "$RC_T" -ne 0 ]; then
+  fail "(t) backup failed on a CRLF ./.env: $OUT_T"
+fi
+mkdir -p "$T/extract"
+tar -xzf "$(ls "$T"/out/openwa-backup-*.tar.gz)" -C "$T/extract"
+if [ "$(db_fingerprint "$T/extract/main.sqlite")" != "tango-main" ]; then
+  fail "(t) a \`MAIN_DATABASE_NAME = path\` line in ./.env was skipped and the stale default archived"
+fi
+if [ "$(db_fingerprint "$T/extract/openwa.sqlite")" != "tango-data" ]; then
+  fail "(t) a CRLF DATABASE_NAME line in ./.env did not resolve to the database it names"
+fi
+if [ "$(cat "$T/extract/sessions/session-s1/marker" 2>/dev/null || true)" != "tango-session" ]; then
+  fail "(t) a SESSION_DATA_PATH with trailing blanks did not resolve to the sessions dir"
+fi
+if ! printf '%s' "$OUT_T" | grep -q 'sets BAILEYS_AUTH_DIR in a form these scripts do not parse'; then
+  fail "(t) a \`KEY: value\` line was skipped without the warning"
+fi
+printf 'DATABASE_NAME=./data/custom.sqlite\r\nMAIN_DATABASE_NAME = ./data/custom-main.sqlite  \r\n' >"$T/dst/.env"
+make_fixture "$T/dst/data/custom.sqlite" "tango-live"
+set +e
+OUT_T="$(cd "$T/dst" && "$RESTORE" "$(ls "$T"/out/openwa-backup-*.tar.gz)" 2>&1)"
+RC_T=$?
+set -e
+if [ "$RC_T" -eq 0 ]; then
+  fail "(t) restore without --force wrote past the live database a CRLF DATABASE_NAME names"
+fi
+(
+  cd "$T/dst"
+  "$RESTORE" "$(ls "$T"/out/openwa-backup-*.tar.gz)" --force >/dev/null
+)
+if [ "$(db_fingerprint "$T/dst/data/custom.sqlite")" != "tango-data" ]; then
+  fail "(t) restore did not write the data store to the path the CRLF line names"
+fi
+if [ "$(db_fingerprint "$T/dst/data/custom-main.sqlite")" != "tango-main" ]; then
+  fail "(t) restore did not write the main DB to the path the spaced line names"
+fi
+if [ -n "$(find "$T/dst/data" -name "*$(printf '\r')*" 2>/dev/null)" ]; then
+  fail "(t) restore created a file whose name ends in a carriage return"
+fi
+pass "(t) CRLF, spaced and blank-padded ./.env lines resolve like dotenv, and \`KEY: value\` is reported"
 
 echo ""
 echo "All smoke tests passed!"
