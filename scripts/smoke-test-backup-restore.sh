@@ -37,6 +37,8 @@
 #   (x) a relocated BOOTSTRAP_KEY_FILE is archived and restored there, and an unwritable one is refused
 #       before any database is written (that half skipped as root)
 #   (y) plugin packages in the legacy ./plugins, which the archive does not carry, are reported
+#   (z) a leftover ./uploads that was never created, beside an existing ./data/media, resolves there in
+#       both scripts whatever the uid
 #
 # Usage: ./scripts/smoke-test-backup-restore.sh
 # Requires: bash, tar, node (restore.sh path resolution). sqlite3 is optional (see (c) and (k)).
@@ -1131,6 +1133,29 @@ if printf '%s' "$OUT_Y" | grep -q 'WARN: ./plugins'; then
   fail "(y) the legacy ./plugins was reported although PLUGINS_DIR names the plugin dir"
 fi
 pass "(y) packages in the legacy ./plugins are reported when PLUGINS_DIR is unset"
+
+echo ""
+echo "==> (z) a leftover ./uploads that was never created follows the app to an existing ./data/media"
+# docker exec runs the scripts as root, which can create /app/uploads, while the app runs as openwa,
+# which cannot and keeps media in ./data/media. Deciding by writability alone archived no media there
+# and restored it into the container layer. The app creates a ./uploads it uses at boot, so a missing
+# ./uploads beside an existing ./data/media means ./data/media is the one in use, whatever the uid.
+Z="$WORK/z"
+mkdir -p "$Z/app/data/media" "$Z/dst/data/media"
+make_fixture "$Z/app/data/main.sqlite" "zulu-main"
+make_fixture "$Z/app/data/openwa.sqlite" "zulu-data"
+printf 'zulu-media\n' >"$Z/app/data/media/a.jpg"
+printf 'STORAGE_LOCAL_PATH=./uploads\n' >"$Z/app/data/.env.generated"
+OUT_Z="$(cd "$Z/app" && BACKUP_DIR="$Z/out" "$BACKUP" 2>&1)"
+ARCHIVE_Z="$(ls "$Z"/out/openwa-backup-*.tar.gz)"
+if ! tar -tzf "$ARCHIVE_Z" | grep -qx './media/a.jpg'; then
+  fail "(z) backup left out the media in ./data/media: $OUT_Z"
+fi
+OUT_Z="$(cd "$Z/dst" && "$RESTORE" "$ARCHIVE_Z" 2>&1)"
+if [ "$(cat "$Z/dst/data/media/a.jpg" 2>/dev/null || true)" != "zulu-media" ] || [ -e "$Z/dst/uploads" ]; then
+  fail "(z) restore did not put the media back under ./data/media: $OUT_Z"
+fi
+pass "(z) a never-created ./uploads beside ./data/media resolves to ./data/media without a uid check"
 
 echo ""
 echo "All smoke tests passed!"

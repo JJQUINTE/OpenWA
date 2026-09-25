@@ -66,14 +66,17 @@ openwa_writable() {
 # openwa_media_dir - STORAGE_LOCAL_PATH as the app settles it (src/config/storage-root.ts). v0.2.0 to
 # v0.7.3 persisted ./uploads into .env.generated; where that cannot be created, as under the image's
 # root-owned /app, the app keeps media in ./data/media instead, so the scripts have to look there too.
+# Writability alone cannot tell: `docker exec` runs these as root, which can create /app/uploads while
+# the app's own user cannot. The app creates a ./uploads it uses at boot, so a missing one beside an
+# existing ./data/media means ./data/media is in use.
 openwa_media_dir() {
   local dir
   dir="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
   case "$dir" in
     ./uploads | uploads)
-      if ! openwa_writable "$dir"; then
-        echo "[config] WARN: STORAGE_LOCAL_PATH=$dir cannot be created here, so the app keeps media in" >&2
-        echo "[config]       ./data/media; using that. Remove the leftover line from .env.generated." >&2
+      if ! openwa_writable "$dir" || { [ ! -d "$dir" ] && [ -d ./data/media ]; }; then
+        echo "[config] WARN: STORAGE_LOCAL_PATH=$dir is a leftover the app does not use here, so it keeps" >&2
+        echo "[config]       media in ./data/media; using that. Remove the line from .env.generated." >&2
         dir=./data/media
       fi
       ;;
