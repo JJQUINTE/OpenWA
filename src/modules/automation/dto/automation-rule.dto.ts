@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, plainToInstance } from 'class-transformer';
-import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { ToStrictBoolean, ToStrictNumber } from '../../../common/utils/strict-boolean';
 import { MESSAGE_TEXT_MAX_LENGTH } from '../../message/dto/send-message.dto';
 import { WebhookFilters } from '../../webhook/filters/filter-types';
@@ -65,7 +65,8 @@ export class CreateAutomationRuleDto {
 
 export class UpdateAutomationRuleDto {
   @ApiPropertyOptional({ description: 'Display name for the rule', maxLength: 100 })
-  @IsOptional()
+  // Not @IsOptional on the NOT NULL columns: that also skips null, which then reaches save() as a 500.
+  @ValidateIf((o: UpdateAutomationRuleDto) => o.name !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -75,7 +76,7 @@ export class UpdateAutomationRuleDto {
     description: 'Text sent back into the chat when the rule matches',
     maxLength: MESSAGE_TEXT_MAX_LENGTH,
   })
-  @IsOptional()
+  @ValidateIf((o: UpdateAutomationRuleDto) => o.replyText !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(MESSAGE_TEXT_MAX_LENGTH)
@@ -87,7 +88,7 @@ export class UpdateAutomationRuleDto {
   conditions?: WebhookFilters | null;
 
   @ApiPropertyOptional({ description: COOLDOWN_DESCRIPTION, minimum: 0, maximum: AUTOMATION_COOLDOWN_MAX_SECONDS })
-  @IsOptional()
+  @ValidateIf((o: UpdateAutomationRuleDto) => o.cooldownSeconds !== undefined)
   @ToStrictNumber()
   @IsInt()
   @Min(0)
@@ -95,7 +96,7 @@ export class UpdateAutomationRuleDto {
   cooldownSeconds?: number;
 
   @ApiPropertyOptional({ description: 'Whether the rule is active' })
-  @IsOptional()
+  @ValidateIf((o: UpdateAutomationRuleDto) => o.enabled !== undefined)
   @ToStrictBoolean()
   @IsBoolean()
   enabled?: boolean;

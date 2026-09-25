@@ -1,4 +1,14 @@
-import { IsBoolean, IsNotEmpty, IsObject, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IngressUrl } from '../ingress-url';
 import { ToStrictBoolean } from '../../../common/utils/strict-boolean';
@@ -65,7 +75,8 @@ export class UpdateInstanceDto {
     example: true,
   })
   @ToStrictBoolean()
-  @IsOptional()
+  // Not @IsOptional: that also skips null, which then reaches the NOT NULL column as a 500.
+  @ValidateIf((o: UpdateInstanceDto) => o.enabled !== undefined)
   @IsBoolean()
   enabled?: boolean;
 
