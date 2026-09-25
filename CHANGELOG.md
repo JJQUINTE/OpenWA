@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.7] - 2026-09-25
+
 ### Added
 
 - Hindi (हिन्दी) dashboard locale, selectable from the language picker. Thanks @probably-ABHINAV.
