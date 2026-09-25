@@ -116,6 +116,11 @@ test('Hebrew dual + Arabic plural categories resolve for the filter badge', () =
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'ar', count: 3 }), '3 عوامل تصفية');
 });
 
+test('Arabic takes the singular noun from 100 up and the plural from 3 to 10', () => {
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 100 }), '100 تحديث');
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 3 }), '3 تحديثات');
+});
+
 test('every session-scope API key string resolves in every locale', () => {
   for (const lng of LOCALE_IDS) {
     for (const key of SESSION_SCOPE_KEYS) {
