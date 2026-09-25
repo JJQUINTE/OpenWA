@@ -200,8 +200,9 @@ export class BaileysEvents {
   /**
    * The latest edit of a message still being processed, by id, with the key it was sent under. The
    * edit is announced first and finds no row or preview to change, and a repeat delivery can be stored
-   * after the edit was applied, so the original is stored and announced with this text instead.
-   * Bounded like deletedForEveryone, which wins over it.
+   * after the edit was applied, so the original is stored and announced with this text instead, and
+   * a quote or forward meanwhile carries it too (see pendingEditOf). Dropped once the message's
+   * processing settles, and bounded like deletedForEveryone, which wins over it.
    */
   private readonly editedWhileInFlight = new Map<string, { envelope: WAMessageKey; body: string }>();
 
@@ -210,6 +211,16 @@ export class BaileysEvents {
   /** Whether a delete for everyone of this message was accepted (see deletedForEveryone). */
   wasDeletedForEveryone(messageId: string): boolean {
     return this.deletedForEveryone.has(messageId);
+  }
+
+  /**
+   * The text of an edit announced while this message is still being processed, when that edit may
+   * change `target`, the key of the copy about to be quoted or forwarded. The stored copy catches up
+   * once the processing settles, but a repeat delivery can already be stored with the old text.
+   */
+  pendingEditOf(messageId: string, target: WAMessageKey): string | undefined {
+    const edit = this.inboundInFlight.has(messageId) ? this.editedWhileInFlight.get(messageId) : undefined;
+    return edit && this.mayChange(target, edit.envelope, false) ? edit.body : undefined;
   }
 
   /** Record an accepted delete for everyone of this message (see deletedForEveryone). */
@@ -288,7 +299,10 @@ export class BaileysEvents {
         };
         this.inboundInFlight.set(id, tracked);
         void tracked.done.finally(() => {
-          if (this.inboundInFlight.get(id) === tracked) this.inboundInFlight.delete(id);
+          if (this.inboundInFlight.get(id) !== tracked) return;
+          this.inboundInFlight.delete(id);
+          // The edit's store write was chained behind this, so the store carries it (or a newer one) now.
+          this.editedWhileInFlight.delete(id);
         });
       }
     }

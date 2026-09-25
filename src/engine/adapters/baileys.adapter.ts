@@ -138,6 +138,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
         this.config.messageStore?.update(this.config.dbSessionId, messageId, change),
       wasDeletedForEveryone: messageId => this.events.wasDeletedForEveryone(messageId),
       markDeletedForEveryone: messageId => this.events.markDeletedForEveryone(messageId),
+      pendingEditOf: (messageId, target) => this.events.pendingEditOf(messageId, target),
       rememberOwnSend: id => this.ownSends.remember(id),
       consumeOwnSend: id => this.ownSends.consume(id),
       getOnMessage: () => this.callbacks.onMessage,

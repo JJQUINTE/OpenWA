@@ -59,6 +59,7 @@ function makeMessaging(): { messaging: BaileysMessaging; sock: { sendMessage: je
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage: () => Promise.resolve(undefined),
     wasDeletedForEveryone: () => false,
+    pendingEditOf: () => undefined,
     markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
     recordMessage: () => undefined,

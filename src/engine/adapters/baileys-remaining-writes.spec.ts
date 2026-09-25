@@ -42,6 +42,7 @@ function messaging(sock: Record<string, jest.Mock>, budgetMs: number): BaileysMe
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage: () => Promise.resolve({ key: { ...LAST.key, fromMe: true }, message: {}, messageTimestamp: 1 }),
     wasDeletedForEveryone: () => false,
+    pendingEditOf: () => undefined,
     markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
     recordLidMapping: () => undefined,

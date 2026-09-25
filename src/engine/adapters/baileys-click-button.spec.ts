@@ -85,6 +85,7 @@ function makeMessaging(stored: unknown = PROMPT, opts: { ephemeralExpiration?: n
       } as never),
     getStoredMessage,
     wasDeletedForEveryone: () => false,
+    pendingEditOf: () => undefined,
     markDeletedForEveryone: () => undefined,
     putStoredMessage,
     recordMessage: () => undefined,

@@ -47,6 +47,7 @@ describe('BaileysMessaging.createCallLink', () => {
         } as never),
       getStoredMessage: () => Promise.resolve(undefined),
       wasDeletedForEveryone: () => false,
+      pendingEditOf: () => undefined,
       markDeletedForEveryone: () => undefined,
       putStoredMessage: () => undefined,
       recordLidMapping: () => undefined,

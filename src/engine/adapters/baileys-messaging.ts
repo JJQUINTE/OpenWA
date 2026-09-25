@@ -1,5 +1,11 @@
 import type * as BaileysLib from '@whiskeysockets/baileys';
-import type { AnyMessageContent, MiscMessageGenerationOptions, WAMessage, WASocket } from '@whiskeysockets/baileys';
+import type {
+  AnyMessageContent,
+  MiscMessageGenerationOptions,
+  WAMessage,
+  WAMessageKey,
+  WASocket,
+} from '@whiskeysockets/baileys';
 import { generateSafeLinkPreview } from './safe-link-preview';
 import {
   CallLinkType,
@@ -64,6 +70,8 @@ export interface BaileysMessagingHost {
   wasDeletedForEveryone(messageId: string): boolean;
   /** Record a delete for everyone this session just made (see wasDeletedForEveryone). */
   markDeletedForEveryone(messageId: string): void;
+  /** The text of an edit of this message the stored copy with key `target` does not show yet, if any. */
+  pendingEditOf(messageId: string, target: WAMessageKey): string | undefined;
   /** Remember a lid<->phone pair the socket resolved, so later reads do not have to ask again. */
   recordLidMapping(lid: string, pn: string): void;
   /** The currently-registered onMessageCreate callback, if any (assigned at initialize()). */
@@ -823,7 +831,8 @@ export class BaileysMessaging {
    * `allowDeleted`: quoting it would hand WhatsApp the deleted content again (Baileys copies the
    * quoted message into the reply's contextInfo), and there is nothing left to forward, react to or
    * edit. A message the session knows was deleted is treated the same while its stored copy still
-   * holds the content, as it can when the delete overtook the original's own store write.
+   * holds the content, as it can when the delete overtook the original's own store write. An edit
+   * that overtook it the same way is applied to a copy, so a quote or forward carries the edited text.
    */
   private async requireStored(messageId: string, allowDeleted = false): Promise<WAMessage> {
     const found = await this.host.getStoredMessage(messageId);
@@ -831,7 +840,13 @@ export class BaileysMessaging {
     if (!found?.key || (deleted && !allowDeleted)) {
       throw new MessageNotFoundError(messageId);
     }
-    return found;
+    const edited = deleted ? undefined : this.host.pendingEditOf(messageId, found.key);
+    if (edited === undefined) return found;
+    const b = await this.host.loadLib();
+    const copy = JSON.parse(JSON.stringify(found, b.BufferJSON.replacer), b.BufferJSON.reviver) as WAMessage;
+    const content = b.normalizeMessageContent(copy.message ?? undefined);
+    if (content) setBaileysText(content, edited);
+    return copy;
   }
 
   /** Apply a change this session just made to the stored copy. Best-effort: the change already went out. */

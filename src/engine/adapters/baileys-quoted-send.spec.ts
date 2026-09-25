@@ -48,6 +48,7 @@ function makeMessaging(stored: unknown = STORED): {
     loadLib: () => Promise.resolve({} as never),
     getStoredMessage,
     wasDeletedForEveryone: () => false,
+    pendingEditOf: () => undefined,
     markDeletedForEveryone: () => undefined,
     putStoredMessage: () => undefined,
     recordMessage: () => undefined,
