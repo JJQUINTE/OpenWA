@@ -4636,8 +4636,7 @@ describe('BaileysAdapter store-backed ops', () => {
     };
 
     // Another node may have written rows while it held the session (takeover).
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    const makeSocket = (): jest.Mock => (jest.requireMock('@whiskeysockets/baileys') as { default: jest.Mock }).default;
+    const makeSocket = (): jest.Mock => jest.requireMock<{ default: jest.Mock }>('@whiskeysockets/baileys').default;
 
     it('re-reads them on start, before the socket opens', async () => {
       makeSocket().mockClear();
@@ -6276,16 +6275,23 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     };
 
     it.each([
-      ['muteChat', (a: BaileysAdapter) => a.muteChat('628111@c.us', 1900000000), { muteEndTime: 1900000000 }],
-      ['pinChat', (a: BaileysAdapter) => a.pinChat('628111@c.us', true), { pinned: 1700000030 }],
-    ])('%s keeps the listed row the only one', async (_n, act, echo) => {
+      [
+        'muteChat',
+        (a: BaileysAdapter) => a.muteChat('628111@c.us', 1900000000),
+        { muteEndTime: 1900000000 },
+        { muted: true },
+      ],
+      ['pinChat', (a: BaileysAdapter) => a.pinChat('628111@c.us', true), { pinned: 1700000030 }, { pinned: true }],
+    ])('%s keeps the listed row the only one', async (_n, act, echo, state) => {
       const adapter = await lidKeyedChat();
       await act(adapter);
       const [, jid] = fakeSock.chatModify.mock.calls[0] as [unknown, string];
       expect(jid).toBe('484848@lid');
       // Baileys replays its own patch as chats.update under the jid the patch was indexed by.
       fakeSock.fire('chats.update', [{ id: jid, ...echo }]);
-      expect(await adapter.getChats()).toEqual([expect.objectContaining({ id: '628111@c.us', name: 'Alice' })]);
+      expect(await adapter.getChats()).toEqual([
+        expect.objectContaining({ id: '628111@c.us', name: 'Alice', ...state }),
+      ]);
     });
 
     it.each([
