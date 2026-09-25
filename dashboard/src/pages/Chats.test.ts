@@ -1132,6 +1132,44 @@ test('a chat list that answers after the user switched sessions does not replace
   }
 });
 
+test("a chat list that answers after a switch leaves the new session's spinner up", async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  twoSessions = true;
+  let releaseFirst!: () => void;
+  const firstGate = new Promise<void>(resolve => {
+    releaseFirst = resolve;
+  });
+  let releaseSecond!: () => void;
+  const secondGate = new Promise<void>(resolve => {
+    releaseSecond = resolve;
+  });
+  chatsResponder = sessionId =>
+    sessionId === SESSION.id
+      ? firstGate.then(() => jsonResponse([CHAT]))
+      : secondGate.then(() => jsonResponse([CHAT_2]));
+  try {
+    const { container } = renderChats();
+    await screen.findByText('Main (15551234567)');
+    await waitFor(() => assert.ok(container.querySelector('.chats-list-loading'), 'the first list never started'));
+    fireEvent.change(container.querySelector('select.session-selector') as HTMLSelectElement, {
+      target: { value: SESSION_2.id },
+    });
+
+    // Session 1's list settles while session 2's is still out.
+    releaseFirst();
+    await flush();
+    await flush();
+    assert.ok(container.querySelector('.chats-list-loading'), 'the previous session cleared the switch spinner');
+    assert.ok(!screen.queryByText('Alice'), "the previous session's chats showed under the selected session");
+
+    releaseSecond();
+    await screen.findByText('Carol');
+    assert.equal(container.querySelector('.chats-list-loading'), null, 'the list stayed on the loading spinner');
+  } finally {
+    twoSessions = false;
+  }
+});
+
 test("a failed background refetch during a session switch keeps the spinner over the previous session's list", async () => {
   const { screen, fireEvent, waitFor } = rtl;
   twoSessions = true;
