@@ -1304,6 +1304,49 @@ test('a status push landing right after a create or a delete keeps what it wrote
   }
 });
 
+// A push handled between a list render's commit and its passive effects must not have its write undone
+// in the ref, or the double-signal that follows it is taken for a fresh transition.
+test('a duplicate push right after a list render is still recognised as a duplicate', async () => {
+  const { screen, waitFor, act } = rtl;
+  resetFetchCalls();
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  const row: Session = { ...SESSION_QR, id: 'sess-dup-1', name: 'dup-probe', status: 'authenticating' };
+  SESSIONS.push(row);
+  // Emitted outside act, so React commits and runs effects on its own schedule, as in the browser.
+  const emit = (status: string) =>
+    lastSocket()!.receive('message', {
+      type: 'event',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { event: 'session.status', sessionId: row.id, data: { status } },
+    });
+  let phase = 0;
+  const observer = new MutationObserver(() => {
+    if (phase === 0 && screen.queryByText('dup-probe-renamed')) {
+      // The list read has just committed; its passive effects have not run yet.
+      phase = 1;
+      Object.assign(row, { status: 'ready' });
+      emit('ready');
+    } else if (phase === 1) {
+      // The engine double-signals the same transition once React has rendered the first one.
+      phase = 2;
+      emit('ready');
+    }
+  });
+  try {
+    renderSessions();
+    await screen.findByText('dup-probe');
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    Object.assign(row, { name: 'dup-probe-renamed' });
+    pushSessionStatus(SESSION_TIMELOCKED.id, 'action_required');
+    await waitFor(() => assert.equal(phase, 2));
+    await act(() => new Promise<void>(resolve => setTimeout(resolve, 50)));
+    assert.equal(screen.queryAllByText('Session Ready').length, 1, 'the duplicate ready push was handled twice');
+  } finally {
+    observer.disconnect();
+    SESSIONS.pop();
+  }
+});
+
 // The detail modal shows the row as it is now, not as it was when View was clicked.
 test('an open detail modal follows its session status and phone', async () => {
   const { screen, fireEvent, within, waitFor } = rtl;

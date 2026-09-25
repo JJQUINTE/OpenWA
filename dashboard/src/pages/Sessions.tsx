@@ -128,12 +128,9 @@ export function Sessions() {
   // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
   // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Every
   // writer moves the ref in the same tick as its setState (a list read directly, row writes through
-  // `updateSessions`), so a push handled before React re-renders sees what the last write produced. The
-  // effect below is only a backstop.
+  // `updateSessions`), so a push handled before React re-renders sees what the last write produced. No
+  // effect copies `sessions` back in: one flushing after such a push would move the ref to an older list.
   const sessionsRef = useRef<Session[]>([]);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
   // A row write: applied to the ref now, and to state as a functional update, so it builds on every
   // write queued before it instead of replacing the list with an older copy.
   const updateSessions = useCallback((update: (list: Session[]) => Session[]) => {
@@ -265,8 +262,8 @@ export function Sessions() {
       (event: { sessionId: string; status: string }) => {
         const prev = sessionsRef.current.find(s => s.id === event.sessionId);
         // Some engines double-signal one transition; only react to an ACTUAL status change so the toast
-        // and the failed-refresh don't fire on every redundant envelope. Update the ref synchronously so
-        // a duplicate arriving in the same tick (before the sync effect runs) is also caught.
+        // and the failed-refresh don't fire on every redundant envelope. `updateSessions` moves the ref
+        // synchronously, so a duplicate arriving before React re-renders is also caught.
         if (prev && prev.status === event.status) return;
         // A push for a row the page does not hold yet changes nothing, so it must not void the read
         // that is about to bring that row (the mount read, before any row is on screen).
