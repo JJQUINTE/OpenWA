@@ -443,6 +443,14 @@ restore_admin_key() {
 
 PHASE=snapshot
 restore_targets
+# Written into the data dir after the targets, so checked with them; the data-dir snapshot holds both.
+if [ -f "$STAGE/.env.generated" ]; then
+  openwa_writable "$DATA_DIR/.env.generated" ||
+    refuse_unwritable "$DATA_DIR/.env.generated" "dashboard-generated configuration"
+fi
+if [ -f "$STAGE/database.sql" ]; then
+  openwa_writable "$DATA_DIR/database.sql" || refuse_unwritable "$DATA_DIR/database.sql" "PostgreSQL dump"
+fi
 PHASE=apply
 restore_targets
 

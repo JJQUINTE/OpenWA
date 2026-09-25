@@ -29,8 +29,8 @@
 #   (s) restored state lands where the restored data/.env.generated points, below ./.env
 #   (t) ./.env lines with CRLF endings, blanks around = or trailing blanks resolve as dotenv reads them,
 #       and a `KEY: value` line is reported
-#   (u) a state or database target the restore cannot write stops it before any database is written
-#       (skipped as root)
+#   (u) a state, database or data-dir file target the restore cannot write stops it before any database
+#       is written (skipped as root)
 #   (v) a leftover STORAGE_LOCAL_PATH=./uploads the app cannot create falls back to ./data/media in
 #       both scripts, and a missing media dir is reported (skipped as root)
 #   (w) the default colocated plugins dir is rebuilt from both archive members, even when they differ
@@ -954,6 +954,22 @@ if [ "$(id -u)" -ne 0 ]; then
   if [ "$(cat "$U/busy/sessions/session-s1/marker")" != "uniform-live" ]; then
     fail "(u) the refused restore changed the live sessions"
   fi
+  # The two files written into the data dir after the targets: an archive carrying both, and each one
+  # made read-only in turn.
+  mkdir -p "$U/extra"
+  tar -xzf "$ARCHIVE_U" -C "$U/extra"
+  printf 'LOG_LEVEL=info\n' >"$U/extra/.env.generated"
+  printf -- '-- dump\n' >"$U/extra/database.sql"
+  ARCHIVE_U="$U/extra.tar.gz"
+  tar -czf "$ARCHIVE_U" -C "$U/extra" .
+  for f in .env.generated database.sql; do
+    printf 'uniform-live\n' >"$U/live/$f"
+    chmod a-w "$U/live/$f"
+    restore_u "$U/busy/sessions" "$U/live/openwa.sqlite"
+    chmod u+w "$U/live/$f"
+    rm -f "$U/live/$f"
+    expect_untouched "$f"
+  done
   pass "(u) an unwritable state or database target stops the restore before anything is written"
 else
   echo "SKIP: (u) running as root, which ignores the permission bits this case relies on"
