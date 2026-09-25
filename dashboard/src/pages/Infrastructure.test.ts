@@ -85,6 +85,7 @@ let overrides: {
   status?: InfraStatus;
   saved?: SavedConfig;
   savedFails?: boolean;
+  statusFails?: boolean;
   currentEngine?: { engineType: string };
 } = {};
 
@@ -147,8 +148,10 @@ function installFetchStub(): void {
     }
     fetchCalls.push({ method, path, body });
 
-    if (method === 'GET' && path === '/api/infra/status')
+    if (method === 'GET' && path === '/api/infra/status') {
+      if (overrides.statusFails) return Promise.resolve(jsonResponse({ message: 'Bad Gateway' }, 502));
       return Promise.resolve(jsonResponse(overrides.status ?? INFRA_STATUS));
+    }
     if (method === 'GET' && path === '/api/infra/config') {
       if (overrides.savedFails) return Promise.resolve(jsonResponse({ message: 'boom' }, 500));
       return Promise.resolve(jsonResponse(overrides.saved ?? SAVED_CONFIG));
@@ -427,6 +430,35 @@ test('a successful save opens the restart modal', async () => {
   // unmount) is covered by the last test in this file.
   within(dialog).getByRole('button', { name: 'Restart Now' });
   within(dialog).getByRole('button', { name: 'Restart Later' });
+});
+
+const STATUS_LOAD_ERROR = "Couldn't load the current infrastructure status. Refresh to try again.";
+
+test('a failed first /status read shows the status error card and no form', async () => {
+  overrides = { statusFails: true };
+  renderInfrastructure();
+
+  await rtl.screen.findByText(STATUS_LOAD_ERROR);
+  assert.equal(rtl.screen.queryByRole('button', { name: 'Save Configuration' }), null);
+});
+
+test('a failed background /status refetch keeps the form and the restart modal on screen', async () => {
+  const { screen, fireEvent } = rtl;
+  renderInfrastructure();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save Configuration' }));
+  await screen.findByRole('dialog');
+
+  // A focus refetch while the gateway is down: the cached status is still there, only the read failed.
+  overrides = { statusFails: true };
+  await queryClient!.refetchQueries({ queryKey: ['infra', 'status'] });
+  assert.equal(queryClient!.getQueryState(['infra', 'status'])?.status, 'error');
+  // Let the error state render before looking.
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.ok(screen.queryByRole('dialog'), 'the restart modal must stay open');
+  assert.equal(screen.queryByText(STATUS_LOAD_ERROR), null);
+  screen.getByRole('button', { name: 'Save Configuration' });
 });
 
 // ── The engine radio's seed source (#1082) ───────────────────────────────────
