@@ -12,7 +12,8 @@
 #                     (unreachable, or no credentials); the bucket's contents are not archived and
 #                     need a backup of their own
 #   - plugin-packages/ — installed plugin packages from PLUGINS_DIR
-#   - plugin-state/    — registry and persisted ctx.storage state under OPENWA_DATA_DIR
+#   - plugin-state/    — registry and persisted ctx.storage state under PLUGIN_STATE_DIR/plugins
+#                        (default: <data dir>/plugins)
 #   - .env.generated and .api-key — dashboard config and plaintext bootstrap admin key
 #
 # The previous runbook backed up the wrong file (openwa.db) and omitted main.sqlite,
@@ -32,7 +33,10 @@
 #   DATABASE_TYPE     sqlite (default) | postgres
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   PLUGIN_STATE_DIR  root whose plugins/ holds the plugin registry and ctx.storage (default: the
+#                     data dir)
 #   BOOTSTRAP_KEY_FILE  the plaintext admin key to archive (default: <data dir>/.api-key)
+#                     These paths resolve through the same layers as the databases.
 #   For postgres: DATABASE_URL, or DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME
 #                     DATABASE_URL is read by this script only (the app uses the DATABASE_* keys)
 #                     and wins over them when set. It is passed to pg_dump as an argument, which

@@ -17,14 +17,18 @@
 # Environment:
 #   MAIN_DATABASE_NAME  restore target for the auth/audit DB (default: ./data/main.sqlite)
 #   DATABASE_NAME       restore target for the SQLite data store (default: ./data/openwa.sqlite)
-#                       Both resolve EXACTLY like the app (src/config/configuration.ts): the
-#                       explicit env path wins, otherwise the fixed ./data default. They are NOT
-#                       derived from OPENWA_DATA_DIR — restoring there would write databases the
-#                       app never reads (fresh-empty boot + new master key).
+#                       Both resolve EXACTLY like the app: the environment first, then ./.env, then
+#                       .env.generated (the archive's copy when it carries one, else the data dir's),
+#                       otherwise the fixed ./data default (see lib-env.sh). They are NOT derived
+#                       from OPENWA_DATA_DIR — restoring there would write databases the app never
+#                       reads (fresh-empty boot + new master key).
 #   OPENWA_DATA_DIR   data directory to restore non-DB state into (default: ./data)
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   PLUGIN_STATE_DIR  root whose plugins/ holds the plugin registry and ctx.storage (default: the
+#                     data dir)
 #   BOOTSTRAP_KEY_FILE  where the plaintext admin key goes (default: <data dir>/.api-key)
+#                     These paths resolve through the same layers as the databases.
 #   OPENWA_RESTORE_SNAPSHOT_DIR
 #                     where the safety snapshots go (default: next to the data dir, and next to
 #                     each target outside it); needed when a parent is read-only, as in the

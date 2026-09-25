@@ -609,16 +609,17 @@ User-managed files outside that list (for example the project-level `.env`) must
 #   - plugin-packages/ — installed plugin code from PLUGINS_DIR
 #                        (not packages in a legacy ./plugins, which the app still loads while
 #                        PLUGINS_DIR is unset; backup.sh warns about those)
-#   - plugin-state/    — registry + ctx.storage state under OPENWA_DATA_DIR
+#   - plugin-state/    — registry + ctx.storage state under PLUGIN_STATE_DIR/plugins
+#                        (default: <OPENWA_DATA_DIR>/plugins)
 #   - .env.generated / .api-key — generated configuration and bootstrap secret
 #                                  (.api-key from BOOTSTRAP_KEY_FILE when that is set)
 #
-# The database paths resolve exactly like the app: the explicit MAIN_DATABASE_NAME /
-# DATABASE_NAME env path wins, otherwise the fixed ./data defaults — they are NOT derived from
-# OPENWA_DATA_DIR. A missing source database fails the run (no silent empty backup), the finished
-# archive is checked to contain every configured database, and with the sqlite3 CLI present the
-# databases are snapshotted online via .backup (otherwise plain-copied with a CONSISTENCY-WARNING
-# marker inside the archive).
+# The database paths resolve exactly like the app: MAIN_DATABASE_NAME / DATABASE_NAME from the
+# environment, then ./.env, then <data dir>/.env.generated, otherwise the fixed ./data defaults — they
+# are NOT derived from OPENWA_DATA_DIR. A missing source database fails the run (no silent empty
+# backup), the finished archive is checked to contain every configured database, and with the sqlite3
+# CLI present the databases are snapshotted online via .backup (otherwise plain-copied with a
+# CONSISTENCY-WARNING marker inside the archive).
 
 # Run from the repo root (database defaults are ./data/...; state dirs follow OPENWA_DATA_DIR):
 ./scripts/backup.sh
@@ -703,7 +704,8 @@ docker compose down
 
 # 2. Restore from an archive produced by scripts/backup.sh
 #    (databases land on MAIN_DATABASE_NAME / DATABASE_NAME, default ./data/... — the same paths
-#    the app reads; non-DB state follows OPENWA_DATA_DIR. Pass --strict to refuse an archive
+#    the app reads, as the environment, ./.env or the archive's .env.generated set them; non-DB
+#    state follows OPENWA_DATA_DIR. Pass --strict to refuse an archive
 #    whose CONSISTENCY-WARNING marker reports plain-copied, possibly-torn database snapshots.
 #    Restoring over an existing install's live databases requires --force; without it the script
 #    refuses to overwrite them)
