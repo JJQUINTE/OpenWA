@@ -333,6 +333,10 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
     'STATUS_ORPHAN_GRACE_MS',
     'S3_REPROBE_INTERVAL_MS',
+    // Same parseInt read: `1h` deleted a fresh export archive after 1 ms, and a `24h` sweep age made
+    // the boot sweep delete every archive older than 24 ms, breaking export, restart, import.
+    'STORAGE_EXPORT_TTL_MS',
+    'STORAGE_EXPORT_SWEEP_MAX_AGE_MS',
   ]) {
     checkPositiveInt(key);
   }
@@ -347,6 +351,11 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     ['CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
     ['STATUS_ORPHAN_SWEEP_INTERVAL_MS', 'the orphan sweep reruns every millisecond'],
     ['S3_REPROBE_INTERVAL_MS', 'S3 is re-probed every millisecond while it is down'],
+    ['STORAGE_EXPORT_TTL_MS', 'the export archive is deleted about 1 ms after it is written'],
+    // 0 still disables these three, so they carry only the ceiling, not the positive-only check.
+    ['MESSAGE_REAPER_INTERVAL_MS', 'the pending message reaper reruns every millisecond'],
+    ['WEBHOOK_RECONCILE_INTERVAL_MS', 'the webhook reconciler reruns every millisecond'],
+    ['INGRESS_RECONCILE_INTERVAL_MS', 'the ingress reconciler reruns every millisecond'],
   ]) {
     const raw = str(key);
     const n = raw !== undefined && DECIMAL_INTEGER.test(raw) ? Number(raw) : NaN;

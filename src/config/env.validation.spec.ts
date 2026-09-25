@@ -533,6 +533,8 @@ describe('validateEnv', () => {
     'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
     'STATUS_ORPHAN_GRACE_MS',
     'S3_REPROBE_INTERVAL_MS',
+    'STORAGE_EXPORT_TTL_MS',
+    'STORAGE_EXPORT_SWEEP_MAX_AGE_MS',
   ])('rejects a unit-suffixed or non-positive %s and accepts a plain count', key => {
     expect(() => validateEnv({ [key]: '1h' })).toThrow(new RegExp(`${key} must be a positive integer`));
     expect(() => validateEnv({ [key]: '0' })).toThrow(new RegExp(`${key} must be a positive integer`));
@@ -550,6 +552,10 @@ describe('validateEnv', () => {
     'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
     'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
     'S3_REPROBE_INTERVAL_MS',
+    'STORAGE_EXPORT_TTL_MS',
+    'MESSAGE_REAPER_INTERVAL_MS',
+    'WEBHOOK_RECONCILE_INTERVAL_MS',
+    'INGRESS_RECONCILE_INTERVAL_MS',
   ])('rejects a %s above the Node timer ceiling', key => {
     expect(() => validateEnv({ [key]: '2147483648' })).toThrow(new RegExp(`${key} must not exceed 2147483647 ms`));
     expect(() => validateEnv({ [key]: '2147483647' })).not.toThrow();
