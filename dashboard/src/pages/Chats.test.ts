@@ -220,6 +220,7 @@ function holdMedia(path: string): () => void {
 // Contact for the status-compose recipient picker (Baileys requires an explicit allow-list).
 const CONTACT = { id: '15550002222@c.us', name: 'Bob', number: '15550002222' };
 const STATUS_TEXT = 'status text here';
+const CHANNEL = { id: '120363000000000001@newsletter', name: 'Release notes' };
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -276,8 +277,15 @@ function installFetchStub(): void {
       if (thirdSessionStatus) listed.push({ ...SESSION_3, status: thirdSessionStatus });
       return Promise.resolve(jsonResponse(listed));
     }
+    // ADMIN-only on the server, so any other role gets the 403 a real gateway answers.
     if (method === 'GET' && path === '/api/infra/engines/current') {
+      if (window.sessionStorage.getItem('openwa_user_role') !== 'admin') {
+        return Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: admin' }, 403));
+      }
       return Promise.resolve(jsonResponse({ engineType: 'baileys' }));
+    }
+    if (method === 'GET' && path === `/api/sessions/${SESSION.id}/channels`) {
+      return Promise.resolve(jsonResponse([CHANNEL]));
     }
     if (method === 'GET' && path === `/api/sessions/${SESSION.id}/chats`) {
       if (chatsResponder) return chatsResponder(url.includes(`/sessions/${SESSION_2.id}/`) ? SESSION_2.id : SESSION.id);
@@ -370,6 +378,8 @@ before(async () => {
   // RoleProvider initializes from sessionStorage; 'admin' makes canWrite true so the composer
   // controls render enabled.
   window.sessionStorage.setItem('openwa_user_role', 'admin');
+  // The engine POST /auth/validate reported at sign-in, kept next to the role.
+  window.sessionStorage.setItem('openwa_engine_type', 'baileys');
   // useWebSocket.connect() bails without this, so no socket would exist to receive a frame. It
   // dials nothing: the client is the double above.
   window.sessionStorage.setItem('openwa_api_key', 'test-key');
@@ -664,6 +674,53 @@ test('a read-only key is offered no status compose trigger', async () => {
     assert.ok(!screen.queryByRole('button', { name: 'Post a status' }), 'a viewer key was offered status compose');
   } finally {
     window.sessionStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
+test('an operator key on whatsapp-web.js posts a status without the admin-only engine route', async () => {
+  const { screen, fireEvent, within, waitFor } = rtl;
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  window.sessionStorage.setItem('openwa_engine_type', 'whatsapp-web.js');
+  try {
+    resetFetchCalls();
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Post a status' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Text'), { target: { value: STATUS_TEXT } });
+    const postButton = within(dialog).getByRole('button', { name: 'Post' }) as HTMLButtonElement;
+    await waitFor(() => assert.equal(postButton.disabled, false, 'Post never enabled for an operator key'));
+    // whatsapp-web.js has no recipient list, so the picker stays hidden and none are sent.
+    assert.equal(within(dialog).queryByRole('checkbox'), null);
+    fireEvent.click(postButton);
+
+    await waitFor(() => {
+      const call = findFetchCall('POST', `/api/sessions/${SESSION.id}/status/send-text`);
+      assert.ok(call, 'expected a POST to the status send-text endpoint');
+      assert.deepEqual(call.body, { text: STATUS_TEXT });
+    });
+    assert.equal(countFetchCalls('GET', '/api/infra/engines/current'), 0);
+  } finally {
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_engine_type', 'baileys');
+  }
+});
+
+test('an operator key on whatsapp-web.js lists its channels', async () => {
+  const { screen, fireEvent } = rtl;
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  window.sessionStorage.setItem('openwa_engine_type', 'whatsapp-web.js');
+  try {
+    renderChats();
+    await screen.findByText('Main (15551234567)');
+    fireEvent.click(screen.getByRole('tab', { name: 'Channels' }));
+    await screen.findByText(CHANNEL.name);
+    assert.equal(screen.queryByText('Channels are not supported on the Baileys engine.'), null);
+  } finally {
+    window.sessionStorage.setItem('openwa_user_role', 'admin');
+    window.sessionStorage.setItem('openwa_engine_type', 'baileys');
   }
 });
 
