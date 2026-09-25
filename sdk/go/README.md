@@ -116,8 +116,10 @@ PUT, DELETE) are retried on network errors and on the policy's statuses (default
 429/500/502/503/504). A POST or PATCH (every send endpoint is a POST) is never
 retried after a network error and is retried only on 429 or 503 (when the policy
 lists them): a 500/502/504 can arrive after the message was already sent, so
-replaying it could send it twice. Backoff is exponential, `Retry-After` is honored, and
-request bodies are safely rewound on each attempt.
+replaying it could send it twice. A 429 whose body has `code: "SEND_PACING_LIMITED"` is
+never retried, whatever the method: its delay is the body's `retryAfterSeconds`, which can be
+hours. Backoff is exponential, `Retry-After` is honored, and request bodies are safely rewound
+on each attempt.
 
 ```go
 client, _ := openwa.New(baseURL, apiKey,
