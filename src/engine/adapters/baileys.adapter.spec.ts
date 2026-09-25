@@ -6204,6 +6204,67 @@ describe('BaileysAdapter sendSeen + markUnread + deleteChat', () => {
     );
   });
 
+  // The writes that need no last message resolve the chat the same way. Keyed by the phone jid, the
+  // patch named a chat the phone does not hold, and its local echo added a second row to GET /chats
+  // under the same @c.us id, carrying the mute or pin the listed row never showed.
+  describe('writes without a last message on a lid-keyed chat called with the listed @c.us id', () => {
+    const lidKeyedChat = async (): Promise<BaileysAdapter> => {
+      const adapter = newAdapter();
+      await adapter.initialize({});
+      fakeSock.fire('connection.update', { connection: 'open' });
+      fakeSock.fire('chats.upsert', [{ id: '484848@lid', name: 'Alice' }]);
+      fakeSock.fire('messages.upsert', {
+        type: 'notify',
+        messages: [
+          {
+            key: { remoteJid: '484848@lid', remoteJidAlt: '628111@s.whatsapp.net', fromMe: false, id: 'M1' },
+            message: { conversation: 'hi' },
+            messageTimestamp: 1700000020,
+          },
+        ],
+      });
+      await new Promise(r => setImmediate(r));
+      expect((await adapter.getChats()).map(c => c.id)).toEqual(['628111@c.us']);
+      return adapter;
+    };
+
+    it.each([
+      ['muteChat', (a: BaileysAdapter) => a.muteChat('628111@c.us', 1900000000), { muteEndTime: 1900000000 }],
+      ['pinChat', (a: BaileysAdapter) => a.pinChat('628111@c.us', true), { pinned: 1700000030 }],
+    ])('%s keeps the listed row the only one', async (_n, act, echo) => {
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      const [, jid] = fakeSock.chatModify.mock.calls[0] as [unknown, string];
+      expect(jid).toBe('484848@lid');
+      // Baileys replays its own patch as chats.update under the jid the patch was indexed by.
+      fakeSock.fire('chats.update', [{ id: jid, ...echo }]);
+      expect(await adapter.getChats()).toEqual([expect.objectContaining({ id: '628111@c.us', name: 'Alice' })]);
+    });
+
+    it.each([
+      ['addLabelToChat', 'addChatLabel', (a: BaileysAdapter) => a.addLabelToChat('628111@c.us', 'L1')],
+      ['removeLabelFromChat', 'removeChatLabel', (a: BaileysAdapter) => a.removeLabelFromChat('628111@c.us', 'L1')],
+    ] as const)('%s labels the chat under its lid', async (_n, method, act) => {
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      expect(fakeSock[method]).toHaveBeenCalledWith('484848@lid', 'L1');
+    });
+
+    it.each([
+      ['starMessage', (a: BaileysAdapter) => a.starMessage('628111@c.us', 'M1', true)],
+      ['deleteMessage for me', (a: BaileysAdapter) => a.deleteMessage('628111@c.us', 'M1', false)],
+    ])("%s indexes the patch by the stored message's chat", async (_n, act) => {
+      fakeStore.getMessage.mockResolvedValue({
+        key: { remoteJid: '484848@lid', fromMe: false, id: 'M1' },
+        message: { conversation: 'hi' },
+        messageTimestamp: 1700000020,
+      });
+      const adapter = await lidKeyedChat();
+      await act(adapter);
+      expect(fakeSock.chatModify).toHaveBeenCalledWith(expect.anything(), '484848@lid');
+    });
+  });
+
   it('clearChatMessages returns false for a chat with no known history', async () => {
     const adapter = newAdapter();
     await adapter.initialize({});

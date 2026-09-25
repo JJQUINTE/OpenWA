@@ -153,6 +153,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
       getOnCallOutcome: () => this.callbacks.onCallOutcome,
       ensureReady: () => this.ensureReady(),
       toEngineJid: jid => this.sessionStore.toEngineJid(jid),
+      chatJid: chatId => this.sessionStore.chatJid(chatId),
       getEphemeralExpiration: chatId => this.sessionStore.getEphemeralExpiration(chatId),
       getStoredMessage: messageId => this.config.messageStore?.getMessage(this.config.dbSessionId, messageId),
       getStoredMessages: messageIds => this.config.messageStore?.getMessages(this.config.dbSessionId, messageIds),
@@ -609,7 +610,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.ensureReady();
     this.assertLabelable(chatId);
     await withQueryDeadline(
-      this.sock!.addChatLabel(this.sessionStore.toEngineJid(chatId), labelId),
+      this.sock!.addChatLabel(this.sessionStore.chatJid(chatId), labelId),
       BAILEYS_QUERY_BUDGET_MS,
       'WhatsApp did not confirm the chat label add in time',
     );
@@ -618,7 +619,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
     this.ensureReady();
     this.assertLabelable(chatId);
     await withQueryDeadline(
-      this.sock!.removeChatLabel(this.sessionStore.toEngineJid(chatId), labelId),
+      this.sock!.removeChatLabel(this.sessionStore.chatJid(chatId), labelId),
       BAILEYS_QUERY_BUDGET_MS,
       'WhatsApp did not confirm the chat label removal in time',
     );

@@ -524,10 +524,20 @@ export class BaileysSessionStore {
     return [...this.chats.values()].map(c => this.toNeutralChat(c));
   }
 
+  /**
+   * The id the chat is keyed under, for an app-state write addressed with any spelling of it (the
+   * listing's @c.us id of a lid-keyed chat resolves to the lid). Baileys indexes the patch by this jid
+   * and replays it locally under the same id, so any other spelling names a chat the phone does not
+   * hold and lands the echo on a second record.
+   */
+  chatJid(chatId: string): string {
+    return this.chatKey(chatId);
+  }
+
   /** The chat's newest message, with `jid`, the id the chat itself is keyed under. */
   lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null {
     const m = this.newestAcrossTwins(this.lastMessages, chatId);
-    return m ? { key: m.key, timestamp: m.timestamp, jid: this.chatKey(chatId) } : null;
+    return m ? { key: m.key, timestamp: m.timestamp, jid: this.chatJid(chatId) } : null;
   }
 
   /** The newest message the chat received (not one this account sent), or null when none is known. */
