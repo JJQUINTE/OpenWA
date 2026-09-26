@@ -237,7 +237,7 @@ function ConfigField({
  * to 'self'/data: and forbids connections/forms — see utils/pluginFrameSecurity), and injected
  * as `srcdoc` into a `sandbox="allow-scripts"` iframe (opaque origin — no access to the parent).
  * The editor talks to the host over a postMessage bridge:
- *   iframe → host  { type: 'config:get' }          → host → iframe { type: 'config:value', config, schema, theme }
+ *   iframe → host  { type: 'config:get' }          → host → iframe { type: 'config:value', config, schema, locale, theme }
  *   iframe → host  { type: 'config:save', config }  → host → iframe { type: 'config:saved' } | { type: 'config:error', message }
  * The host makes the authenticated PUT (secret redact/restore applies); the iframe only ever sees the
  * already-redacted config.
@@ -247,8 +247,13 @@ function ConfigField({
  * which is how the Chat Flow editor ended up a glaring white panel inside a dark modal. Additive: an
  * editor that ignores the field renders exactly as it did before.
  *
- * Sending it once, with the handshake, is sufficient: the theme control sits behind the modal overlay,
- * so the theme cannot change while an editor is open, and reopening re-runs the handshake.
+ * `locale` is the dashboard language code ('es', 'zh-CN', ...), and `schema` arrives with field titles and
+ * descriptions localized from the manifest `i18n` block, the same text the generated form shows. The
+ * iframe cannot read the parent's language setting either, and the manifest block covers only top-level
+ * field text, so `locale` is what lets an editor translate its own strings. Additive, like `theme`.
+ *
+ * Sending them once, with the handshake, is sufficient: the theme and language controls sit behind the
+ * modal overlay, so neither can change while an editor is open, and reopening re-runs the handshake.
  */
 function PluginConfigUi({ plugin, sessionId }: { plugin: Plugin; sessionId?: string }) {
   const { t, i18n } = useTranslation();
