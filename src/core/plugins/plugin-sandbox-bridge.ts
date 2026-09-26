@@ -143,7 +143,8 @@ export class PluginSandboxBridge {
   /**
    * Run a plugin's healthCheck across both tiers. A sandboxed plugin's healthCheck lives in the worker
    * (plugin.instance is null), so route to the live worker host (time-bounded); built-ins use the
-   * in-process instance. Returns the default "healthy" when the plugin implements no health check.
+   * in-process instance. A sandboxed plugin with no live worker (crashed, failed to enable, disabled) is
+   * unhealthy. Returns the default "healthy" when a built-in implements no health check.
    */
   async checkPluginHealth(pluginId: string): Promise<{ healthy: boolean; message?: string }> {
     const sandboxHost = this.sandboxHosts.get(pluginId);
@@ -158,6 +159,13 @@ export class PluginSandboxBridge {
       return { healthy: result.healthy, message: result.message ? `${result.message}; ${note}` : note };
     }
     const plugin = this.plugins.get(pluginId);
+    if (plugin && !plugin.builtIn) {
+      const message =
+        plugin.status === PluginStatus.ERROR && plugin.error
+          ? plugin.error
+          : `plugin is not running (status ${plugin.status})`;
+      return { healthy: false, message };
+    }
     if (plugin?.instance?.healthCheck) {
       return plugin.instance.healthCheck();
     }

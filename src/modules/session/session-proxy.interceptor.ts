@@ -65,7 +65,8 @@ const NOT_DISPATCHED_CODES = new Set([
 export const FORWARDED_HEADER = 'x-openwa-forwarded';
 
 /**
- * The URL to forward to: ALWAYS the owner's origin, carrying only the request's path and query.
+ * The URL to forward to: ALWAYS the owner's origin (under its NODE_URL path, if it has one),
+ * carrying only the request's path and query.
  *
  * The request target is caller-controlled. HTTP/1.1 allows the absolute form
  * (`GET http://elsewhere/api/sessions/x HTTP/1.1`), Express matches the route for it, and
@@ -88,7 +89,8 @@ export function forwardTarget(originalUrl: string, ownerNodeUrl: string): string
   const base = new URL(ownerNodeUrl);
   const requested = new URL(originalUrl, base);
   const target = new URL(base.toString());
-  target.pathname = requested.pathname;
+  // Joined, not replaced: an owner behind a path-prefixed reverse proxy is reachable only under it.
+  target.pathname = base.pathname.replace(/\/$/, '') + requested.pathname;
   target.search = requested.search;
   return target.toString();
 }

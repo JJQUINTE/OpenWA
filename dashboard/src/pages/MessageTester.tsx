@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, CheckCircle, XCircle, Loader2, Upload, X, Plus } from 'lucide-react';
+import { Send, CheckCircle, XCircle, Loader2, Upload, X, Plus, AlertCircle } from 'lucide-react';
 import {
   messageApi,
   contactApi,
@@ -117,7 +117,9 @@ export function MessageTester() {
   const { t } = useTranslation();
   useDocumentTitle(t('messageTester.title'));
   const { canWrite } = useRole();
-  const { data: allSessions = [], isLoading: loadingSessions } = useSessionsQuery();
+  const { data: allSessions = [], isLoading: loadingSessions, error: sessionsError } = useSessionsQuery();
+  // A read that never produced a list is not "no ready sessions"; a failed refetch keeps the cached one.
+  const sessionsFailed = !!sessionsError && allSessions.length === 0;
   const sessions = allSessions.filter(s => s.status === 'ready');
   const [session, setSession] = useState('');
   const [recipient, setRecipient] = useState('');
@@ -176,7 +178,11 @@ export function MessageTester() {
   // poll/cancel must keep addressing the session the batch was created on.
   const batchSessionRef = useRef('');
 
-  const { data: groups = [], isLoading: loadingGroups } = useSessionGroupsQuery(session, recipientType === 'group');
+  const {
+    data: groups = [],
+    isLoading: loadingGroups,
+    isError: groupsFailed,
+  } = useSessionGroupsQuery(session, recipientType === 'group');
 
   // Also re-picks when the chosen session leaves the ready list on a refetch: the select would show
   // the first option while every send still went to the dropped one.
@@ -212,15 +218,19 @@ export function MessageTester() {
   const startBatchPolling = (batchSessionId: string, batchId: string) => {
     stopBatchPolling();
     if (unmountedRef.current) return;
-    batchPollRef.current = setInterval(async () => {
+    const timer = setInterval(async () => {
       try {
         const status = await messageApi.getBatchStatus(batchSessionId, batchId);
+        // Polling was stopped (a cancel, a terminal status, a new batch, unmount) while this read
+        // was in flight: its snapshot is older than what is on screen.
+        if (batchPollRef.current !== timer) return;
         setBatchStatus(status);
         if (TERMINAL_BATCH_STATUSES.includes(status.status)) stopBatchPolling();
       } catch {
         // A transient poll failure (network blip, backend restart) must not kill progress tracking.
       }
     }, 2000);
+    batchPollRef.current = timer;
   };
 
   const handleBulkFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -635,6 +645,15 @@ export function MessageTester() {
     <div className="message-tester">
       <PageHeader title={t('messageTester.title')} subtitle={t('messageTester.subtitle')} />
 
+      {sessionsFailed && (
+        <div className="error-banner" role="alert">
+          <AlertCircle size={20} />
+          <span className="error-banner-text">
+            {t('dashboard.loadError')}: {sessionsError.message}
+          </span>
+        </div>
+      )}
+
       <div className="tester-panels">
         <div className="compose-panel">
           <h2 className="eyebrow">{t('messageTester.compose')}</h2>
@@ -642,7 +661,9 @@ export function MessageTester() {
           <div className="form-group">
             <label htmlFor="mt-1">{t('messageTester.session')}</label>
             <select id="mt-1" value={session} onChange={e => setSession(e.target.value)} disabled={isGroupSending}>
-              {sessions.length === 0 && <option value="">{t('messageTester.noReadySessions')}</option>}
+              {sessions.length === 0 && (
+                <option value="">{t(sessionsFailed ? 'dashboard.loadError' : 'messageTester.noReadySessions')}</option>
+              )}
               {sessions.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.phone || t('messageTester.sessionOptionPhoneNone')})
@@ -693,6 +714,7 @@ export function MessageTester() {
                       selectedIds={selectedGroups}
                       onChange={setSelectedGroups}
                       loading={loadingGroups}
+                      loadFailed={groupsFailed}
                       limit={BULK_MAX_RECIPIENTS}
                       labelledBy="group-picker-label"
                       disabled={isGroupSending}

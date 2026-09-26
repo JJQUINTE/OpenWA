@@ -495,8 +495,10 @@ function ChatThread({
                   )}
                 </div>
 
-                {/* Message actions menu (hover) */}
-                {canWrite && !isRevoked && (
+                {/* Message actions menu (hover). Every action addresses the message by its WhatsApp
+                    id, so an optimistic bubble still on its local temp_ id (pending, or failed for
+                    good) offers none: the gateway could never resolve it. */}
+                {canWrite && !isRevoked && Boolean(msg.waMessageId) && (
                   <div className="message-actions-menu">
                     <button
                       type="button"

@@ -18,7 +18,8 @@ import { WebhookFilters } from '../../webhook/filters/filter-types';
  *
  * `conditions` reuses the webhook filter shape (`message` family) verbatim — same JSON, same
  * validator, same evaluator — so a rule matches exactly what a filtered `message.received` webhook
- * would have fired for. Null/empty conditions match every inbound message.
+ * would have fired for. Null/empty conditions match every inbound message. One exception: a rule
+ * without a `kind` condition never answers a channel, broadcast list or status (see evaluateInbound).
  */
 @Entity('automation_rules')
 export class AutomationRule {
@@ -41,7 +42,8 @@ export class AutomationRule {
   @Column({ type: 'boolean', default: true })
   enabled!: boolean;
 
-  // Null/absent means "match every inbound message" — mirrors webhook filters' additive default.
+  // Null/absent matches every inbound message except channel, broadcast-list and status chats (those need a
+  // kind condition); otherwise mirrors webhook filters' additive default.
   @Column({ type: jsonColumnType(), nullable: true })
   conditions!: WebhookFilters | null;
 

@@ -1,4 +1,4 @@
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MetricsService, METRICS_RENDER_TTL_MS } from './metrics.service';
 import { StatsService, OverviewStats } from '../stats/stats.service';
@@ -45,6 +45,34 @@ describe('MetricsService', () => {
     it('is tolerant of bearer casing/whitespace', () => {
       const svc = makeService('s3cret');
       expect(() => svc.assertScrapeAuthorized('bearer   s3cret')).not.toThrow();
+    });
+
+    // The route skips the shared throttler so scrapes cost no budget; failed compares get their own.
+    it('answers 429 once one client has failed too often, without comparing further guesses', () => {
+      const svc = makeService('s3cret');
+      const guesser = { headers: {}, socket: { remoteAddress: '198.51.100.7' } };
+      for (let i = 0; i < 10; i++) {
+        expect(() => svc.assertScrapeAuthorized('Bearer nope', guesser)).toThrow(UnauthorizedException);
+      }
+      const locked = (): void => svc.assertScrapeAuthorized('Bearer s3cret', guesser);
+      expect(locked).toThrow(HttpException);
+      try {
+        locked();
+      } catch (err) {
+        expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      }
+      // Another client is unaffected.
+      expect(() =>
+        svc.assertScrapeAuthorized('Bearer s3cret', { headers: {}, socket: { remoteAddress: '203.0.113.9' } }),
+      ).not.toThrow();
+    });
+
+    it('never charges a successful scrape against that budget', () => {
+      const svc = makeService('s3cret');
+      const scraper = { headers: {}, socket: { remoteAddress: '198.51.100.8' } };
+      for (let i = 0; i < 50; i++) {
+        expect(() => svc.assertScrapeAuthorized('Bearer s3cret', scraper)).not.toThrow();
+      }
     });
   });
 

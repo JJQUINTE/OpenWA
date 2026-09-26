@@ -1,4 +1,4 @@
-import type { WASocket } from '@whiskeysockets/baileys';
+import type { NewsletterMetadata, WASocket } from '@whiskeysockets/baileys';
 import { Channel } from '../interfaces/whatsapp-engine.interface';
 import { ChannelNotFoundError } from '../../common/errors/channel-not-found.error';
 import { mapServerRefusal } from './baileys-groups';
@@ -45,6 +45,25 @@ export function wmexRefusalCode(error: unknown): number | undefined {
     return err.output.statusCode;
   }
   return undefined;
+}
+
+/**
+ * `thread_metadata` as newsletterMetadata actually returns it (recorded live in
+ * scripts/patch-baileys-newsletter-create.spec.js). The .d.ts types it as the flattened create shape.
+ */
+interface RawNewsletterThread {
+  name?: { text?: string } | null;
+  description?: { text?: string } | null;
+  invite?: string;
+  subscribers_count?: string;
+  verification?: 'VERIFIED' | 'UNVERIFIED';
+  creation_time?: string;
+}
+
+/** A wire number that may come as a string, or as NaN from the create parser; undefined unless finite. */
+function finiteNumber(value: number | string | undefined): number | undefined {
+  const n = typeof value === 'string' ? Number.parseInt(value, 10) : value;
+  return n !== undefined && Number.isFinite(n) ? n : undefined;
 }
 
 export class BaileysChannels {
@@ -192,27 +211,31 @@ export class BaileysChannels {
     );
   }
 
-  /** Map a Baileys NewsletterMetadata to the neutral Channel shape (optionals only when present). */
-  private toChannel(meta: {
-    id: string;
-    name: string;
-    description?: string;
-    invite?: string;
-    creation_time?: number;
-    subscribers?: number;
-    picture?: { url?: string };
-    verification?: string;
-    thread_metadata?: { creation_time?: number };
-  }): Channel {
-    const createdAt = meta.creation_time ?? meta.thread_metadata?.creation_time;
+  /**
+   * Map a channel to the neutral Channel shape (optionals only when present).
+   *
+   * Two shapes arrive here. newsletterCreate flattens its response (parseNewsletterCreateResponse),
+   * but newsletterMetadata returns the raw GraphQL node untouched: fields nested under
+   * `thread_metadata`, name and description as `{ text }`, counts and timestamps as strings. The
+   * flat fields are read first and the nested ones fill the gaps. The flat parse uses parseInt, so
+   * a missing number arrives as NaN and is dropped rather than serialized as null.
+   *
+   * No `picture`: neither shape carries a URL, only a CDN direct path.
+   */
+  private toChannel(meta: NewsletterMetadata): Channel {
+    const thread = meta.thread_metadata as RawNewsletterThread | undefined;
+    const description = meta.description ?? thread?.description?.text;
+    const invite = meta.invite ?? thread?.invite;
+    const subscriberCount = finiteNumber(meta.subscribers) ?? finiteNumber(thread?.subscribers_count);
+    const verification = meta.verification ?? thread?.verification;
+    const createdAt = finiteNumber(meta.creation_time) ?? finiteNumber(thread?.creation_time);
     return {
       id: meta.id,
-      name: meta.name,
-      ...(meta.description ? { description: meta.description } : {}),
-      ...(meta.invite ? { inviteCode: meta.invite } : {}),
-      ...(meta.subscribers !== undefined ? { subscriberCount: meta.subscribers } : {}),
-      ...(meta.picture?.url ? { picture: meta.picture.url } : {}),
-      ...(meta.verification ? { verified: meta.verification === 'VERIFIED' } : {}),
+      name: meta.name ?? thread?.name?.text ?? '',
+      ...(description ? { description } : {}),
+      ...(invite ? { inviteCode: invite } : {}),
+      ...(subscriberCount !== undefined ? { subscriberCount } : {}),
+      ...(verification ? { verified: verification === 'VERIFIED' } : {}),
       ...(createdAt !== undefined ? { createdAt } : {}),
     };
   }

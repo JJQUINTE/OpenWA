@@ -9,6 +9,7 @@ import {
   type WebhookFilterCondition,
   type WebhookFilterOperator,
 } from '../services/api';
+import { filterValueLabel } from '../utils/enumLabels';
 import './FilterBuilder.css';
 
 type FieldKind = 'id' | 'idArray' | 'text' | 'enum' | 'boolean';
@@ -231,7 +232,7 @@ export function FilterBuilder({ filters, onChange, chats }: FilterBuilderProps) 
                           });
                         }}
                       >
-                        {option}
+                        {filterValueLabel(t, def.field, option)}
                       </button>
                     );
                   })}

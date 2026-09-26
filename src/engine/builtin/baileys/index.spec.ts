@@ -38,7 +38,7 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
     );
   });
 
-  it('advertises the slice-3b supported feature set', () => {
+  it('advertises the supported feature set', () => {
     expect(new BaileysPlugin().getFeatures()).toEqual([
       'text-messages',
       'typing-indicator',
@@ -51,6 +51,9 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
       'message-deletion',
       'group-management',
       'read-receipts',
+      'channels',
+      'status-updates',
+      'catalog',
     ]);
   });
 
@@ -59,7 +62,13 @@ describe('BaileysPlugin.createEngine (opaque config)', () => {
   });
 
   it('passes the message store to the adapter', () => {
-    const store = { put: jest.fn(), getMessage: jest.fn(), getMessages: jest.fn(), clearSession: jest.fn() };
+    const store = {
+      put: jest.fn(),
+      getMessage: jest.fn(),
+      getMessages: jest.fn(),
+      update: jest.fn(),
+      clearSession: jest.fn(),
+    };
     const plugin = new BaileysPlugin(store);
     plugin.createEngine({ sessionId: 'sess-1' });
     expect(BaileysAdapter).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', messageStore: store }));

@@ -8,10 +8,11 @@
  */
 
 /** Everything wrong with a proposed session name. Empty when it is acceptable. */
-export type SessionNameIssue = 'empty' | 'format' | 'too-long' | 'duplicate';
+export type SessionNameIssue = 'empty' | 'format' | 'too-short' | 'too-long' | 'duplicate';
 
 /** Names become on-disk directory names, so the format is deliberately narrow. */
 const NAME_FORMAT = /^[a-z0-9-]+$/;
+const NAME_MIN_LENGTH = 3;
 const NAME_MAX_LENGTH = 50;
 
 /**
@@ -25,6 +26,7 @@ export function sessionNameIssues(name: string, existingNames: string[]): Sessio
   if (!name.trim()) return ['empty'];
   const issues: SessionNameIssue[] = [];
   if (!NAME_FORMAT.test(name)) issues.push('format');
+  if (name.length < NAME_MIN_LENGTH) issues.push('too-short');
   if (name.length > NAME_MAX_LENGTH) issues.push('too-long');
   if (issues.length === 0 && existingNames.includes(name)) issues.push('duplicate');
   return issues;

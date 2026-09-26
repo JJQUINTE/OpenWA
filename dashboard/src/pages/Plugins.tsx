@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { localizePlugin } from '../utils/localizePlugin';
 import { configUiSafeConfig, missingRequiredConfig, sparseSessionOverride } from '../utils/pluginConfigRules';
-import { coerceFieldInput, emptyForField } from '../utils/pluginConfigForm';
+import { coerceFieldInput, emptyForField, fillClearedFields } from '../utils/pluginConfigForm';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Puzzle,
@@ -410,6 +410,11 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
   const [overrideCfg, setOverrideCfg] = useState<Record<string, unknown>>({});
   const [savingOverride, setSavingOverride] = useState(false);
   const overrideFormRef = useRef<HTMLFormElement>(null);
+  // The session selected now, read by a request that resolves after the operator may have switched.
+  const selSessionRef = useRef(selSession);
+  useEffect(() => {
+    selSessionRef.current = selSession;
+  }, [selSession]);
 
   // Seed the override form from the resolved slice (the session's override value where set, else base).
   // Keyed on selSession + plugin.id (NOT the plugin object): `configPlugin` is derived from the live
@@ -436,7 +441,13 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
     if (overrideFormRef.current && !overrideFormRef.current.reportValidity()) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, sparseSessionOverride(overrideCfg, plugin));
+      // A rejected save answers 200 + {success:false}; the absence of a throw is not success.
+      const res = await pluginsApi.updateSessionConfig(
+        plugin.id,
+        selSession,
+        sparseSessionOverride(overrideCfg, plugin),
+      );
+      if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
@@ -447,10 +458,23 @@ function SessionsTab({ plugin }: { plugin: Plugin }) {
   };
 
   const clearOverride = async () => {
-    if (!selSession) return;
+    const sid = selSession;
+    if (!sid) return;
     setSavingOverride(true);
     try {
-      await pluginsApi.updateSessionConfig(plugin.id, selSession, {});
+      const res = await pluginsApi.updateSessionConfig(plugin.id, sid, {});
+      if (!res.success) throw new Error(res.message);
+      // The seed effect does not re-run on the refetch, so reseed from Global here (the seed with an empty
+      // override). Left as it was, the form keeps the cleared values and the next save pins them back.
+      // Skipped when the operator has since picked another session: the form now holds that one's values.
+      const props = plugin.configSchema?.properties;
+      if (props && selSessionRef.current === sid) {
+        setOverrideCfg(
+          Object.fromEntries(
+            Object.entries(props).map(([key, field]) => [key, plugin.config[key] ?? emptyForField(field)]),
+          ),
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
     } catch (err) {
@@ -666,7 +690,10 @@ export default function Plugins() {
     try {
       // 200 + {success:false} is how a rejected save arrives; without this the modal closed on a
       // "Saved!" toast and the operator's edit was silently gone on the next open.
-      const res = await pluginsApi.updateConfig(configPlugin.id, schemaConfig);
+      const res = await pluginsApi.updateConfig(
+        configPlugin.id,
+        fillClearedFields(schemaConfig, configPlugin.config, configPlugin.configSchema?.properties ?? {}),
+      );
       if (!res.success) throw new Error(res.message);
       void queryClient.invalidateQueries({ queryKey: queryKeys.plugins });
       toast.success(t('plugins.toasts.savedTitle'), t('plugins.toasts.savedDesc'));
@@ -865,7 +892,7 @@ export default function Plugins() {
                   <li key={p.id} className="rail-active-item">
                     <span className="status-dot enabled" />
                     <span className="rail-active-name">{localizePlugin(p, i18n.language).name}</span>
-                    <span className="rail-active-type">{p.type}</span>
+                    <span className="rail-active-type">{t(`plugins.types.${p.type}`, { defaultValue: p.type })}</span>
                   </li>
                 ))}
               </ul>
@@ -918,9 +945,13 @@ export default function Plugins() {
                     <div className="plugin-status-row">
                       <div className="plugin-status">
                         <span className={`status-dot ${plugin.status}`} />
-                        <span className="status-text">{plugin.status}</span>
+                        <span className="status-text">
+                          {t(`plugins.statuses.${plugin.status}`, { defaultValue: plugin.status })}
+                        </span>
                       </div>
-                      <span className="plugin-type-label">{plugin.type}</span>
+                      <span className="plugin-type-label">
+                        {t(`plugins.types.${plugin.type}`, { defaultValue: plugin.type })}
+                      </span>
                     </div>
 
                     {plugin.error && (

@@ -31,3 +31,23 @@ export function coerceFieldInput(field: PluginConfigField, raw: string): unknown
   if (field.type === 'number') return raw === '' ? undefined : Number(raw);
   return raw;
 }
+
+/**
+ * Fill each cleared top-level field for the save. The gateway merges the PUT body over the stored
+ * config and JSON drops an undefined key, so an omitted field keeps its old value: send the field's
+ * default instead, or null when it has none and a value is stored. A field that was never stored
+ * stays omitted.
+ */
+export function fillClearedFields(
+  values: Record<string, unknown>,
+  stored: Record<string, unknown>,
+  properties: Record<string, PluginConfigField>,
+): Record<string, unknown> {
+  const out = { ...values };
+  for (const [key, field] of Object.entries(properties)) {
+    if (out[key] !== undefined) continue;
+    if (field.default !== undefined) out[key] = field.default;
+    else if (stored[key] != null) out[key] = null;
+  }
+  return out;
+}

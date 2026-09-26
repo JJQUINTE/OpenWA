@@ -99,8 +99,11 @@ function ChatSidebar({
             {chat.timestamp ? <span className="chat-item-time">{formatChatTime(chat.timestamp)}</span> : null}
           </div>
           <div className="chat-item-bottom">
+            {/* An empty snippet with a timestamp is a message with no text (a voice note, a sticker,
+                an uncaptioned photo), not an empty chat. */}
             <span className="chat-item-snippet" title={formatLastMessageSnippet(chat)}>
-              {formatLastMessageSnippet(chat) || <span className="no-message">{t('chats.noMessageYet')}</span>}
+              {formatLastMessageSnippet(chat) ||
+                (!chat.timestamp && <span className="no-message">{t('chats.noMessageYet')}</span>)}
             </span>
             {chat.unreadCount > 0 && (
               <span

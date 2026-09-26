@@ -11,6 +11,8 @@ export interface LightboxItem {
   id: string;
   url: string;
   alt?: string;
+  /** The media's own file name; the caption in `alt` is message text, never a download name. */
+  filename?: string;
   senderName?: string;
   timestamp?: string;
 }
@@ -36,7 +38,8 @@ export default function MediaLightbox({ items, index, onClose, onNavigate }: Pro
         alt: m.alt ?? '',
         title: m.senderName,
         description: m.timestamp,
-        download: { url: m.url, filename: m.alt ?? `image-${m.id}.jpg` },
+        // Never empty: the library opens the image in a new tab instead of saving it on an empty name.
+        download: { url: m.url, filename: m.filename || `image-${m.id}.jpg` },
       }))}
       plugins={[Zoom, Download, Counter, Captions]}
       zoom={{

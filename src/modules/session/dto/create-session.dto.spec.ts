@@ -34,3 +34,16 @@ describe('CreateSessionDto proxyUrl validation', () => {
     expect(validateSync(plainToInstance(CreateSessionDto, { name: 'my-bot' }))).toHaveLength(0);
   });
 });
+
+describe('CreateSessionDto config validation', () => {
+  const errs = (config: unknown): ReturnType<typeof validateSync> =>
+    validateSync(plainToInstance(CreateSessionDto, { name: 'my-bot', config }));
+
+  it.each([['abc'], [[1, 2]], [42]])('rejects a config that is not an object: %j', config => {
+    expect(errs(config).map(e => e.property)).toEqual(['config']);
+  });
+
+  it('accepts an object, unknown keys included (they are stored but ignored)', () => {
+    expect(errs({ maxReconnectAttempts: 5, custom: 'x' })).toHaveLength(0);
+  });
+});

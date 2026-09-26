@@ -100,8 +100,9 @@ export function registerWwebjsMessageEvents(client: Client, host: WwebjsEngineHo
       const incomingMessage = buildIncomingMessageBase(msg);
       // Enrich with the media payload through the same capped path the incoming handler uses —
       // the base builder is sync and carries none, so a phone-sent image would otherwise persist
-      // and render as a bare 📎 marker even though the media is downloadable right here.
-      if (msg.hasMedia) {
+      // and render as a bare 📎 marker even though the media is downloadable right here. Not for an own
+      // status post: the echo consumer drops those, so the download would only hold a limiter slot.
+      if (msg.hasMedia && !incomingMessage.isStatusBroadcast) {
         try {
           incomingMessage.media = await host.capInboundMediaFor(msg);
         } catch (error) {

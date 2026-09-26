@@ -246,10 +246,14 @@ class SessionResponse(TypedDict):
     # A limit WhatsApp itself has placed on the account, or None when there is none. Distinct from
     # lastError, which describes a fault on the gateway's side.
     restriction: NotRequired[AccountRestriction | None]
-    # Whether the gateway holds a live engine for this session -- the precondition stop/logout/
-    # force-kill require and start refuses. Not derivable from status: 'disconnected' covers both a
-    # session mid automatic-reconnect (engine present) and one stopped with no engine. Absent from a
-    # gateway that predates the field (the TypedDict is total=False).
+    # Whether the gateway holds a live engine for this session: an engine in the answering process
+    # or, in a multi-node deployment, a live claim by the node running it. On the node running the
+    # session, True means stop/logout/force-kill can act and start is refused. For a session another
+    # node runs, those routes act only when request routing (NODE_URL on every node) forwards them;
+    # without it, other nodes answer 409 to start and stop and 400 to logout and force-kill. Not
+    # derivable from status: 'disconnected' covers both a session mid automatic-reconnect (engine
+    # present) and one stopped with no engine. Absent from a gateway that predates the field (the
+    # TypedDict is total=False).
     engineLoaded: bool
 
 
@@ -987,8 +991,9 @@ class MarkChatReadRequest(TypedDict):
     # Body for mark_read.
     chatId: Jid
     # Messages to acknowledge (at most 100; an empty list is refused). Baileys acknowledges
-    # individual messages, so without this only the newest message the engine still holds in
-    # memory gets a receipt. Ignored by whatsapp-web.js, whose own sendSeen is chat-level.
+    # individual messages, so without this only the newest received message the engine still
+    # holds in memory gets a receipt. Ignored by whatsapp-web.js, whose own sendSeen is
+    # chat-level.
     messageIds: NotRequired[list[str]]
 
 
@@ -1203,6 +1208,7 @@ class HealthReadyResponse(TypedDict, total=False):
 class AuthValidateResponse(TypedDict, total=False):
     valid: bool
     role: str
+    engineType: str
 
 
 # ── Template ──────────────────────────────────────────────────────
@@ -1254,7 +1260,8 @@ class AddLabelRequest(TypedDict):
 
 
 # Mirrors the backend ``Channel`` — returned by the engine as-is, with no DTO in between.
-# ``picture``/``createdAt`` are populated by Baileys; whatsapp-web.js omits both.
+# ``createdAt`` is populated by Baileys; whatsapp-web.js omits it. ``picture`` is not currently
+# filled by either engine.
 class ChannelRecord(TypedDict, total=False):
     id: Jid
     name: str

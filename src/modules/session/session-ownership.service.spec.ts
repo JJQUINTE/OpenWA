@@ -478,6 +478,20 @@ describe('SessionOwnershipService', () => {
       await expect(nodeA.isHeldByOtherNode(mine.id)).resolves.toBe(false);
       await expect(nodeA.isHeldByOtherNode(free.id)).resolves.toBe(false);
     });
+
+    it('answers the same for a row already loaded, without a query', async () => {
+      const live = await seed({ nodeId: 'peer', leaseExpiresAt: new Date(Date.now() + 60_000) });
+      const lapsed = await seed({ nodeId: 'peer', leaseExpiresAt: new Date(Date.now() - 1000) });
+      const mine = await seed({ nodeId: 'node-a', leaseExpiresAt: new Date(Date.now() + 60_000) });
+      const free = await seed();
+      const nodeA = service('node-a');
+      const loaded = (id: string): Promise<Session> => sessions.findOneByOrFail({ id });
+
+      expect(nodeA.heldByOtherLiveNode(await loaded(live.id))).toBe(true);
+      expect(nodeA.heldByOtherLiveNode(await loaded(lapsed.id))).toBe(false);
+      expect(nodeA.heldByOtherLiveNode(await loaded(mine.id))).toBe(false);
+      expect(nodeA.heldByOtherLiveNode(await loaded(free.id))).toBe(false);
+    });
   });
 
   describe('sessions held elsewhere', () => {

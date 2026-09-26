@@ -9,7 +9,7 @@ import {
   useUpdateInstanceMutation,
   useDeleteInstanceMutation,
 } from '../hooks/queries';
-import { isValidInstanceId, isValidInstanceSecret, parseInstanceConfig } from '../utils/instanceForm';
+import { isValidInstanceId, isValidInstanceSecret, parseEditScope, parseInstanceConfig } from '../utils/instanceForm';
 import { copyToClipboard } from '../utils/clipboard';
 import { Modal } from './Modal';
 import { useToast } from '../hooks/useToast';
@@ -111,9 +111,8 @@ export function PluginInstances({ pluginId }: { pluginId: string }) {
     try {
       await updateM.mutateAsync({
         instanceId: editing.instanceId,
-        // Blank → omit (leave scope unchanged); mirrors create. Sending '' would corrupt an
-        // all-sessions (null) instance into a literal empty scope the backend never clears.
-        body: { sessionScope: editForm.sessionScope.trim() || undefined, config: parsed.value ?? {} },
+        // Blank means all sessions (null, or omitted when already unscoped). Never '': the API rejects it.
+        body: { sessionScope: parseEditScope(editing.sessionScope, editForm.sessionScope), config: parsed.value ?? {} },
       });
       setEditing(null);
       toast.success(t('plugins.instances.toasts.updated'), editing.instanceId);
@@ -305,6 +304,18 @@ export function PluginInstances({ pluginId }: { pluginId: string }) {
               {copied === 'secret' ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
+          {/* Revealed only here; later reads mask it, so an auto-generated token is lost if not shown. */}
+          {minted.verifyToken && (
+            <>
+              <label>{t('plugins.instances.created.verifyToken')}</label>
+              <div className="pi-secret">
+                <code>{minted.verifyToken}</code>
+                <button className="btn-primary" onClick={() => void copy(minted.verifyToken!, 'verifyToken')}>
+                  {copied === 'verifyToken' ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+            </>
+          )}
           <label>{t('plugins.instances.created.ingressUrls')}</label>
           {minted.ingressUrls.map(u => (
             <div key={u.route} className="pi-secret">

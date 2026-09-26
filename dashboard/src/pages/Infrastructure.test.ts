@@ -81,7 +81,13 @@ const CURRENT_ENGINE = { engineType: 'whatsapp-web.js' };
 // Per-test fixture swaps for the three responses whose disagreement the engine-pin tests turn on
 // (running engine vs saved engine vs whether ENGINE_TYPE is pinned). Reset in afterEach so the
 // smoke tests above keep seeing the stock fixtures.
-let overrides: { status?: InfraStatus; saved?: SavedConfig; currentEngine?: { engineType: string } } = {};
+let overrides: {
+  status?: InfraStatus;
+  saved?: SavedConfig;
+  savedFails?: boolean;
+  statusFails?: boolean;
+  currentEngine?: { engineType: string };
+} = {};
 
 // ENGINE_TYPE supplied by the container environment, so the dashboard cannot change it.
 const PINNED_STATUS: InfraStatus = { ...INFRA_STATUS, envPinned: ['ENGINE_TYPE'] };
@@ -92,6 +98,8 @@ const SAVED_BAILEYS: SavedConfig = { ...SAVED_CONFIG, engine: { ...SAVED_CONFIG.
 
 // Saved storage differs from the running one — the "saved, awaiting restart" state, with no pin.
 const SAVED_STORAGE_DRIFT: SavedConfig = { ...SAVED_CONFIG, storage: { ...SAVED_CONFIG.storage, type: 's3' } };
+
+const CONFIG_LOAD_ERROR = "Couldn't load the saved configuration, so it can't be edited here. Refresh to try again.";
 
 const PENDING_RESTART_NOTE = 'Saved, but not applied yet — restart the server for this change to take effect.';
 
@@ -140,10 +148,14 @@ function installFetchStub(): void {
     }
     fetchCalls.push({ method, path, body });
 
-    if (method === 'GET' && path === '/api/infra/status')
+    if (method === 'GET' && path === '/api/infra/status') {
+      if (overrides.statusFails) return Promise.resolve(jsonResponse({ message: 'Bad Gateway' }, 502));
       return Promise.resolve(jsonResponse(overrides.status ?? INFRA_STATUS));
-    if (method === 'GET' && path === '/api/infra/config')
+    }
+    if (method === 'GET' && path === '/api/infra/config') {
+      if (overrides.savedFails) return Promise.resolve(jsonResponse({ message: 'boom' }, 500));
       return Promise.resolve(jsonResponse(overrides.saved ?? SAVED_CONFIG));
+    }
     if (method === 'GET' && path === '/api/infra/engines') return Promise.resolve(jsonResponse(ENGINES));
     if (method === 'GET' && path === '/api/infra/engines/current')
       return Promise.resolve(jsonResponse(overrides.currentEngine ?? CURRENT_ENGINE));
@@ -269,6 +281,45 @@ test('Infrastructure renders and the config form hydrates from /status and /conf
   });
 });
 
+// The detail fields (username, database, schema, bucket, engine options) come only from /config.
+// Rendered without it, the form holds its built-in defaults, and a Save would write them over the
+// stored external database, S3 and engine settings.
+test('a failed /config read offers no Save, so defaults cannot overwrite the stored settings', async () => {
+  const { screen } = rtl;
+  resetFetchCalls();
+  overrides = { savedFails: true };
+  renderInfrastructure();
+
+  await screen.findByText(CONFIG_LOAD_ERROR);
+  assert.ok(!screen.queryByRole('button', { name: 'Save Configuration' }), 'Save offered without the saved config');
+});
+
+// The backup only reads the running database, so a missing saved config must not take it away.
+test('a failed /config read names the config, and still offers the data backup export and import', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  resetFetchCalls();
+  overrides = { savedFails: true };
+  const { container } = renderInfrastructure();
+
+  await screen.findByText(CONFIG_LOAD_ERROR);
+  assert.ok(
+    !screen.queryByText("Couldn't load the current infrastructure status. Refresh to try again."),
+    'the status that did load is reported as failed',
+  );
+  assert.ok(container.querySelector('.data-migration-row input[type="file"]'), 'no backup import offered');
+  fireEvent.click(screen.getByRole('button', { name: 'Export data' }));
+  await waitFor(() => assert.ok(findFetchCall('GET', '/api/infra/export-data'), 'the backup export was not requested'));
+});
+
+test('the storage badge names local storage in the active language', async () => {
+  const { screen } = rtl;
+  resetFetchCalls();
+  renderInfrastructure();
+
+  const card = (await screen.findByText('Storage Configuration')).closest('.infra-card') as HTMLElement;
+  assert.equal(card.querySelector('.card-header .status-indicator')?.textContent, '● Local Filesystem');
+});
+
 /**
  * Every toggle is a bare checkbox inside a `<label class="toggle-switch">` whose only other child is
  * the decorative slider span, so the wrapping label contributes no text: a screen reader announced
@@ -326,6 +377,39 @@ test('editing a database field and saving PUTs the edited value in the request b
   });
 });
 
+test('a password typed before switching to a built-in container is not saved', async () => {
+  const { screen, waitFor, fireEvent } = rtl;
+  resetFetchCalls();
+  const { container } = renderInfrastructure();
+
+  await screen.findByText('Database Configuration');
+  await waitFor(() => assert.equal(fieldInput(container, 'Username').value, 'openwa_admin'));
+
+  // Typed while external, then the field is hidden by the built-in toggle but its state survives.
+  fireEvent.change(container.querySelector('#infra-4')!, { target: { value: 'typed-db-secret' } });
+  fireEvent.click(toggleInput(container, 'Use Built-in PostgreSQL Container'));
+
+  fireEvent.click(toggleInput(container, 'Enable Redis'));
+  fireEvent.change(container.querySelector('#infra-12')!, { target: { value: 'typed-redis-secret' } });
+  fireEvent.click(toggleInput(container, 'Use Built-in Redis Container'));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+
+  // The bundled containers never receive a typed password, so '' (unchanged) is what must be sent.
+  await waitFor(() => {
+    const call = findFetchCall('PUT', '/api/infra/config');
+    assert.ok(call, 'expected a PUT to /infra/config');
+    const body = call!.body as {
+      database?: { builtIn?: boolean; password?: string };
+      redis?: { builtIn?: boolean; password?: string };
+    };
+    assert.equal(body.database?.builtIn, true);
+    assert.equal(body.database?.password, '');
+    assert.equal(body.redis?.builtIn, true);
+    assert.equal(body.redis?.password, '');
+  });
+});
+
 test('a successful save opens the restart modal', async () => {
   const { screen, waitFor, fireEvent, within } = rtl;
   resetFetchCalls();
@@ -346,6 +430,35 @@ test('a successful save opens the restart modal', async () => {
   // unmount) is covered by the last test in this file.
   within(dialog).getByRole('button', { name: 'Restart Now' });
   within(dialog).getByRole('button', { name: 'Restart Later' });
+});
+
+const STATUS_LOAD_ERROR = "Couldn't load the current infrastructure status. Refresh to try again.";
+
+test('a failed first /status read shows the status error card and no form', async () => {
+  overrides = { statusFails: true };
+  renderInfrastructure();
+
+  await rtl.screen.findByText(STATUS_LOAD_ERROR);
+  assert.equal(rtl.screen.queryByRole('button', { name: 'Save Configuration' }), null);
+});
+
+test('a failed background /status refetch keeps the form and the restart modal on screen', async () => {
+  const { screen, fireEvent } = rtl;
+  renderInfrastructure();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save Configuration' }));
+  await screen.findByRole('dialog');
+
+  // A focus refetch while the gateway is down: the cached status is still there, only the read failed.
+  overrides = { statusFails: true };
+  await queryClient!.refetchQueries({ queryKey: ['infra', 'status'] });
+  assert.equal(queryClient!.getQueryState(['infra', 'status'])?.status, 'error');
+  // Let the error state render before looking.
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  assert.ok(screen.queryByRole('dialog'), 'the restart modal must stay open');
+  assert.equal(screen.queryByText(STATUS_LOAD_ERROR), null);
+  screen.getByRole('button', { name: 'Save Configuration' });
 });
 
 // ── The engine radio's seed source (#1082) ───────────────────────────────────
@@ -508,6 +621,37 @@ test('an operator engine pick under a pin is deliberate and still saved', async 
     const body = call!.body as { engine?: { type?: string } };
     assert.equal(body.engine?.type, 'baileys');
   });
+});
+
+// ── Built-in containers the restart stops ────────────────────────────────────
+
+test('turning a running built-in Redis off asks the restart to stop its container', async () => {
+  const { screen, waitFor, fireEvent, within } = rtl;
+  resetFetchCalls();
+  // Built-in Redis is running and saved as built-in; the operator switches it to an external Redis.
+  overrides = {
+    status: { ...INFRA_STATUS, redis: { enabled: true, connected: true, host: 'redis', port: 6379, builtIn: true } },
+    saved: {
+      ...SAVED_CONFIG,
+      redis: { enabled: true, builtIn: true, host: 'redis', port: '6379', passwordSet: false },
+    },
+  };
+  const { container } = renderInfrastructure();
+
+  await screen.findByText('Database Configuration');
+  await awaitConfigHydrated(container);
+  const builtInRedis = toggleInput(container, 'Use Built-in Redis Container');
+  await waitFor(() => assert.equal(builtInRedis.checked, true));
+  fireEvent.click(builtInRedis);
+  fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Restart Now' }));
+
+  await waitFor(() => assert.ok(findFetchCall('POST', '/api/infra/restart'), 'expected the restart POST'));
+  // The page reloads after every restart, so the first save of a page visit is the normal case: the
+  // container to stop must come from what is running, not from an earlier save on this page.
+  assert.deepEqual(findFetchCall('POST', '/api/infra/restart')!.body, { profiles: [], profilesToRemove: ['redis'] });
 });
 
 // ── Restart-flow timer cleanup on unmount ────────────────────────────────────

@@ -26,7 +26,12 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { canWrite } = useRole();
   const toast = useToast();
-  const { data: sessions = [], isLoading: loadingSessions, error: sessionsError } = useSessionsQuery();
+  const {
+    data: sessions = [],
+    isLoading: loadingSessions,
+    error: sessionsError,
+    isLoadingError: sessionsNeverLoaded,
+  } = useSessionsQuery();
   const { data: stats } = useSessionStatsQuery();
   const { data: webhooks, isError: webhooksFailed } = useWebhooksQuery();
   // /stats/overview is ADMIN-only; for a non-admin key it 403s → overview stays undefined and the
@@ -37,8 +42,13 @@ export function Dashboard() {
   const messagesToday = overview ? overview.messages.today.sent + overview.messages.today.received : unavailable;
   const totalMessages = overview ? overview.messages.sent + overview.messages.received : unavailable;
   const loading = loadingSessions;
-  const error =
-    sessionsError instanceof Error ? sessionsError.message : sessionsError ? t('dashboard.loadError') : null;
+  // Only a read that never succeeded replaces the page: a failed background refetch keeps its cached
+  // data (as the webhook card below does), so the last good view stays on screen.
+  const error = sessionsNeverLoaded
+    ? sessionsError instanceof Error
+      ? sessionsError.message
+      : t('dashboard.loadError')
+    : null;
   // GET /webhooks is OPERATOR-only, so a viewer key always fails it: a failed read is not zero webhooks.
   // A failed background refetch keeps the cached list, which still counts.
   const webhookCount = webhooksFailed && !webhooks ? unavailable : (webhooks ?? []).length;

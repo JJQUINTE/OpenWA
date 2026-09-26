@@ -28,8 +28,8 @@ export function IsHeaderMap(options?: ValidationOptions) {
       options,
       validator: {
         validate(value: unknown): boolean {
-          if (value === undefined || value === null) return true; // @IsOptional handles absence
-          if (typeof value !== 'object' || Array.isArray(value)) return false;
+          if (value === undefined) return true; // absence is the optional decorator's call
+          if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
           const entries = Object.entries(value as Record<string, unknown>);
           if (entries.length > MAX_HEADERS) return false;
           return entries.every(

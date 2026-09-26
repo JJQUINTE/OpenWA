@@ -40,10 +40,10 @@ export function quotedIdOf(replyingTo: QuotableMessage | null | undefined): stri
 
 /**
  * Body text for the quoted-message preview. A non-text message has no meaningful body to show, so
- * its type stands in — matching what the composer already displayed for text-only replies.
+ * its type stands in, worded by `typeLabel` so it matches the composer's own reply banner.
  */
-function quotedPreviewBody(replyingTo: QuotableMessage): string {
-  return replyingTo.type && replyingTo.type !== 'text' ? `[${replyingTo.type}]` : (replyingTo.body ?? '');
+function quotedPreviewBody(replyingTo: QuotableMessage, typeLabel: (type: string) => string): string {
+  return replyingTo.type && replyingTo.type !== 'text' ? typeLabel(replyingTo.type) : (replyingTo.body ?? '');
 }
 
 /**
@@ -73,12 +73,15 @@ export function buildMediaSendPayload(
 export function buildOptimisticMetadata(
   attachment: ComposerAttachment | null | undefined,
   replyingTo: QuotableMessage | null | undefined,
+  typeLabel: (type: string) => string,
 ): OptimisticMetadata | undefined {
   if (!attachment && !replyingTo) return undefined;
   return {
     ...(attachment
       ? { media: { mimetype: attachment.mimetype, filename: attachment.filename, data: attachment.base64 } }
       : {}),
-    ...(replyingTo ? { quotedMessage: { id: quotedIdOf(replyingTo)!, body: quotedPreviewBody(replyingTo) } } : {}),
+    ...(replyingTo
+      ? { quotedMessage: { id: quotedIdOf(replyingTo)!, body: quotedPreviewBody(replyingTo, typeLabel) } }
+      : {}),
   };
 }

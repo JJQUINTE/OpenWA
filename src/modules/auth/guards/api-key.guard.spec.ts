@@ -142,6 +142,17 @@ describe('ApiKeyGuard', () => {
     expect(authService.validateApiKey).toHaveBeenCalledWith('my-bearer-key', '127.0.0.1', undefined);
   });
 
+  // RFC 7235 section 2.1: the auth scheme is case-insensitive; MCP and metrics already read it so.
+  it.each(['bearer my-bearer-key', 'BEARER   my-bearer-key'])('accepts the scheme in any case: %j', async header => {
+    reflector.getAllAndOverride.mockReturnValueOnce(false).mockReturnValueOnce(undefined);
+    (authService.validateApiKey as jest.Mock).mockResolvedValue(createMockApiKey());
+
+    const result = await guard.canActivate(createMockContext({ authorization: header }));
+
+    expect(result).toBe(true);
+    expect(authService.validateApiKey).toHaveBeenCalledWith('my-bearer-key', '127.0.0.1', undefined);
+  });
+
   it('should reject when API key validation fails', async () => {
     reflector.getAllAndOverride.mockReturnValueOnce(false);
 

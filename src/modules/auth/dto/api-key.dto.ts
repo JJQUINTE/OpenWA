@@ -137,6 +137,12 @@ export class ValidateApiKeyResponseDto {
 
   @ApiPropertyOptional({ enum: ApiKeyRole, description: "The key's role; present only when valid." })
   role?: ApiKeyRole;
+
+  @ApiPropertyOptional({
+    description: 'Engine the process resolved at boot; present only when valid.',
+    example: 'baileys',
+  })
+  engineType?: string;
 }
 
 export class UpdateApiKeyDto {

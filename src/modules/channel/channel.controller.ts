@@ -42,8 +42,8 @@ export class ChannelController {
   @ApiResponse({
     status: 200,
     description:
-      'Channel details. The whatsapp-web.js engine never fills `picture` or `createdAt`; the Baileys ' +
-      'engine reads both off the newsletter metadata.',
+      'Channel details. The Baileys engine reads `createdAt` off the newsletter metadata and the ' +
+      'whatsapp-web.js engine never fills it. Neither engine fills `picture`: WhatsApp reports only a media path.',
     type: ChannelDto,
   })
   @ApiResponse({

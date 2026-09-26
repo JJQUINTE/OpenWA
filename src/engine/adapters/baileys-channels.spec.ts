@@ -28,7 +28,8 @@ function channels(sock: Record<string, jest.Mock>, budgetMs: number): BaileysCha
   return new BaileysChannels(host, budgetMs);
 }
 
-const META = { id: '120363000000000000@newsletter', name: 'Release notes' };
+/** The raw node newsletterMetadata resolves to: nested under thread_metadata, not the flattened create shape. */
+const META = { id: '120363000000000000@newsletter', thread_metadata: { name: { text: 'Release notes' } } };
 
 describe('channel operations report an unanswered query instead of a bare 500', () => {
   it.each([
@@ -74,6 +75,7 @@ describe('channel operations that must not change', () => {
     const newsletterMetadata = jest.fn().mockResolvedValue(META);
     await expect(channels({ newsletterMetadata }, 500).getChannelById('120363@newsletter')).resolves.toMatchObject({
       id: '120363000000000000@newsletter',
+      name: 'Release notes',
     });
   });
 });

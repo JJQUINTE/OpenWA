@@ -140,6 +140,14 @@ describe('BullBoardAuthMiddleware', () => {
     expect(authService.validateApiKey).toHaveBeenCalledWith('abc', '127.0.0.1');
   });
 
+  it('accepts the Bearer scheme in any case', async () => {
+    authService.validateApiKey.mockResolvedValue({ role: ApiKeyRole.ADMIN });
+    authService.hasPermission.mockReturnValue(true);
+
+    await mw.use(reqWith({ authorization: 'bearer abc' }), res, jest.fn());
+    expect(authService.validateApiKey).toHaveBeenCalledWith('abc', '127.0.0.1');
+  });
+
   it('honors X-Forwarded-For only behind a configured trusted proxy (allowedIps parity with the guard)', async () => {
     configService.get.mockReturnValue(['127.0.0.1']); // the socket peer is a trusted proxy
     authService.validateApiKey.mockResolvedValue({ role: ApiKeyRole.ADMIN });

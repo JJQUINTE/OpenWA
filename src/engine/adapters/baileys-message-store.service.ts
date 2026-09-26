@@ -6,6 +6,7 @@ import type { WAMessage } from '@whiskeysockets/baileys';
 import { BaileysStoredMessage } from './baileys-stored-message.entity';
 import { BaileysMessageStore } from '../types/baileys.types';
 import { createLogger } from '../../common/services/logger.service';
+import { KeyedMutationQueue } from '../../common/utils/keyed-mutation-queue';
 
 function positiveIntFromEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? '', 10);
@@ -36,6 +37,17 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
   private readonly logger = createLogger('BaileysMessageStore');
   /** Sessions already warned about a missing parent row — keeps the orphan log to once per session. */
   private readonly orphanWarnedSessions = new Set<string>();
+  /**
+   * Writes still in flight, by `${sessionId}:${waMessageId}`. A message is announced while its write
+   * is still running, and whoever hears about it may look it up at once (a quoted reply, a reaction,
+   * a read receipt). A read of an id held here waits for that write instead of reporting the message
+   * missing. An entry lives exactly as long as its write, so the map only ever holds writes in flight.
+   * A later write of the same id replaces the entry: it is queued behind every earlier one, so waiting
+   * for it covers them too.
+   */
+  private readonly pendingWrites = new Map<string, Promise<void>>();
+  /** One write chain per stored message, so a put and a later update of the same id land in call order. */
+  private readonly writes = new KeyedMutationQueue();
 
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first use, not at boot). */
   private baileysLib?: typeof BaileysLib;
@@ -49,11 +61,61 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     private readonly repo: Repository<BaileysStoredMessage>,
   ) {}
 
-  async put(sessionId: string, msg: WAMessage): Promise<void> {
+  put(sessionId: string, msg: WAMessage): Promise<void> {
     const waMessageId = msg.key?.id;
     if (!waMessageId) {
-      return;
+      return Promise.resolve();
     }
+    return this.track(sessionId, waMessageId, () => this.write(sessionId, waMessageId, msg));
+  }
+
+  /**
+   * Rewrite a stored message in place: `change` receives the stored copy and returns its replacement,
+   * or null to leave the row as it is. An id the store does not hold stays absent, since there is no
+   * original to change. Queued behind any put() of the same id already called, so a change that
+   * arrives while the original's write is still in flight lands on top of it rather than under it.
+   * createdAt is left alone: an edit or a delete is not a new message, and must not reset its age.
+   */
+  update(sessionId: string, messageId: string, change: (stored: WAMessage) => WAMessage | null): Promise<void> {
+    if (!messageId) {
+      return Promise.resolve();
+    }
+    return this.track(sessionId, messageId, async () => {
+      // Read the row itself: this runs on the id's write chain, after every earlier write of the id, so
+      // waiting on pendingWrites here would wait on this very write.
+      const stored = await this.readStored(sessionId, messageId);
+      const next = stored && change(stored);
+      if (!next) {
+        return;
+      }
+      const { BufferJSON } = await this.loadLib();
+      await this.repo.update(
+        { sessionId, waMessageId: messageId },
+        { serializedMessage: JSON.stringify(next, BufferJSON.replacer) },
+      );
+    });
+  }
+
+  /**
+   * Queue `work` on the id's write chain and register it as the id's in-flight write before returning,
+   * so a read issued any time after put() or update() is called waits for it. `work` is called inside a
+   * promise chain, so one that throws before returning its promise still settles the write.
+   */
+  private track(sessionId: string, messageId: string, work: () => Promise<void>): Promise<void> {
+    const key = `${sessionId}:${messageId}`;
+    const write = new Promise<void>((resolve, reject) =>
+      this.writes.enqueue(key, () => Promise.resolve().then(work).then(resolve, reject)),
+    );
+    this.pendingWrites.set(key, write);
+    // A later write of the same id replaced the entry and owns it now.
+    const release = (): void => {
+      if (this.pendingWrites.get(key) === write) this.pendingWrites.delete(key);
+    };
+    write.then(release, release);
+    return write;
+  }
+
+  private async write(sessionId: string, waMessageId: string, msg: WAMessage): Promise<void> {
     const { BufferJSON } = await this.loadLib();
     const serializedMessage = JSON.stringify(msg, BufferJSON.replacer);
     // Idempotent: the same message arrives from the send return AND the messages.upsert echo.
@@ -91,6 +153,11 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     // Baileys retry/poll paths can hand over a key with no id; treat that as not-found rather than
     // letting an undefined criterion reach the ORM (TypeORM 1.x throws; 0.3 matched an arbitrary row).
     if (!messageId) return null;
+    await this.settled(sessionId, messageId);
+    return this.readStored(sessionId, messageId);
+  }
+
+  private async readStored(sessionId: string, messageId: string): Promise<WAMessage | null> {
     const row = await this.repo.findOne({ where: { sessionId, waMessageId: messageId } });
     if (!row) {
       return null;
@@ -106,6 +173,7 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     if (ids.length === 0) {
       return [];
     }
+    await Promise.all(ids.map(id => this.settled(sessionId, id)));
     const rows = await this.repo.find({ where: { sessionId, waMessageId: In(ids) } });
     if (rows.length === 0) {
       return [];
@@ -114,7 +182,19 @@ export class BaileysMessageStoreService implements BaileysMessageStore {
     return rows.map(row => JSON.parse(row.serializedMessage, BufferJSON.reviver) as WAMessage);
   }
 
+  /** Wait out an in-flight write of this id. A failed write is the writer's to report; the read goes ahead. */
+  private async settled(sessionId: string, messageId: string): Promise<void> {
+    await this.pendingWrites.get(`${sessionId}:${messageId}`)?.catch(() => undefined);
+  }
+
   async clearSession(sessionId: string): Promise<void> {
+    // A write already in flight would recreate its row after the delete. Its failure is the writer's to report.
+    const prefix = `${sessionId}:`;
+    await Promise.all(
+      [...this.pendingWrites]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, write]) => write.catch(() => undefined)),
+    );
     await this.repo.delete({ sessionId });
   }
 

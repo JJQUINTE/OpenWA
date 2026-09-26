@@ -1,6 +1,6 @@
 /**
  * Baileys Engine Plugin
- * Built-in engine plugin that wraps the @whiskeysockets/baileys library (minimal slice).
+ * Built-in engine plugin that wraps the @whiskeysockets/baileys library.
  */
 
 import { PluginContext, PluginType, IEnginePlugin } from '../../../core/plugins';
@@ -77,6 +77,11 @@ export class BaileysPlugin implements IEnginePlugin {
       'message-deletion',
       'group-management',
       'read-receipts',
+      'channels',
+      'status-updates',
+      'catalog',
+      // No 'labels': Baileys can create, delete and attach labels but has no query for them, so the
+      // label and chat-label reads 501 and a client could not read back what it wrote.
     ];
   }
 

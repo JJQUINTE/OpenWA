@@ -12,7 +12,7 @@
     "cancel": "إلغاء",
     "delete": "حذف",
     "create": "إنشاء",
-    "save": "Save",
+    "save": "حفظ",
     "close": "إغلاق",
     "showApiKey": "إظهار مفتاح API",
     "hideApiKey": "إخفاء مفتاح API",
@@ -32,7 +32,17 @@
     "never": "أبداً",
     "justNow": "الآن",
     "minAgo": "منذ {{count}} دقيقة",
+    "minAgo_other": "منذ {{count}} دقيقة",
+    "minAgo_two": "منذ دقيقتين",
+    "minAgo_few": "منذ {{count}} دقائق",
+    "minAgo_many": "منذ {{count}} دقيقة",
+    "minAgo_zero": "منذ {{count}} دقيقة",
     "hoursAgo": "منذ {{count}} ساعة",
+    "hoursAgo_other": "منذ {{count}} ساعة",
+    "hoursAgo_two": "منذ ساعتين",
+    "hoursAgo_few": "منذ {{count}} ساعات",
+    "hoursAgo_many": "منذ {{count}} ساعة",
+    "hoursAgo_zero": "منذ {{count}} ساعة",
     "optional": "اختياري",
     "language": "اللغة",
     "back": "رجوع",
@@ -60,7 +70,7 @@
     "sessions": "الجلسات",
     "chats": "المحادثات",
     "webhooks": "الويب هوك",
-    "templates": "Templates",
+    "templates": "القوالب",
     "apiKeys": "مفاتيح API",
     "messageTester": "اختبار الرسائل",
     "infrastructure": "البنية التحتية",
@@ -91,6 +101,7 @@
     "unreadBadge_two": "{{count}} رسالتان غير مقروءتان",
     "unreadBadge_few": "{{count}} رسائل غير مقروءة",
     "unreadBadge_many": "{{count}} رسالة غير مقروءة",
+    "unreadBadge_zero": "{{count}} رسالة غير مقروءة",
     "loadingMessages": "جارٍ تحميل الرسائل...",
     "loadingOlderMessages": "جارٍ تحميل الرسائل الأقدم...",
     "loadOlderMessagesError": "تعذر تحميل الرسائل الأقدم. مرر لأعلى للمحاولة مرة أخرى.",
@@ -102,6 +113,25 @@
       "delete": "حذف الرسالة"
     },
     "replyingTo": "الرد على {{name}}",
+    "messageType": {
+      "text": "نص",
+      "image": "صورة",
+      "video": "فيديو",
+      "audio": "صوت",
+      "voice": "رسالة صوتية",
+      "document": "مستند",
+      "sticker": "ملصق",
+      "location": "موقع",
+      "contact": "جهة اتصال",
+      "poll": "استطلاع",
+      "call": "مكالمة",
+      "revoked": "رسالة محذوفة",
+      "order": "طلب",
+      "product": "منتج",
+      "masked": "رسالة مخفية",
+      "unknown": "رسالة",
+      "unknownType": "نوع غير معروف"
+    },
     "you": "أنت",
     "youPrefix": "أنت: ",
     "yesterday": "أمس",
@@ -124,7 +154,9 @@
       "group": "مجموعة",
       "channel": "قناة",
       "status": "الحالة",
-      "broadcast": "بث"
+      "broadcast": "بث",
+      "individual": "فردي",
+      "unknown": "غير معروف"
     },
     "tab": {
       "chats": "المحادثات",
@@ -138,7 +170,7 @@
       "itemCount_two": "تحديثان",
       "itemCount_few": "{{count}} تحديثات",
       "itemCount_many": "{{count}} تحديثًا",
-      "itemCount_other": "{{count}} تحديثات",
+      "itemCount_other": "{{count}} تحديث",
       "empty": "لا توجد جهات اتصال لديها حالة نشطة.",
       "loadError": "تعذر تحميل الحالات.",
       "mediaUnavailable": "الوسائط غير متوفرة",
@@ -166,7 +198,8 @@
       "subscribers_other": "{{count}} مشترك",
       "subscribers_two": "{{count}} مشتركان",
       "subscribers_few": "{{count}} مشتركين",
-      "subscribers_many": "{{count}} مشترك"
+      "subscribers_many": "{{count}} مشترك",
+      "subscribers_zero": "{{count}} مشترك"
     },
     "errors": {
       "loadSessions": "فشل تحميل الجلسات",
@@ -176,7 +209,8 @@
       "react": "فشل التفاعل مع الرسالة",
       "delete": "فشل حذف الرسالة",
       "clickButton": "فشل النقر على الزر",
-      "fileTooLarge": "الملف كبير جدًا (الحد الأقصى 18 ميغابايت)"
+      "fileTooLarge": "الملف كبير جدًا (الحد الأقصى 18 ميغابايت)",
+      "searchHitSessionNotReady": "جلسة هذه الرسالة غير متصلة"
     },
     "loadMessagesError": "تعذّر تحميل الرسائل. تحقّق من سجلّات الخادم.",
     "messageStatus": {
@@ -287,7 +321,8 @@
       "successTitle": "تم إنشاء الجلسة",
       "successDesc": "تم إنشاء الجلسة \"{{name}}\" بنجاح",
       "errorTitle": "فشل الإنشاء",
-      "errorDefault": "فشل إنشاء الجلسة"
+      "errorDefault": "فشل إنشاء الجلسة",
+      "tooShort": "يجب أن يتكون الاسم من 3 أحرف على الأقل."
     },
     "delete": {
       "title": "تأكيد الحذف",
@@ -324,25 +359,25 @@
       "autoRejectCallsHint": "يتم رفض المكالمات الواردة فور رنينها. ولا يزال الويب هوك call.received يُرسل قبل ذلك. يسري على المكالمة التالية, دون الحاجة إلى إعادة التشغيل. مع محرك Baileys فقط: لا يستطيع whatsapp-web.js رفض المكالمات."
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "تهيئة الوكيل",
+      "status": "الحالي",
+      "enabled": "استخدام وكيل",
+      "url": "عنوان URL للوكيل",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "أدخل عنوان URL جديدًا ليحل محل {{host}} (لا تُعرض بيانات الاعتماد)",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "لم تتم تهيئة أي وكيل",
+      "hasCredentials": "بيانات الاعتماد محفوظة لكنها لا تُعرض. أدخل عنوان URL كاملًا لتغييرها.",
+      "hint": "تُطبَّق التغييرات عند البدء التالي للجلسة، لا على اتصال قيد التشغيل. يجب أن يكون الوكيل حقيقيًا ويمكن الوصول إليه: القيمة التي يتعذر الوصول إليها تمنع وصول رمز QR ويُرجع البدء الخطأ 504.",
+      "createHint": "مطلوب فقط عندما لا تستطيع شبكتك الوصول إلى WhatsApp مباشرةً. يجب أن يكون وكيلًا حقيقيًا يمكن الوصول إليه.",
+      "invalidUrl": "أدخل عنوان URL صالحًا لوكيل http أو https أو socks4 أو socks5.",
+      "saveSuccessTitle": "تم حفظ الوكيل",
+      "saveSuccess": "تم حفظ إعدادات الوكيل. تُطبَّق عند البدء التالي للجلسة.",
+      "saveError": "فشل حفظ إعدادات الوكيل"
     },
     "actions": {
       "view": "عرض",
-      "proxy": "Proxy",
+      "proxy": "الوكيل",
       "start": "بدء",
       "stop": "إيقاف",
       "reconnect": "إعادة الاتصال",
@@ -458,7 +493,7 @@
         "body": "نص الرسالة",
         "type": "نوع الرسالة",
         "isGroup": "محادثة جماعية",
-        "kind": "Chat kind",
+        "kind": "نوع المحادثة",
         "fromMe": "مُرسَلة مني",
         "hasMedia": "تحتوي على وسائط",
         "mentions": "الإشارات"
@@ -613,7 +648,10 @@
     },
     "empty": {
       "title": "لا توجد مفاتيح API",
-      "description": "أنشئ مفتاح API للمصادقة على طلباتك"
+      "description": "أنشئ مفتاح API للمصادقة على طلباتك",
+      "loadErrorTitle": "تعذر تحميل مفاتيح API",
+      "forbiddenTitle": "لا يوجد وصول إلى مفاتيح API",
+      "forbiddenDesc": "تتطلب إدارة مفاتيح API مفتاح مسؤول غير مقيد بجلسات محددة."
     },
     "confirm": {
       "deleteTitle": "حذف مفتاح API",
@@ -666,7 +704,12 @@
       "filteredTitle": "لا نتائج مطابقة في هذه الصفحة",
       "filteredDescription": "يبحث حقل البحث في الصفحة الحالية فقط. امسحه أو تنقّل بين الصفحات أو استخدم مرشح الخطورة للتصفية من الخادم.",
       "filteredServerDescription": "لا سجلات تطابق هذه المرشحات. عدّل مرشح الخطورة لتوسيع البحث."
-    }
+    },
+    "exportFailed": "تعذّر تصدير سجل التدقيق",
+    "exportTruncated": "يغطي التصدير أحدث {{rows}} إدخال فقط. ضيّق مرشح الخطورة لتصدير الإدخالات الأقدم.",
+    "exportThrottled": "يغطي التصدير أحدث {{rows}} إدخال فقط لأن البوابة تحدّ من قراءات سجل التدقيق. انتظر دقيقة ثم أعد التصدير.",
+    "exportNoMatches": "لا توجد إدخالات في سجل التدقيق تطابق البحث، لذا لم يُصدَّر شيء.",
+    "exportNoMatchesTruncated": "لا يطابق البحث أيًّا من أحدث {{rows}} إدخال تم فحصها، لذا لم يُصدَّر شيء. لم يشمل البحث الإدخالات الأقدم."
   },
   "messageTester": {
     "title": "اختبار الرسائل",
@@ -901,15 +944,16 @@
       "export": "تصدير البيانات",
       "import": "استيراد البيانات",
       "exportFailed": "تعذّر تصدير البيانات",
-      "exportPartialTitle": "Backup is missing some media",
-      "exportPartial": "{{count}} attachment payload(s) exceeded the export media budget and were saved as placeholders. The messages restore; their media does not.",
+      "exportPartialTitle": "تنقص النسخة الاحتياطية بعض الوسائط",
+      "exportPartial": "مرفقات تجاوزت حد وسائط التصدير: {{count}}. حُفظت كعناصر نائبة. تُستعاد الرسائل، أما وسائطها فلا.",
       "importFailed": "تعذّر استيراد البيانات",
       "importOk": "تمّ استيراد البيانات",
       "importConfirm": "سيؤدّي الاستيراد إلى استبدال جميع البيانات الحالية بالنسخة الاحتياطية ({{rows}} صفًّا). لا يمكن التراجع عن هذا الإجراء. هل تريد المتابعة؟",
       "invalidFile": "هذا الملفّ ليس نسخة احتياطية صالحة لبيانات OpenWA.",
       "importTooLarge": "النسخة الاحتياطية أكبر من حدّ الطلب. زِد قيمة BODY_SIZE_LIMIT على الخادم ثم أعد المحاولة."
     },
-    "statusLoadError": "تعذّر تحميل حالة البنية التحتية الحالية. حدّث الصفحة لإعادة المحاولة."
+    "statusLoadError": "تعذّر تحميل حالة البنية التحتية الحالية. حدّث الصفحة لإعادة المحاولة.",
+    "configLoadError": "تعذّر تحميل الإعدادات المحفوظة، لذا لا يمكن تعديلها هنا. حدّث الصفحة لإعادة المحاولة."
   },
   "plugins": {
     "title": "الإضافات",
@@ -917,6 +961,19 @@
     "refresh": "تحديث",
     "builtIn": "مدمج",
     "noDescription": "لا يوجد وصف متاح",
+    "statuses": {
+      "installed": "مُثبَّتة",
+      "enabled": "مُمكَّنة",
+      "disabled": "مُعطَّلة",
+      "error": "خطأ"
+    },
+    "types": {
+      "engine": "محرك",
+      "storage": "تخزين",
+      "queue": "قائمة",
+      "auth": "مصادقة",
+      "extension": "امتداد"
+    },
     "enable": "تمكين",
     "disable": "تعطيل",
     "healthCheck": "فحص الصحة",
@@ -991,7 +1048,6 @@
       "title": "المثيلات",
       "description": "أنشئ مثيلات لكل حساب لهذا التكامل. كل مثيل له مفتاح توقيع سري وعنوان دخول خاص به.",
       "create": "إنشاء مثيل",
-      "save": "Save",
       "empty": "لا توجد مثيلات بعد. أنشئ مثيلًا للحصول على عنوان دخول ومفتاح سري.",
       "loadError": "فشل تحميل المثيلات.",
       "allSessions": "جميع الجلسات",
@@ -1015,7 +1071,8 @@
         "title": "تم إنشاء المثيل",
         "hint": "انسخ المفتاح السري الآن — لن يُعرض مرة أخرى.",
         "secret": "مفتاح التوقيع السري",
-        "ingressUrls": "عنوان (عناوين) الدخول"
+        "ingressUrls": "عنوان (عناوين) الدخول",
+        "verifyToken": "رمز التحقق"
       },
       "regenerate": {
         "title": "إعادة إنشاء المفتاح السري",

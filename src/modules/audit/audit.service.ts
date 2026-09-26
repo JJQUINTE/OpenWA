@@ -166,7 +166,9 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
     const [data, total] = await this.auditRepository.findAndCount({
       where,
-      order: { createdAt: 'DESC' },
+      // createdAt has one-second precision, so rows written in the same second tie; the unique id gives
+      // them one fixed order, or separate LIMIT/OFFSET pages could repeat one row and skip another.
+      order: { createdAt: 'DESC', id: 'DESC' },
       take,
       // Clamp to a non-negative skip: a negative offset (e.g. from an unvalidated `?offset=-5`) would
       // otherwise reach the query driver verbatim.

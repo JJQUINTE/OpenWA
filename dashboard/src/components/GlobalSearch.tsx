@@ -62,8 +62,11 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
         if (status === 501) setError(t('search.unavailable'));
         else if (status === 503) setError(t('search.error'));
         else setError(t('search.error'));
-        setHits([]);
-        setTotal(0);
+        // A failed next page keeps the pages already shown, and "more" stays on as the retry.
+        if (!append) {
+          setHits([]);
+          setTotal(0);
+        }
       } finally {
         if (id === requestId.current) setLoading(false);
       }
@@ -167,7 +170,6 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
           {!loading && error && <div className="global-search-state">{error}</div>}
           {!loading && !error && hits.length === 0 && <div className="global-search-state">{t('search.empty')}</div>}
           {!loading &&
-            !error &&
             hits.map(h => (
               <button
                 key={h.messageId}
@@ -191,7 +193,7 @@ export function GlobalSearch({ onHit, currentSessionId }: GlobalSearchProps) {
                 </div>
               </button>
             ))}
-          {!loading && !error && hits.length < total && (
+          {!loading && hits.length < total && (
             // preventDefault on mousedown keeps focus in the input, so a mouse click does not start the
             // close timer; click still fires for the mouse and for Enter/Space.
             <button className="global-search-more" onMouseDown={e => e.preventDefault()} onClick={loadMore}>

@@ -208,6 +208,27 @@ describe('PluginLoaderService — sandbox tier routing', () => {
     );
   });
 
+  it('reports a sandboxed plugin with no live worker as unhealthy (crashed or disabled)', async () => {
+    const loader = makeLoader();
+    seed(loader, { builtIn: false, instance: null });
+    await loader.enablePlugin('p1');
+    jest
+      .spyOn((loader as unknown as { logger: { warn: jest.Mock } }).logger, 'warn')
+      .mockImplementation(() => undefined);
+
+    loader.capturedOnWorkerExit!(1, false);
+    const crashed = await loader.checkPluginHealth('p1');
+    expect(crashed.healthy).toBe(false);
+    expect(crashed.message).toContain('worker exited unexpectedly');
+
+    pluginOf(loader).status = PluginStatus.DISABLED;
+    pluginOf(loader).error = undefined;
+    expect(await loader.checkPluginHealth('p1')).toEqual({
+      healthy: false,
+      message: 'plugin is not running (status disabled)',
+    });
+  });
+
   it('enables a built-in plugin in-process (no sandbox worker spawned)', async () => {
     const loader = makeLoader();
     const onEnable = jest.fn().mockResolvedValue(undefined);

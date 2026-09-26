@@ -66,7 +66,7 @@ Storage: SHA-256 hash only (never store plain key); `keyPrefix` keeps the first 
 ```
 
 Every key minted through the API-keys endpoints uses that format. The bootstrap seed key is the only
-exception: an explicit `API_MASTER_KEY` is taken verbatim, and `ALLOW_DEV_API_KEY=true` opts into the
+exception: an explicit `API_MASTER_KEY` is taken verbatim (surrounding whitespace is stripped), and `ALLOW_DEV_API_KEY=true` opts into the
 fixed `dev-admin-key`; with neither set, the seed key is generated in the format above.
 
 ### Permission Model
@@ -363,10 +363,14 @@ function signPayload(payload: object, secret: string): string {
 }
 
 // Client: Verify signature
-function verifySignature(payload: string, signature: string, secret: string): boolean {
+function verifySignature(payload: string, signature: string | undefined, secret: string): boolean {
+  if (typeof signature !== 'string') return false;
   const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
 
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  // timingSafeEqual throws on a length mismatch, so a short or forged header must return false first.
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 ```
 

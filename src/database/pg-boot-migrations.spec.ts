@@ -82,6 +82,7 @@ describe('createBootDataSource (postgres boot migrations)', () => {
     const returned = await createBootDataSource(PG_OPTIONS, deps);
 
     expect(returned).toBe(dataSource);
+    // One fake stands in for both the migration pool (torn down after the chain) and the runtime one.
     expect(calls).toEqual([
       'initialize',
       'connect',
@@ -89,6 +90,8 @@ describe('createBootDataSource (postgres boot migrations)', () => {
       'runMigrations',
       'SELECT pg_advisory_unlock($1, $2)',
       'end',
+      'destroy',
+      'initialize',
     ]);
     // Same key for acquire and release, in the (key1, key2) form.
     expect(lockClient.query).toHaveBeenNthCalledWith(1, 'SELECT pg_advisory_lock($1, $2)', [
@@ -97,10 +100,10 @@ describe('createBootDataSource (postgres boot migrations)', () => {
     expect(lockClient.query).toHaveBeenNthCalledWith(2, 'SELECT pg_advisory_unlock($1, $2)', [
       ...POSTGRES_BOOT_MIGRATION_LOCK_KEYS,
     ]);
-    // Migration execution preserves the built-in migrationsRun transaction mode, and the boot
-    // error path (destroy) never fires on success.
+    // Migration execution preserves the built-in migrationsRun transaction mode, and only the
+    // migration pool is torn down on success.
     expect(dataSource.runMigrations).toHaveBeenCalledWith({ transaction: 'all' });
-    expect(dataSource.destroy).not.toHaveBeenCalled();
+    expect(dataSource.destroy).toHaveBeenCalledTimes(1);
   });
 
   it('constructs the DataSource with migrationsRun disabled and never mutates the config', async () => {
@@ -122,6 +125,55 @@ describe('createBootDataSource (postgres boot migrations)', () => {
     // The resolved config object itself is untouched — the flag stays as the built-in fallback.
     expect(PG_OPTIONS.migrationsRun).toBe(true);
     expect(PG_OPTIONS.extra).toEqual({ statement_timeout: 30000, connectionTimeoutMillis: 10000 });
+  });
+
+  it('runs the chain on its own pool without the runtime statement_timeout, then returns one that keeps it', async () => {
+    // pg sends statement_timeout in the startup packet, so every statement on a pool built with it
+    // inherits the limit: a backfill or index build over a large table was cancelled at 30 s, the
+    // whole 'all' transaction rolled back, and every retry of the boot failed the same way.
+    const migrator = makeFakes();
+    const runtime = makeFakes();
+    const createDataSource = jest
+      .fn<DataSource, [DataSourceOptions]>()
+      .mockReturnValueOnce(migrator.dataSource as unknown as DataSource)
+      .mockReturnValueOnce(runtime.dataSource as unknown as DataSource);
+
+    const returned = await createBootDataSource(PG_OPTIONS, {
+      createDataSource,
+      createLockClient: migrator.deps.createLockClient,
+    });
+
+    expect(returned).toBe(runtime.dataSource);
+    expect(migrator.calls).toEqual([
+      'initialize',
+      'connect',
+      'SELECT pg_advisory_lock($1, $2)',
+      'runMigrations',
+      'SELECT pg_advisory_unlock($1, $2)',
+      'end',
+      'destroy',
+    ]);
+    expect(runtime.calls).toEqual(['initialize']);
+    const [[migratorOptions], [runtimeOptions]] = createDataSource.mock.calls;
+    expect(migratorOptions.extra).not.toHaveProperty('statement_timeout');
+    expect(migratorOptions.extra).toMatchObject({ connectionTimeoutMillis: 10000 });
+    expect(runtimeOptions.extra).toMatchObject({ statement_timeout: 30000, connectionTimeoutMillis: 10000 });
+    expect(runtime.dataSource.query).toHaveBeenCalled(); // the runtime pool's UTC pin is verified too
+  });
+
+  it('tears the runtime DataSource down when its session is not on UTC, after the chain is applied', async () => {
+    const migrator = makeFakes();
+    const runtime = makeFakes(jest.fn(), 25200);
+    const createDataSource = jest
+      .fn<DataSource, [DataSourceOptions]>()
+      .mockReturnValueOnce(migrator.dataSource as unknown as DataSource)
+      .mockReturnValueOnce(runtime.dataSource as unknown as DataSource);
+
+    await expect(
+      createBootDataSource(PG_OPTIONS, { createDataSource, createLockClient: migrator.deps.createLockClient }),
+    ).rejects.toThrow(/not on UTC/);
+
+    expect(runtime.calls).toEqual(['initialize', 'destroy']);
   });
 
   it('builds the lock client without a statement timeout (pg_advisory_lock must survive the wait)', async () => {
@@ -217,8 +269,10 @@ describe('createBootDataSource (postgres boot migrations)', () => {
       'runMigrations',
       'SELECT pg_advisory_unlock($1, $2)',
       'end',
+      'destroy',
+      'initialize',
     ]);
-    expect(dataSource.destroy).not.toHaveBeenCalled();
+    expect(dataSource.destroy).toHaveBeenCalledTimes(1); // the migration pool only
   });
 
   it('still resolves when lock-client end() fails: the boot result does not depend on client teardown', async () => {
@@ -238,8 +292,10 @@ describe('createBootDataSource (postgres boot migrations)', () => {
       'runMigrations',
       'SELECT pg_advisory_unlock($1, $2)',
       'end',
+      'destroy',
+      'initialize',
     ]);
-    expect(dataSource.destroy).not.toHaveBeenCalled();
+    expect(dataSource.destroy).toHaveBeenCalledTimes(1); // the migration pool only
   });
 
   it('surfaces the migration error, not the teardown error, when destroy() rejects too', async () => {
@@ -330,7 +386,9 @@ describe('createBootDataSource (postgres boot migrations)', () => {
         ...POSTGRES_BOOT_MIGRATION_LOCK_KEYS,
       ]);
       expect(runMigrations).toHaveBeenCalledWith({ transaction: 'all' });
-      expect(destroy).not.toHaveBeenCalled();
+      // The migration pool is torn down; the returned runtime one keeps the statement timeout.
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(returned.options.extra).toMatchObject({ statement_timeout: 30000 });
     } finally {
       clientCtor.mockRestore();
       initialize.mockRestore();

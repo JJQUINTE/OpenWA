@@ -61,6 +61,10 @@ class LruMap<K, V> {
     return this.map.has(key);
   }
 
+  delete(key: K): void {
+    this.drop(key);
+  }
+
   get(key: K): V | undefined {
     if (!this.map.has(key)) {
       return undefined;
@@ -113,6 +117,11 @@ class LruMap<K, V> {
    */
   values(): IterableIterator<V> {
     return this.map.values();
+  }
+
+  /** LIVE iterator with the same caveat as {@link values}. */
+  entries(): IterableIterator<[K, V]> {
+    return this.map.entries();
   }
 }
 
@@ -176,6 +185,13 @@ export class BaileysSessionStore {
   private readonly contacts: LruMap<string, BaileysContact>;
   private readonly chats: LruMap<string, Chat>;
   private readonly lastMessages: LruMap<string, LastMessage>;
+  /**
+   * The newest message each chat RECEIVED, kept apart from the preview because a read receipt can
+   * only acknowledge a message the other side sent: Baileys drops an own key from the receipt, so
+   * answering with the preview after an API reply sent nothing while the route reported success.
+   * An evicted entry reads null, which the receipt path answers as "nothing known".
+   */
+  private readonly lastInbound: LruMap<string, { key: WAMessageKey; timestamp: number }>;
   private readonly lidToPn: LruMap<string, string>;
   /**
    * Per-chat disappearing-messages timer (seconds) learned from inbound messages (#473), the reliable
@@ -211,6 +227,7 @@ export class BaileysSessionStore {
     this.contacts = new LruMap(maxEntries, contact => Boolean(contact.name));
     this.chats = new LruMap(maxEntries);
     this.lastMessages = new LruMap(maxEntries);
+    this.lastInbound = new LruMap(maxEntries);
     this.lidToPn = new LruMap(maxEntries);
     // Double-keyed (raw + neutral JID per chat), so it needs two slots per chat to cover the same span.
     this.ephemeralByChat = new LruMap(maxEntries * 2);
@@ -279,6 +296,25 @@ export class BaileysSessionStore {
     }
   }
 
+  /**
+   * Drop chats Baileys reports deleted (`chats.delete`: an API delete replayed locally, or one made on
+   * the phone), with their preview and last inbound message, under every spelling: the id comes from
+   * the app-state index, which need not be the twin the chat or its messages are keyed under. The
+   * persisted mute/archive/pin goes too: a chat a later message re-creates is a new chat on WhatsApp,
+   * and the row would otherwise lay the deleted chat's state over it.
+   */
+  removeChats(ids: string[] = []): void {
+    const keys = new Set(ids.flatMap(id => this.chatTwins(id)));
+    for (const key of keys) {
+      this.chats.delete(key);
+      this.lastMessages.delete(key);
+      this.lastInbound.delete(key);
+    }
+    if (keys.size && this.chatStateStore && this.sessionId) {
+      void this.chatStateStore.forget(this.sessionId, [...keys]);
+    }
+  }
+
   addLidMappings(mappings: { lid?: string; pn?: string }[] = []): void {
     for (const m of mappings) {
       if (m.lid && m.pn) {
@@ -331,13 +367,18 @@ export class BaileysSessionStore {
     // newest-message guard so every inbound refreshes it; the timer is cached under both the raw and
     // neutral JID so an outbound send addressed in either dialect (phone or @lid) finds it.
     this.recordEphemeralFromMessage(chatId, msg);
+    const key = this.chatKey(chatId);
     const timestamp = this.toUnixSeconds(msg.messageTimestamp);
-    const existing = this.lastMessages.get(chatId);
+    if (!msg.key.fromMe) {
+      const inbound = this.lastInbound.get(key);
+      if (!inbound || inbound.timestamp < timestamp) this.lastInbound.set(key, { key: msg.key, timestamp });
+    }
+    const existing = this.lastMessages.get(key);
     if (existing && existing.timestamp >= timestamp) {
       return; // keep the newest
     }
     const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text ?? '';
-    this.lastMessages.set(chatId, { key: msg.key, timestamp, text });
+    this.lastMessages.set(key, { key: msg.key, timestamp, text });
   }
 
   /**
@@ -346,10 +387,42 @@ export class BaileysSessionStore {
    */
   recordMessageEdit(chatId: string, messageId: string, text: string): void {
     if (!messageId) return;
-    const rawChatId = this.lastMessages.has(chatId) ? chatId : this.toEngineJid(chatId);
-    const existing = this.lastMessages.get(rawChatId);
+    const key = this.chatKey(chatId);
+    const existing = this.lastMessages.get(key);
     if (!existing || existing.key.id !== messageId) return;
-    this.lastMessages.set(rawChatId, { ...existing, text });
+    this.lastMessages.set(key, { ...existing, text });
+  }
+
+  /**
+   * The key a chat's preview is kept under, for an id in any dialect. One conversation reaches this
+   * store as `<phone>@c.us` (the API and the listing), `<phone>@s.whatsapp.net` and `<lid>@lid`
+   * (Baileys, which addresses a lid-migrated contact by its lid and sends to whatever it is given).
+   * Keying each spelling separately left an API send or an inbound message on a twin the chat row
+   * never reads, so the chat showed no preview and chat actions found no history. The chat record
+   * decides: the twin Baileys keyed the chat under wins, then a twin that already holds a preview,
+   * and a chat known under neither falls back to the engine dialect.
+   */
+  private chatKey(jid: string): string {
+    if (this.chats.has(jid)) return jid;
+    const twins = this.chatTwins(jid);
+    return twins.find(k => this.chats.has(k)) ?? twins.find(k => this.lastMessages.has(k)) ?? this.toEngineJid(jid);
+  }
+
+  /** Every spelling of one chat this session can connect: the id, its engine form, and its lid or phone twin. */
+  private chatTwins(jid: string): string[] {
+    const parsed = parseWaId(jid);
+    const twins = [jid, this.toEngineJid(jid)];
+    if (parsed.kind === 'lid') {
+      twins.push(`${parsed.userPart}@lid`);
+      const phone = this.resolvePhone(jid);
+      if (phone) twins.push(`${phone}@s.whatsapp.net`);
+    } else if (parsed.kind === 'user') {
+      for (const [lid, pn] of this.lidToPn.entries()) {
+        if (userPart(pn) === parsed.userPart) twins.push(lid);
+      }
+      for (const lid of this.lidStore?.lidsForPhone(parsed.userPart) ?? []) twins.push(`${lid}@lid`);
+    }
+    return twins;
   }
 
   /**
@@ -474,9 +547,39 @@ export class BaileysSessionStore {
     return [...this.chats.values()].map(c => this.toNeutralChat(c));
   }
 
-  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
-    const m = this.lastMessages.get(chatId) ?? this.lastMessages.get(this.toEngineJid(chatId));
-    return m ? { key: m.key, timestamp: m.timestamp } : null;
+  /**
+   * The id the chat is keyed under, for an app-state write addressed with any spelling of it (the
+   * listing's @c.us id of a lid-keyed chat resolves to the lid). Baileys indexes the patch by this jid
+   * and replays it locally under the same id, so any other spelling names a chat the phone does not
+   * hold and lands the echo on a second record.
+   */
+  chatJid(chatId: string): string {
+    return this.chatKey(chatId);
+  }
+
+  /** The chat's newest message, with `jid`, the id the chat itself is keyed under. */
+  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null {
+    const m = this.newestAcrossTwins(this.lastMessages, chatId);
+    return m ? { key: m.key, timestamp: m.timestamp, jid: this.chatJid(chatId) } : null;
+  }
+
+  /** The newest message the chat received (not one this account sent), or null when none is known. */
+  lastInboundMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null {
+    return this.newestAcrossTwins(this.lastInbound, chatId) ?? null;
+  }
+
+  /**
+   * The newest entry `map` holds for a chat under any of its spellings. A message recorded under the
+   * contact's lid before the lid->phone mapping was learned stays on the lid twin while the chat key
+   * moves to the phone-keyed chat record, so reading the chat key alone would lose it.
+   */
+  private newestAcrossTwins<T extends { timestamp: number }>(map: LruMap<string, T>, chatId: string): T | undefined {
+    let newest: T | undefined;
+    for (const k of [this.chatKey(chatId), ...this.chatTwins(chatId)]) {
+      const v = map.get(k);
+      if (v && (!newest || v.timestamp > newest.timestamp)) newest = v;
+    }
+    return newest;
   }
 
   /**
@@ -605,11 +708,13 @@ export class BaileysSessionStore {
    * `conversationTimestamp` beside it. So it is normalised by magnitude: below 1e12 is seconds (an
    * epoch-ms stamp below 1e12 is a date before 2001-09) and is scaled to ms. The current state survives a
    * reconnect via {@link persistChatState}, because Baileys re-emits only app-state mutations newer than
-   * the persisted version, never an already-applied mute.
+   * the persisted version, never an already-applied mute. A negative value is WhatsApp's "Always"
+   * sentinel (-1, the value WhatsApp Web sends too), a mute with no end.
    */
   private isMuted(muteEndTime: number | { toNumber(): number } | null | undefined): boolean {
     const raw = this.toUnixSeconds(muteEndTime);
     if (!raw) return false;
+    if (raw < 0) return true;
     const endMs = raw < 1e12 ? raw * 1000 : raw;
     return endMs > Date.now();
   }
@@ -617,11 +722,12 @@ export class BaileysSessionStore {
   /**
    * The expiry instant (epoch ms) for {@link ChatSummary.muteExpiration}, or undefined when the chat
    * is not muted. Same normalisation as {@link isMuted}, so the two agree: a value only survives here
-   * when it is still in the future.
+   * when it is still in the future. A mute with no end reads 0, the contract's "muted indefinitely".
    */
   private muteExpirationMs(muteEndTime: number | { toNumber(): number } | null | undefined): number | undefined {
     const raw = this.toUnixSeconds(muteEndTime);
     if (!raw) return undefined;
+    if (raw < 0) return 0;
     const endMs = raw < 1e12 ? raw * 1000 : raw;
     return endMs > Date.now() ? endMs : undefined;
   }
@@ -643,10 +749,14 @@ export class BaileysSessionStore {
     }
   }
 
-  /** Normalise a raw muteEndTime to canonical epoch ms, or null (0/absent = unmuted). See {@link isMuted}. */
+  /**
+   * Normalise a raw muteEndTime to canonical epoch ms, or null (0/absent = unmuted). A mute with no end
+   * keeps the -1 sentinel rather than scaling it. See {@link isMuted}.
+   */
   private normalizeMuteEndTime(v: number | { toNumber(): number } | null | undefined): number | null {
     const n = this.toUnixSeconds(v);
     if (!n) return null;
+    if (n < 0) return -1;
     return n < 1e12 ? n * 1000 : n;
   }
 

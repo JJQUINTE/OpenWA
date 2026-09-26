@@ -59,7 +59,9 @@ flowchart LR
 
 Key adapter facts:
 
-- **Engine is chosen per session** (`wwjs` is the default, `baileys` the browser-free alternative).
+- **Engine is selected once per deployment** by `ENGINE_TYPE` (`whatsapp-web.js` is the default,
+  `baileys` the browser-free alternative); every session on the gateway runs the same engine, and
+  switching engines needs a restart.
   The REST surface is identical for both; availability differences surface only as 501s, which the
   matrix in 29.4 enumerates.
 - **The 501 contract is deliberate.** A capability the engine cannot deliver throws
@@ -142,7 +144,7 @@ reaching READY is not evidence that every patch landed. See docs/12 for the oper
 
 | #    | Patcher                                                    | Library target                       | What it repairs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Stand-down predicate                                                                                                                                                                                                                                                                                                                                                  |
 | ---- | ---------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🔧¹  | `scripts/patch-wwebjs-201832.js` (+ `wwebjs-201832.patch`) | whatsapp-web.js models               | WhatsApp Web 2.3000.x renamed the serialized message-id property `id._serialized` → `id.$1`; 1.34.7 reads the old name in the `Message` constructor and ~40 downstream sites, so message ids, acks, quoted-message resolution and media downloads break. Backports upstream fix #201832 (`Base._normalizeId()`). One known harmless reject on 1.34.7 (a LID-aware `Contact.js` path that does not exist there); any other reject aborts the build.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | no-ops once `_normalizeId` exists upstream. Runtime double-check: `src/engine/adapters/wwebjs-backport-check.ts` detects an unpatched install and logs an error naming the fix as the wwjs session starts (`whatsapp-web-js.adapter.ts:446`). It is diagnostic, **not** preventive — startup continues, so a session reaching READY is not evidence the patch landed. |
+| 🔧¹  | `scripts/patch-wwebjs-201832.js` (+ `wwebjs-201832.patch`) | whatsapp-web.js models               | WhatsApp Web 2.3000.x renamed the serialized message-id property `id._serialized` → `id.$1`; 1.34.7 reads the old name in the `Message` constructor and ~40 downstream sites, so message ids, acks, quoted-message resolution and media downloads break. Backports upstream fix #201832 (`Base._normalizeId()`). One known harmless reject on 1.34.7 (a LID-aware `Contact.js` path that does not exist there); any other reject aborts the build.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | no-ops once `_normalizeId` exists upstream. Runtime double-check: `src/engine/adapters/wwebjs-backport-check.ts` detects an unpatched install and logs an error naming the fix as the wwjs session starts, in `WwebjsLifecycle.initialize()`. It is diagnostic, **not** preventive — startup continues, so a session reaching READY is not evidence the patch landed. |
 | 🔧²  | `scripts/patch-wwebjs-status.js`                           | whatsapp-web.js injected status send | Two independent breakages in current WhatsApp Web builds: (1) the `canCheckStatusRankingPosterGating()` helper is gone and its call threw before any status send — now called when present, `false` (pre-gating meaning) when not; (2) `sendStatusMediaMsgAction` changed signature from positional `(msg, mediaUpdate)` to a single options object — adopted from upstream PR #201816. The two edits of the media repair are all-or-nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | exact-shape match; unknown shape fails the build.                                                                                                                                                                                                                                                                                                                     |
 | 🔧³  | `scripts/patch-wwebjs-newsletter-preview.js`               | whatsapp-web.js `Injected/Utils.js`  | Link-preview generation omitted the destination chat, so WhatsApp Web could not select the newsletter preview transport: `getLinkPreview(link)` → `getLinkPreview(link, chat)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | exact-shape match; unknown shape fails the build.                                                                                                                                                                                                                                                                                                                     |
 | 🔧⁴  | `scripts/patch-wwebjs-ready-sync.js`                       | whatsapp-web.js readiness pipeline   | Two live-observed races: on a warm profile the page can reach `hasSynced=true` before the edge listener attaches (the whole post-auth pipeline silently never runs), and a partial `attachEventListeners` failure was swallowed (message bridge dead while sends still work). Adds an `eventsAttached` completion marker and fires the handler once when the level is already true; double-fire is deduped by the adapter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | exact-shape, one group all-or-nothing; unknown shape fails the build.                                                                                                                                                                                                                                                                                                 |
@@ -812,7 +814,7 @@ OpenWA consumes events by normalizing them into `EngineEventCallbacks`; anything
 | `messaging-history.set`     | ✅                                                  |     | `messaging-history.status`       | ❌                              |
 | `chats.upsert`              | ✅                                                  |     | `newsletter-participants.update` | ❌                              |
 | `chats.update`              | ✅                                                  |     | `newsletter-settings.update`     | ❌                              |
-| `chats.delete`              | ❌                                                  |     | `newsletter.reaction`            | ❌                              |
+| `chats.delete`              | ✅                                                  |     | `newsletter.reaction`            | ❌                              |
 | `contacts.upsert`           | ✅                                                  |     | `newsletter.view`                | ❌                              |
 | `contacts.update`           | ✅                                                  |     | `settings.update`                | ❌                              |
 | `groups.update`             | ✅                                                  |     | `blocklist.set`                  | ❌                              |
@@ -907,11 +909,16 @@ adapter boundary — none silently stubs.
 - **Media sends to a channel JID (wwjs) answer 501.** `sendImageMessage`, `sendVideoMessage`,
   `sendAudioMessage`, `sendDocumentMessage` and `sendStickerMessage` are ✅ on wwjs for chats and
   groups, but a `<id>@newsletter` recipient throws `ChannelMediaNotSupportedError` (a
-  `NotImplementedException` → HTTP 501) at `ensureNotChannelRecipient`
-  (`wwebjs-messaging.ts:425` for the media funnel, `:492` for stickers). whatsapp-web.js calls
-  `msg.avParams()`, removed in a recent WA Web build (upstream wwebjs#201823, unresolved).
-  Text→channel is unaffected, and Baileys has no such restriction, so these five rows answer `501`
-  without a per-row ❌ in 29.4.
+  `NotImplementedException` → HTTP 501) at `ensureNotChannelRecipient` (`wwebjs-messaging.ts`, in
+  `sendMediaMessage` for the media funnel and in `sendStickerMessage` for stickers). whatsapp-web.js
+  calls `msg.avParams()`, removed in a recent WA Web build (upstream wwebjs#201823, unresolved).
+  Unquoted text→channel is unaffected, and Baileys has no such restriction, so these five rows answer
+  `501` without a per-row ❌ in 29.4. A few other sends answer `501` on wwjs by recipient, because
+  whatsapp-web.js drops them without touching the page (`Client.js` `sendMessage` returns `null`): a
+  reply (any send carrying a quoted message), a location or a contact card to a channel,
+  `status@broadcast` or a broadcast list, and a poll or a sticker to `status@broadcast` or a
+  broadcast list. `ensureSendable` (`wwebjs-messaging.ts`) refuses them before the library is
+  called, so nothing is sent. The Baileys adapter refuses none of them.
 - **`sendStickerMessage` — what each engine converts.** Both engines guarantee the payload really is
   WebP, but they reach it differently and they do not accept the same inputs. whatsapp-web.js passes
   `sendMediaAsSticker: true`, and `Util.formatToWebpSticker` converts `image/*` **and** `video/*`
@@ -924,17 +931,25 @@ adapter boundary — none silently stubs.
   `400` on Baileys. ffmpeg is deliberately not wired in on the Baileys side: the binary ships only
   in the Docker image, so depending on it would make the same request succeed or fail depending on
   how the gateway was installed.
-- **`deleteStatus` (baileys).** Marked ✅ (no throw), but the `sendMessage(status@broadcast,
-{delete})` revoke shape is _empirically unverified_ — only posting was live-spiked. May fall back
-  to 501 if WA rejects the shape. On wwjs it calls `revokeStatusMessage(statusId)` (own status
-  only).
+- **`deleteStatus` (baileys).** Baileys sends a status stanza, the revoke included, to exactly its
+  `statusJidList`, so the revoke is addressed to the recipients the adapter remembered when it posted
+  the status. It keeps them in memory for 24 hours, so a status this session did not post in the last
+  24 hours (one posted from the phone or from another node, or before the session's engine was last
+  created: a process restart, a session stop and start, or a reconnect the gateway runs itself, such
+  as after a failed liveness check) is refused with `403` (`EngineRefusedError`) instead of a revoke
+  that reaches nobody while the status stays up. The transient reconnects Baileys runs on its own keep
+  the same engine, and the list with it.
+  The `sendMessage(status@broadcast, {delete})` revoke shape is _empirically unverified_: only posting
+  was live-spiked. On wwjs it calls `revokeStatusMessage(statusId)` (own status only).
 - **`getContactStatus` / `getContactStatuses` (wwjs).** `Status.type` is the `text|image|video`
   union — audio/other story types collapse to `text`.
-- **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** All
-  five need the chat's last known message: `chatModify` carries it for the first three and for the
-  unread mark, and the read receipt is `readMessages([key])`. A chat the session has seen no message
-  in resolves `false` rather than throwing, so `POST chats/read` answers `{"success": false}` for a
-  chat whatsapp-web.js marks read from the page-side chat object without needing any local history.
+- **`archiveChat` / `clearChatMessages` / `deleteChat` / `sendSeen` / `markUnread` (baileys).** The
+  four `chatModify` actions (archive, clear, delete, unread) need the chat's last known message, which
+  the patch carries. `sendSeen` without message ids is `readMessages([key])` for the newest _received_
+  (not `fromMe`) message, since Baileys drops own keys from a receipt. A chat with no such message
+  resolves `false` rather than throwing, so a chat the session has seen no message in, or one holding
+  only this account's own sends, answers `POST chats/read` with `{"success": false}`, where
+  whatsapp-web.js marks it read from the page-side chat object without needing any local history.
 - **`setProfileName` / `setProfilePicture` / `deleteProfilePicture` refusals (baileys).**
   whatsapp-web.js reads a page-side verdict for all three (`setDisplayName` and `setProfilePicture`
   resolve `false`, `deleteProfilePicture` resolves an explicit `false`) and raises a `403`. The
@@ -955,8 +970,8 @@ adapter boundary — none silently stubs.
   (`newsletterMetadata('jid', …)`), including one the account does not follow. whatsapp-web.js 1.34.x
   exposes no per-id lookup, so the adapter scans the subscribed-channel list and returns `null` (a
   `404`) for every channel the account is not subscribed to. The `Channel` payload differs too:
-  whatsapp-web.js never fills `picture` or `createdAt`, both of which Baileys reads off the newsletter
-  metadata.
+  Baileys reads `createdAt` off the newsletter metadata and whatsapp-web.js never fills it. Neither
+  engine fills `picture`: WhatsApp reports the channel picture as a media path, not a URL.
 - **`starMessage` (baileys).** Needs the stored key's `fromMe` — the same id means different
   messages depending on direction.
 - **`addParticipants` result shape.** wwjs returns a per-participant `{code,message}` object or a
@@ -968,6 +983,11 @@ adapter boundary — none silently stubs.
 - **`deleteContact` addressing.** wwjs addresses by phone number
   (`deleteAddressbookContact`), Baileys by JID (`removeContact`) — the adapter converts.
 - **`deleteMessage` (baileys, `forEveryone=false`).** Wired via `chatModify({deleteForMe})`.
+  `forEveryone=true` on a message the account cannot revoke (not its own, and not in a group it
+  administers) falls back to that same delete-for-me, as whatsapp-web.js does. WhatsApp ignores such
+  a revoke while the send still resolves, so sending it would report a deletion that never happened.
+  When the group's member list shows no row the gateway can identify as the account, admin status is
+  unknown and the revoke is still sent.
 
 ## 29.8 Snapshot summary
 
@@ -990,7 +1010,7 @@ adapter sources — re-derive the same way when anything changes:
   3 internal wiring, 1 class plumbing, **35 ❌ not exposed** (27 real capabilities + 8
   session/transport settings that are not WhatsApp capabilities). The backlog is the ❌ rows minus
   those 8 settings; 🔩 plumbing is correctly never exposed.
-- Events: Baileys **34** (16 consumed / 18 dropped), wwjs **31** (16 consumed / 15 dropped).
+- Events: Baileys **34** (17 consumed / 17 dropped), wwjs **31** (16 consumed / 15 dropped).
 - **0** capabilities in 29.5.3: every capability with first-class symbols on both libraries is
   either wired or classified with evidence. Some are Baileys-only despite typed whatsapp-web.js
   symbols: `createGroup`, whose injected evaluate reaches a page internal without `findImpl`;

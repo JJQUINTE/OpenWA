@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { constantTimeEqual } from '../../common/security/constantTimeEqual';
+import { limiterKeyForIp, resolveClientIp, type RequestLike } from '../../common/utils/ip';
+import { SlidingWindowLimiter } from '../events/ws-rate-limit';
 import { StatsService } from '../stats/stats.service';
 import { getWebhookDeliveryFailuresTotal } from '../../common/metrics/webhook-delivery-metrics';
 import {
@@ -34,6 +36,13 @@ export class MetricsService {
 
   private cachedRender: { at: number; text: string } | null = null;
 
+  /**
+   * The route skips the shared throttler so a scrape interval costs no request budget, which left
+   * token guesses unbounded. This window is charged per client before the compare and refunded when
+   * it succeeds, so only failures spend it: 10 a minute, then 429 until the window slides.
+   */
+  private readonly failedScrapeLimiter = new SlidingWindowLimiter(10, 60_000);
+
   constructor(
     private readonly config: ConfigService,
     private readonly statsService: StatsService,
@@ -45,17 +54,25 @@ export class MetricsService {
 
   /**
    * Throws if the caller may not scrape: 404 when metrics are disabled (no token configured),
-   * 401 when a token is configured but the request's bearer is missing or wrong.
+   * 401 when a token is configured but the request's bearer is missing or wrong, 429 once `client`
+   * has spent its failed-attempt window.
    */
-  assertScrapeAuthorized(authorizationHeader: string | undefined): void {
+  assertScrapeAuthorized(authorizationHeader: string | undefined, client?: RequestLike): void {
     const expected = this.token;
     if (!expected) {
       throw new NotFoundException('Metrics endpoint is disabled (set METRICS_TOKEN to enable)');
+    }
+    const subject = client
+      ? limiterKeyForIp(resolveClientIp(client, this.config.get<string[]>('security.trustedProxies') ?? []))
+      : '';
+    if (!this.failedScrapeLimiter.allow(subject)) {
+      throw new HttpException('Too many failed metrics token attempts', HttpStatus.TOO_MANY_REQUESTS);
     }
     const provided = (authorizationHeader ?? '').replace(/^Bearer\s+/i, '').trim();
     if (!provided || !this.safeEqual(provided, expected)) {
       throw new UnauthorizedException('Invalid metrics token');
     }
+    this.failedScrapeLimiter.refund(subject);
   }
 
   private safeEqual(a: string, b: string): boolean {

@@ -64,6 +64,19 @@ describe('configuration — Puppeteer args delimiter', () => {
     expect(configuration().engine.puppeteer.args.slice(0, 2)).toEqual(['--no-sandbox', '--disable-setuid-sandbox']);
   });
 
+  // A comma only separates flags when the next token is a flag: Chromium flag values carry commas
+  // themselves, and splitting inside one turned its tail into a stray positional argument.
+  it('keeps a comma inside a flag value in that flag', () => {
+    process.env.PUPPETEER_ARGS =
+      '--no-sandbox,--disable-features=IsolateOrigins,site-per-process, --window-size=1280,720 --disable-gpu,';
+    expect(configuration().engine.puppeteer.args.slice(0, 4)).toEqual([
+      '--no-sandbox',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--window-size=1280,720',
+      '--disable-gpu',
+    ]);
+  });
+
   it('defaults to the Docker-relevant sandbox flag set when unset', () => {
     delete process.env.PUPPETEER_ARGS;
     expect(configuration().engine.puppeteer.args).toEqual([

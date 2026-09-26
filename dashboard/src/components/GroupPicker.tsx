@@ -14,6 +14,8 @@ interface GroupPickerProps {
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   loading: boolean;
+  /** The groups read failed: say so instead of "no groups found" when there is nothing to list. */
+  loadFailed?: boolean;
   limit: number;
   labelledBy: string;
   disabled?: boolean;
@@ -24,6 +26,7 @@ export function GroupPicker({
   selectedIds,
   onChange,
   loading,
+  loadFailed = false,
   limit,
   labelledBy,
   disabled = false,
@@ -81,6 +84,10 @@ export function GroupPicker({
           <p className="group-picker-empty">
             <Loader2 className="animate-spin" size={16} />
             {t('messageTester.loadingGroups')}
+          </p>
+        ) : noGroups && loadFailed ? (
+          <p className="group-picker-empty" role="alert">
+            {t('dashboard.loadError')}
           </p>
         ) : noGroups ? (
           <p className="group-picker-empty">{t('messageTester.noGroupsFound')}</p>

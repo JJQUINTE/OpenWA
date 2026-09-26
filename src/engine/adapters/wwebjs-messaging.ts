@@ -13,7 +13,7 @@ import {
   Quotable,
 } from '../interfaces/whatsapp-engine.interface';
 import { MessageWithReactions, SerializedWid } from '../types/whatsapp-web-js.types';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotImplementedException } from '@nestjs/common';
 import { MessageNotFoundError } from '../../common/errors/message-not-found.error';
 import { EngineRefusedError } from '../../common/errors/engine-refused.error';
 import { loadRemoteMediaBuffer } from '../../common/media/load-remote-media';
@@ -129,7 +129,7 @@ export function isQuoteUnresolvedError(err: unknown): boolean {
 export async function toMessageMedia(
   media: MediaInput,
   sessionProxyUrl: string | undefined,
-  opts?: { trustDeclaredType?: boolean },
+  opts?: { trustDeclaredType?: boolean; fallbackType?: string },
 ): Promise<MessageMedia> {
   if (typeof media.data === 'string' && isHttpUrl(media.data)) {
     const fetched = await loadRemoteMedia(media.data, sessionProxyUrl);
@@ -154,10 +154,19 @@ export async function toMessageMedia(
     const normalizeMediaType = (value?: string): string => (value ?? '').split(';', 1)[0].trim().toLowerCase();
     const fetchedType = normalizeMediaType(fetched.mimetype);
     const declaredType = normalizeMediaType(media.mimetype);
-    const fetchedTypeIsGeneric = !fetchedType || fetchedType === 'application/octet-stream';
+    const fetchedTypeIsGeneric =
+      !fetchedType || fetchedType === 'application/octet-stream' || fetchedType === 'binary/octet-stream';
     const declaredTypeIsConvertible = declaredType.startsWith('image/') || declaredType.startsWith('video/');
     if (opts?.trustDeclaredType === false && fetchedTypeIsGeneric && declaredTypeIsConvertible) {
       fetched.mimetype = declaredType;
+    }
+    // An image, video or audio route already says what kind of media it carries. When neither the
+    // caller nor the host says more (the placeholder over an empty or generic response, the S3
+    // default for an object uploaded without a type), WA Web would classify the bytes from that
+    // generic type and deliver a photo as a document, so the route's default type stands in.
+    const declaredTypeIsUnknown = !declaredType || declaredType === 'application/octet-stream';
+    if (opts?.fallbackType && fetchedTypeIsGeneric && declaredTypeIsUnknown) {
+      fetched.mimetype = opts.fallbackType;
     }
     if (media.filename) {
       fetched.filename = media.filename;
@@ -192,6 +201,23 @@ export function toMessageResult(msg: Message | undefined): MessageResult {
   }
   const id = msg.id as unknown as SerializedWid | undefined;
   return { id: id?._serialized ?? id?.$1 ?? '', timestamp: msg.timestamp };
+}
+
+/**
+ * whatsapp-web.js drops some sends to a channel or a status/broadcast list before it touches the page
+ * (`Client.js` sendMessage returns null): a reply, a location or a contact card to any of them, and a
+ * poll or a sticker to a status or broadcast list. `toMessageResult` can only read that null as a send
+ * that may have gone out, a 500 the send breaker counts, so refuse it up front with a 501. The
+ * recipient tests are the library's own, so the two cannot drift. A plain 501, not
+ * EngineNotSupportedError: the send methods are supported, and that class marks a whole method
+ * unavailable in the capability matrix.
+ */
+function ensureSendable(chatId: string, shape: 'reply' | 'location' | 'contact card' | 'poll' | 'sticker'): void {
+  const channel = /@\w*newsletter\b/.test(chatId);
+  if (/@\w*broadcast\b/.test(chatId) || (channel && shape !== 'poll' && shape !== 'sticker')) {
+    const to = channel ? 'a channel' : 'a status or broadcast list';
+    throw new NotImplementedException(`whatsapp-web.js cannot send a ${shape} to ${to}; nothing was sent.`);
+  }
 }
 
 /**
@@ -302,6 +328,7 @@ export class WwebjsMessaging {
     send: (to: string) => Promise<T>,
     quotedMessageId?: string,
   ): Promise<T> {
+    if (quotedMessageId) ensureSendable(chatId, 'reply');
     const to = await this.resolveSendId(chatId);
     try {
       return await send(to);
@@ -390,15 +417,15 @@ export class WwebjsMessaging {
   }
 
   async sendImageMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media);
+    return this.sendMediaMessage(chatId, media, undefined, 'image/jpeg');
   }
 
   async sendVideoMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media);
+    return this.sendMediaMessage(chatId, media, undefined, 'video/mp4');
   }
 
   async sendAudioMessage(chatId: string, media: MediaInput): Promise<MessageResult> {
-    return this.sendMediaMessage(chatId, media, media.ptt ? { sendAudioAsVoice: true } : undefined);
+    return this.sendMediaMessage(chatId, media, media.ptt ? { sendAudioAsVoice: true } : undefined, 'audio/mpeg');
   }
 
   /**
@@ -423,12 +450,13 @@ export class WwebjsMessaging {
     chatId: string,
     media: MediaInput,
     extraOptions?: { sendAudioAsVoice?: boolean; sendMediaAsDocument?: boolean },
+    fallbackType?: string,
   ): Promise<MessageResult> {
     this.host.ensureReady();
     this.host.ensureNotChannelRecipient(chatId);
 
     // Build the media once (a remote URL is fetched here); sendResolved may retry the send itself.
-    const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url);
+    const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url, { fallbackType });
     // A nameless document reaches WA Web as `new File([blob], undefined)` and is labelled literally
     // "undefined". Only documents render a filename, so default just this path — as Baileys does.
     if (extraOptions?.sendMediaAsDocument && !messageMedia.filename) {
@@ -453,6 +481,7 @@ export class WwebjsMessaging {
 
   async sendLocationMessage(chatId: string, location: LocationInput): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'location');
     // Import Location class dynamically from whatsapp-web.js
     const module = await import('whatsapp-web.js');
     const Location = module.Location || module.default?.Location;
@@ -471,6 +500,7 @@ export class WwebjsMessaging {
 
   async sendContactMessage(chatId: string, contact: ContactCard): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'contact card');
     // Shared builder sanitizes name/number (strips CR/LF, digits-only waid) so a crafted contact
     // can't inject extra vCard fields — the previous inline build interpolated raw values.
     const vcard = buildVCard(contact);
@@ -493,6 +523,7 @@ export class WwebjsMessaging {
     // hits the same channel crash: for a channel wwjs drops the sticker form and runs processMediaData
     // with sendToChannel, which still ends at msg.avParams() (Utils.js:518). Guard it too (#673).
     this.host.ensureNotChannelRecipient(chatId);
+    ensureSendable(chatId, 'sticker');
     // Keep the fetched content-type for a remote URL: here the mimetype selects the conversion, and
     // whatsapp-web.js returns the media unconverted once it reads as webp (Util.formatImageToWebpSticker).
     const messageMedia = await toMessageMedia(media, this.host.config.proxy?.url, { trustDeclaredType: false });
@@ -514,6 +545,7 @@ export class WwebjsMessaging {
 
   async sendPollMessage(chatId: string, poll: PollInput): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'poll');
     // Import Poll dynamically like Location; the .default fallback covers builds where the
     // classes land on module.default (a plain `module.Poll` would be undefined there and
     // `new Poll` fails with "not a constructor").
@@ -540,6 +572,7 @@ export class WwebjsMessaging {
 
   async replyToMessage(chatId: string, quotedMsgId: string, text: string, mentions?: string[]): Promise<MessageResult> {
     this.host.ensureReady();
+    ensureSendable(chatId, 'reply');
     try {
       // Find the message to quote
       const chat = await this.client().getChatById(chatId);
@@ -690,6 +723,9 @@ export class WwebjsMessaging {
     signal?: AbortSignal,
   ): Promise<IncomingMessage[]> {
     this.host.ensureReady();
+    // Chat.fetchMessages only caps the page when `limit > 0` (Chat.js), so a 0/negative/NaN limit fails
+    // OPEN and returns every loaded message. Substitute the default, as getChannelMessages does.
+    const safeLimit = Number.isFinite(limit) && limit >= 1 ? Math.trunc(limit) : 50;
     const messages = await this.withPage('getChatHistory', async () => {
       const chat = await this.client().getChatById(chatId);
       // Unknown chat: getChatById resolves undefined rather than throwing. A chat this account cannot
@@ -698,7 +734,7 @@ export class WwebjsMessaging {
       if (!chat) {
         return [];
       }
-      return chat.fetchMessages({ limit });
+      return chat.fetchMessages({ limit: safeLimit });
     });
     const results: IncomingMessage[] = [];
     // Aggregate base64 budget across the whole pass: the per-message cap bounds ONE blob, but without

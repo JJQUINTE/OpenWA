@@ -245,7 +245,7 @@ describe('MessageProjector', () => {
 
   describe('persistHistoryMessages', () => {
     it('skips rows that cannot become a valid message row, and queries nothing when none survive', async () => {
-      await projector.persistHistoryMessages('s1', [
+      await projector.persistHistoryMessages('s1', engine, [
         historyMessage({ id: '' }), // no id -> cannot de-dup
         historyMessage({ isStatusBroadcast: true }), // a story, not a chat
         historyMessage({ chatId: '' }), // chatId is NOT NULL
@@ -261,7 +261,7 @@ describe('MessageProjector', () => {
       // filter rather than dragging the insert builder into a test about which rows qualify.
       messageRepository.find.mockResolvedValue([{ waMessageId: 'GOOD' }]);
 
-      await projector.persistHistoryMessages('s1', [
+      await projector.persistHistoryMessages('s1', engine, [
         historyMessage({ id: 'GOOD' }),
         historyMessage({ id: 'BAD', from: '' }),
       ]);
@@ -273,7 +273,10 @@ describe('MessageProjector', () => {
     it('de-duplicates repeated ids within one batch', async () => {
       messageRepository.find.mockResolvedValue([{ waMessageId: 'DUP' }]);
 
-      await projector.persistHistoryMessages('s1', [historyMessage({ id: 'DUP' }), historyMessage({ id: 'DUP' })]);
+      await projector.persistHistoryMessages('s1', engine, [
+        historyMessage({ id: 'DUP' }),
+        historyMessage({ id: 'DUP' }),
+      ]);
 
       expect(dedupIds(messageRepository.find)).toEqual(['DUP']);
     });
@@ -486,6 +489,132 @@ describe('MessageProjector (inbound projection)', () => {
       await new Promise(resolve => setImmediate(resolve));
 
       expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.received', rewritten);
+    });
+
+    it('exposes the message its hook chain carries, rewrites included, until the row is written', async () => {
+      // A handler that replies to the message runs before the insert, so the reply's quote preview
+      // has no row to read. The chain's copy stands in, and must be the redacted one when an earlier
+      // handler rewrote it: the quote is stored next to the rewritten row.
+      const engine = makeEngine();
+      engines.set(SESSION_ID, engine);
+      const seen: unknown[] = [];
+      hookManager.execute.mockImplementationOnce(
+        (_event: string, data: IncomingMessage, options: { accept: (d: unknown) => boolean }) => {
+          seen.push(projector.inFlightInbound(SESSION_ID, 'wamid.1'));
+          const rewritten = { ...data, body: '[redacted]' };
+          options.accept(rewritten);
+          seen.push(projector.inFlightInbound(SESSION_ID, 'wamid.1'));
+          return Promise.resolve({ continue: true, data: rewritten });
+        },
+      );
+      let finishInsert: () => void = () => undefined;
+      messageRepository.insert.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishInsert = () => resolve({ identifiers: [{ id: 1 }], generatedMaps: [{}] });
+          }),
+      );
+
+      projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(seen).toEqual([
+        expect.objectContaining({ chatId: '15550001111@c.us', body: 'hello' }),
+        expect.objectContaining({ chatId: '15550001111@c.us', body: '[redacted]' }),
+      ]);
+      // Still in flight while the insert is pending: a reply the handler did not await lands here.
+      expect(projector.inFlightInbound(SESSION_ID, 'wamid.1')).toMatchObject({ body: '[redacted]' });
+
+      finishInsert();
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(projector.inFlightInbound(SESSION_ID, 'wamid.1')).toBeUndefined();
+      expect(projector.inFlightInbound('other-session', 'wamid.1')).toBeUndefined();
+    });
+
+    // The row is inserted only after the message:received chain, so a revoke or edit landing while
+    // it runs updates nothing, and the insert would then write the content the sender took back.
+    describe('a revoke or edit that lands while message:received is still running', () => {
+      let releaseHook: () => void;
+      const received = async (engine: IWhatsAppEngine): Promise<void> => {
+        const gate = new Promise<void>(resolve => (releaseHook = resolve));
+        hookManager.execute.mockImplementationOnce(async (_event: string, data: unknown) => {
+          await gate;
+          return { continue: true, data };
+        });
+        projector.handleInboundMessage(SESSION_ID, engine, makeIncoming());
+        await new Promise(resolve => setImmediate(resolve));
+      };
+      const drain = async (): Promise<void> => {
+        for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+      };
+      /** The update calls issued after the row was inserted, as [where, change]. */
+      const updatesAfterInsert = (): unknown[] => {
+        const insertedAt = messageRepository.insert.mock.invocationCallOrder[0];
+        return messageRepository.update.mock.calls.filter(
+          (_call, i) => messageRepository.update.mock.invocationCallOrder[i] > insertedAt,
+        );
+      };
+      const where = { sessionId: SESSION_ID, waMessageId: 'wamid.1' };
+
+      beforeEach(() => {
+        Object.assign(eventsGateway, { emitMessageEdited: jest.fn() });
+      });
+
+      it('empties the row once it is written', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.handleMessageRevoked(SESSION_ID, engine, { id: 'wamid.1', body: '', type: 'revoked' } as never);
+        expect(messageRepository.update).toHaveBeenCalledWith(where, { body: '', type: 'revoked' });
+        expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.revoked', expect.anything());
+        releaseHook();
+        await drain();
+
+        expect(messageRepository.insert).toHaveBeenCalledTimes(1);
+        expect(updatesAfterInsert()).toEqual([[where, { body: '', type: 'revoked' }]]);
+      });
+
+      it('writes the latest edit onto the row once it is written', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'first fix' } as never);
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'second fix' } as never);
+        await drain();
+        releaseHook();
+        await drain();
+
+        expect(updatesAfterInsert()).toEqual([[where, { body: 'second fix' }]]);
+        expect(webhookService.dispatch).toHaveBeenCalledWith(SESSION_ID, 'message.edited', expect.anything());
+      });
+
+      it('lets a revoke win over an edit', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+
+        projector.handleMessageRevoked(SESSION_ID, engine, { id: 'wamid.1' } as never);
+        projector.applyMessageEditQueued(SESSION_ID, { messageId: 'wamid.1', body: 'late fix' } as never);
+        await drain();
+        releaseHook();
+        await drain();
+
+        expect(updatesAfterInsert()).toEqual([[where, { body: '', type: 'revoked' }]]);
+      });
+
+      it('changes nothing after the insert when no revoke or edit arrived', async () => {
+        const engine = makeEngine();
+        engines.set(SESSION_ID, engine);
+        await received(engine);
+        releaseHook();
+        await drain();
+
+        expect(messageRepository.insert).toHaveBeenCalledTimes(1);
+        expect(updatesAfterInsert()).toEqual([]);
+      });
     });
 
     it('routes a status broadcast to the status store instead of the message table', async () => {

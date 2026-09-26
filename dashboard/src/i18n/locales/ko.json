@@ -12,7 +12,7 @@
     "cancel": "취소",
     "delete": "삭제",
     "create": "생성",
-    "save": "Save",
+    "save": "저장",
     "close": "닫기",
     "showApiKey": "API 키 표시",
     "hideApiKey": "API 키 숨기기",
@@ -32,7 +32,9 @@
     "never": "없음",
     "justNow": "방금 전",
     "minAgo": "{{count}}분 전",
+    "minAgo_other": "{{count}}분 전",
     "hoursAgo": "{{count}}시간 전",
+    "hoursAgo_other": "{{count}}시간 전",
     "optional": "선택 사항",
     "language": "언어",
     "back": "뒤로",
@@ -99,6 +101,25 @@
       "delete": "메시지 삭제"
     },
     "replyingTo": "{{name}}님에게 답장",
+    "messageType": {
+      "text": "텍스트",
+      "image": "이미지",
+      "video": "동영상",
+      "audio": "오디오",
+      "voice": "음성 메시지",
+      "document": "문서",
+      "sticker": "스티커",
+      "location": "위치",
+      "contact": "연락처",
+      "poll": "투표",
+      "call": "통화",
+      "revoked": "삭제된 메시지",
+      "order": "주문",
+      "product": "상품",
+      "masked": "가려진 메시지",
+      "unknown": "메시지",
+      "unknownType": "알 수 없는 유형"
+    },
     "you": "나",
     "youPrefix": "나: ",
     "yesterday": "어제",
@@ -121,7 +142,9 @@
       "group": "그룹",
       "channel": "채널",
       "status": "상태",
-      "broadcast": "브로드캐스트"
+      "broadcast": "브로드캐스트",
+      "individual": "개인",
+      "unknown": "알 수 없음"
     },
     "tab": {
       "chats": "채팅",
@@ -165,7 +188,8 @@
       "react": "메시지에 반응하지 못했습니다",
       "delete": "메시지를 삭제하지 못했습니다",
       "clickButton": "버튼 클릭에 실패했습니다",
-      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)"
+      "fileTooLarge": "파일이 너무 큽니다 (최대 18 MB)",
+      "searchHitSessionNotReady": "이 메시지의 세션이 연결되어 있지 않습니다"
     },
     "loadMessagesError": "메시지를 불러올 수 없습니다. 서버 로그를 확인하세요.",
     "messageStatus": {
@@ -276,7 +300,8 @@
       "successTitle": "세션 생성 완료",
       "successDesc": "\"{{name}}\" 세션이 생성되었습니다",
       "errorTitle": "생성 실패",
-      "errorDefault": "세션을 생성하지 못했습니다"
+      "errorDefault": "세션을 생성하지 못했습니다",
+      "tooShort": "이름은 3자 이상이어야 합니다."
     },
     "delete": {
       "title": "삭제 확인",
@@ -313,25 +338,25 @@
       "autoRejectCallsHint": "수신 통화가 울리는 즉시 거절됩니다. call.received 웹훅은 그전에 그대로 전송됩니다. 다음 통화부터 적용되며 재시작이 필요하지 않습니다. Baileys 엔진에서만 동작합니다. whatsapp-web.js에서는 통화를 거절할 수 없습니다."
     },
     "proxy": {
-      "title": "Proxy Configuration",
-      "status": "Current",
-      "enabled": "Use proxy",
-      "url": "Proxy URL",
+      "title": "프록시 설정",
+      "status": "현재",
+      "enabled": "프록시 사용",
+      "url": "프록시 URL",
       "urlPlaceholder": "http://user:pass@proxy.example.com:8080",
-      "urlKeepPlaceholder": "Enter new URL to replace {{host}} (credentials not shown)",
+      "urlKeepPlaceholder": "{{host}}을(를) 대체할 새 URL을 입력하세요 (자격 증명은 표시되지 않음)",
       "configured": "{{host}} ({{type}})",
-      "noProxy": "No proxy configured",
-      "hasCredentials": "Credentials are stored but not shown. Enter a full URL to change them.",
-      "hint": "Changes apply on the next session start, not to a running connection. The proxy must be real and reachable — an unreachable value blocks QR delivery and start returns 504.",
-      "createHint": "Only needed when your network cannot reach WhatsApp directly. Must be a real, reachable proxy.",
-      "invalidUrl": "Enter a valid http, https, socks4, or socks5 proxy URL.",
-      "saveSuccessTitle": "Proxy Saved",
-      "saveSuccess": "Proxy settings saved. They apply on the next session start.",
-      "saveError": "Failed to save proxy settings"
+      "noProxy": "구성된 프록시 없음",
+      "hasCredentials": "자격 증명이 저장되어 있지만 표시되지 않습니다. 변경하려면 전체 URL을 입력하세요.",
+      "hint": "변경 사항은 실행 중인 연결이 아니라 다음 세션 시작 시 적용됩니다. 프록시는 실제로 존재하고 연결 가능해야 합니다. 연결할 수 없는 값이면 QR이 전달되지 않고 시작 요청이 504를 반환합니다.",
+      "createHint": "네트워크에서 WhatsApp에 직접 연결할 수 없을 때만 필요합니다. 실제로 연결 가능한 프록시여야 합니다.",
+      "invalidUrl": "유효한 http, https, socks4 또는 socks5 프록시 URL을 입력하세요.",
+      "saveSuccessTitle": "프록시 저장 완료",
+      "saveSuccess": "프록시 설정이 저장되었습니다. 다음 세션 시작 시 적용됩니다.",
+      "saveError": "프록시 설정을 저장하지 못했습니다"
     },
     "actions": {
       "view": "보기",
-      "proxy": "Proxy",
+      "proxy": "프록시",
       "start": "시작",
       "stop": "중지",
       "reconnect": "재연결",
@@ -443,7 +468,7 @@
         "body": "메시지 본문",
         "type": "메시지 유형",
         "isGroup": "그룹 채팅 여부",
-        "kind": "Chat kind",
+        "kind": "채팅 유형",
         "fromMe": "내가 보낸 메시지",
         "hasMedia": "미디어 포함",
         "mentions": "멘션"
@@ -598,7 +623,10 @@
     },
     "empty": {
       "title": "생성된 API 키가 없습니다",
-      "description": "요청을 인증하려면 API 키를 생성하세요"
+      "description": "요청을 인증하려면 API 키를 생성하세요",
+      "loadErrorTitle": "API 키를 불러올 수 없습니다",
+      "forbiddenTitle": "API 키에 접근할 수 없습니다",
+      "forbiddenDesc": "API 키를 관리하려면 특정 세션으로 제한되지 않은 관리자 키가 필요합니다."
     },
     "confirm": {
       "deleteTitle": "API 키 삭제",
@@ -651,7 +679,12 @@
       "filteredTitle": "이 페이지에 일치하는 항목이 없습니다",
       "filteredDescription": "검색은 현재 페이지만 필터링합니다. 지우거나 페이지를 이동하거나 서버 측 심각도 필터를 사용하세요.",
       "filteredServerDescription": "이 필터에 일치하는 로그가 없습니다. 검색 범위를 넓히려면 심각도 필터를 조정하세요."
-    }
+    },
+    "exportFailed": "감사 로그를 내보내지 못했습니다",
+    "exportTruncated": "내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 이전 항목을 내보내려면 심각도 필터를 좁히세요.",
+    "exportThrottled": "게이트웨이가 감사 로그 조회를 제한하고 있어 내보내기에는 최신 항목 {{rows}}개만 포함됩니다. 1분 후 다시 내보내세요.",
+    "exportNoMatches": "검색과 일치하는 감사 로그 항목이 없어 아무것도 내보내지 않았습니다.",
+    "exportNoMatchesTruncated": "검사한 최신 항목 {{rows}}개 중 검색과 일치하는 항목이 없어 아무것도 내보내지 않았습니다. 이전 항목은 검색하지 않았습니다."
   },
   "messageTester": {
     "title": "메시지 테스터",
@@ -867,8 +900,8 @@
       "export": "데이터 내보내기",
       "import": "데이터 가져오기",
       "exportFailed": "데이터를 내보내지 못했습니다",
-      "exportPartialTitle": "Backup is missing some media",
-      "exportPartial": "{{count}} attachment payload(s) exceeded the export media budget and were saved as placeholders. The messages restore; their media does not.",
+      "exportPartialTitle": "백업에 일부 미디어가 누락되었습니다",
+      "exportPartial": "첨부 파일 {{count}}개가 내보내기 미디어 한도를 초과하여 플레이스홀더로 저장되었습니다. 메시지는 복원되지만 해당 미디어는 복원되지 않습니다.",
       "importFailed": "데이터를 가져오지 못했습니다",
       "importOk": "데이터를 가져왔습니다",
       "importConfirm": "가져오기를 실행하면 현재 데이터가 백업본({{rows}}행)으로 완전히 대체됩니다. 되돌릴 수 없습니다. 계속할까요?",
@@ -894,7 +927,8 @@
     "toasts": {
       "saveFailed": "저장 실패"
     },
-    "statusLoadError": "현재 인프라 상태를 불러올 수 없습니다. 새로고침 후 다시 시도하세요."
+    "statusLoadError": "현재 인프라 상태를 불러올 수 없습니다. 새로고침 후 다시 시도하세요.",
+    "configLoadError": "저장된 설정을 불러올 수 없어 여기에서 편집할 수 없습니다. 새로고침 후 다시 시도하세요."
   },
   "plugins": {
     "title": "플러그인",
@@ -902,6 +936,19 @@
     "refresh": "새로고침",
     "builtIn": "내장",
     "noDescription": "설명 없음",
+    "statuses": {
+      "installed": "설치됨",
+      "enabled": "사용함",
+      "disabled": "사용 안 함",
+      "error": "오류"
+    },
+    "types": {
+      "engine": "엔진",
+      "storage": "스토리지",
+      "queue": "큐",
+      "auth": "인증",
+      "extension": "확장"
+    },
     "enable": "사용",
     "disable": "사용 안 함",
     "healthCheck": "상태 확인",
@@ -976,7 +1023,6 @@
       "title": "인스턴스",
       "description": "이 연동을 위해 계정별 인스턴스를 프로비저닝하세요. 각 인스턴스는 고유한 서명 시크릿과 인그레스 URL을 가집니다.",
       "create": "인스턴스 생성",
-      "save": "Save",
       "empty": "아직 인스턴스가 없습니다. 인스턴스를 만들면 인그레스 URL과 시크릿을 받을 수 있습니다.",
       "loadError": "인스턴스를 불러오지 못했습니다.",
       "allSessions": "모든 세션",
@@ -1000,7 +1046,8 @@
         "title": "인스턴스 생성 완료",
         "hint": "지금 시크릿을 복사해 두세요 — 한 번만 표시됩니다.",
         "secret": "서명 시크릿",
-        "ingressUrls": "인그레스 URL"
+        "ingressUrls": "인그레스 URL",
+        "verifyToken": "인증 토큰"
       },
       "regenerate": {
         "title": "시크릿 재생성",

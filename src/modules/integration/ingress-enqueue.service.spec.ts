@@ -27,29 +27,72 @@ describe('IngressEnqueueService', () => {
     queue = { add: jest.fn().mockResolvedValue(undefined) };
   });
 
-  it('adds a job to the ingress queue with the given jobId when queueing is enabled and a queue is present', async () => {
+  it('adds a job to the ingress queue keyed by the namespaced jobId when queueing is enabled and a queue is present', async () => {
     (config.get as jest.Mock).mockReturnValue(true);
     const svc = new IngressEnqueueService(loader as PluginLoaderService, config as ConfigService, queue as never);
 
     expect(await svc.enqueue(data, 'd1')).toEqual({ outcome: 'queued' });
 
     expect(queue.add).toHaveBeenCalledWith('ingress', data, {
-      jobId: 'd1',
+      jobId: sanitizeIngressJobId('d1', 'chatwoot\u0000acct1'),
       attempts: 3,
       backoff: { type: 'exponential', delay: 5000 },
     });
     expect(loader.dispatchWebhookForInstance).not.toHaveBeenCalled();
   });
 
+  describe('existingJobState', () => {
+    it('reads the state of the job under the same namespaced jobId enqueue() would use', async () => {
+      (config.get as jest.Mock).mockReturnValue(true);
+      const getJobState = jest.fn().mockResolvedValue('failed');
+      const svc = new IngressEnqueueService(
+        loader as PluginLoaderService,
+        config as ConfigService,
+        {
+          ...queue,
+          getJobState,
+        } as never,
+      );
+
+      expect(await svc.existingJobState(data, 'd1')).toBe('failed');
+      expect(getJobState).toHaveBeenCalledWith(sanitizeIngressJobId('d1', 'chatwoot\u0000acct1'));
+    });
+
+    it('reports no job when the queue holds none, is off, or cannot answer', async () => {
+      (config.get as jest.Mock).mockReturnValue(true);
+      const getJobState = jest.fn().mockResolvedValueOnce('unknown').mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const svc = new IngressEnqueueService(
+        loader as PluginLoaderService,
+        config as ConfigService,
+        {
+          ...queue,
+          getJobState,
+        } as never,
+      );
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+
+      (config.get as jest.Mock).mockReturnValue(false);
+      expect(await svc.existingJobState(data, 'd1')).toBeUndefined();
+      expect(getJobState).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // BullMQ refuses integer jobIds and colon ids that do not split into exactly 3 parts; before the
   // sanitizer those throws read as "Redis unreachable" in the catch-all and silently degraded the
   // delivery to inline dispatch (no retry, no backoff, blocked redrive loop).
   describe('sanitizeIngressJobId', () => {
-    it('passes safe ids through unchanged (BullMQ accepts them as-is)', () => {
-      expect(sanitizeIngressJobId('d1')).toBe('d1');
-      expect(sanitizeIngressJobId('evt_abc-123')).toBe('evt_abc-123');
-      expect(sanitizeIngressJobId('a:b:c')).toBe('a:b:c'); // exactly 3 parts is BullMQ-legal
-      expect(sanitizeIngressJobId('0abc')).toBe('0abc'); // zero-PREFIXED is fine; only '0:'-leading is not
+    it('hashes ids BullMQ would accept too, so the namespace always applies', () => {
+      for (const id of ['d1', 'evt_abc-123', 'a:b:c', '0abc']) {
+        expect(sanitizeIngressJobId(id)).toMatch(/^ing-[0-9a-f]{40}$/);
+      }
+    });
+
+    it('namespaces a non-numeric id two instances share (one Svix message fanned out to both)', () => {
+      const a = sanitizeIngressJobId('msg_2LJx9', 'chatwoot\u0000acct-1');
+      const b = sanitizeIngressJobId('msg_2LJx9', 'chatwoot\u0000acct-2');
+      expect(a).not.toBe(b);
+      expect(sanitizeIngressJobId('msg_2LJx9', 'chatwoot\u0000acct-1')).toBe(a);
     });
 
     it('hashes the shapes BullMQ refuses, deterministically', () => {
@@ -173,7 +216,7 @@ describe('IngressEnqueueService', () => {
 
     expect(await svc.enqueue(data, 'd1')).toEqual({ outcome: 'dispatched' });
     expect(queue.add).toHaveBeenCalledWith('ingress', data, {
-      jobId: 'd1',
+      jobId: sanitizeIngressJobId('d1', 'chatwoot\u0000acct1'),
       attempts: 3,
       backoff: { type: 'exponential', delay: 5000 },
     });

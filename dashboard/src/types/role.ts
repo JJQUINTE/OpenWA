@@ -8,4 +8,7 @@ export interface RoleContextType {
   isOperator: boolean;
   isViewer: boolean;
   canWrite: boolean;
+  /** Engine the gateway runs, as POST /auth/validate reported it; null until it has answered. */
+  engineType: string | null;
+  setEngineType: (engineType: string | null) => void;
 }

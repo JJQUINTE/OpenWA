@@ -23,9 +23,10 @@ import {
   CONNECTION_REPLACED_REASON,
   LOGOUT_CLEANUP_FAILED_REASON,
 } from '../terminal-engine-failure';
-import type { BaileysEvents } from './baileys-events';
+import { differentWaIds, type BaileysEvents } from './baileys-events';
 import type { BaileysHistory } from './baileys-history';
 import type { BaileysSessionStore } from './baileys-session-store';
+import { userPart } from '../identity/wa-id';
 
 /** Linked-device identity shown in WhatsApp (Settings → Linked Devices). The display name is
  * operator-brandable via BAILEYS_BROWSER_NAME; it only applies to pairings made after the change. */
@@ -134,10 +135,13 @@ export interface BaileysLifecycleHost {
   readonly liveCalls: Map<string, { callFrom: string; expiresAt: number }>;
   /** `628999:12@s.whatsapp.net` / `628999@s.whatsapp.net` -> `628999`. */
   extractPhone(id: string | undefined): string | null;
+  toNeutralJid(jid: string): string;
   /** Persist contact records pushed by the socket (contacts.upsert/update, messaging-history.set). */
   upsertContacts: BaileysSessionStore['upsertContacts'];
   /** Persist chat records pushed by the socket (chats.upsert/update, messaging-history.set). */
   upsertChats: BaileysSessionStore['upsertChats'];
+  /** Drop chats the socket reports deleted (chats.delete). */
+  removeChats: BaileysSessionStore['removeChats'];
   /** Learn lid<->phone mappings pushed by the socket (messaging-history.set, lid-mapping.update). */
   addLidMappings: BaileysSessionStore['addLidMappings'];
   handleMessagesUpsert: BaileysEvents['handleMessagesUpsert'];
@@ -234,6 +238,14 @@ export class BaileysLifecycle {
     if (this.intentionalClose) {
       return;
     }
+    const chatStateStore = this.host.config.chatStateStore;
+    if (chatStateStore) {
+      await chatStateStore.refreshSession(this.host.config.sessionId).catch(() => undefined);
+      // A teardown during that read must still keep this adapter from opening a socket.
+      if (this.intentionalClose) {
+        return;
+      }
+    }
 
     // An install that skipped a Baileys patch fails later with errors that name no cause: an
     // app-state resync that never terminates, a newsletter create that cannot parse its reply.
@@ -309,7 +321,7 @@ export class BaileysLifecycle {
     }
 
     // An internal reconnect (transient drop) overwrites this.sock WITHOUT going through
-    // disconnect/logout/destroy, so the previous socket's WebSocket and the 16 ev listeners we
+    // disconnect/logout/destroy, so the previous socket's WebSocket and the 17 ev listeners we
     // register below would leak on every reconnect. Tear the prior socket down first. Detach OUR
     // connection.update listener BEFORE end(): Baileys' own end() synchronously emits a synthetic
     // connection.update {connection:'close'}, which — if still wired — would re-enter
@@ -325,6 +337,7 @@ export class BaileysLifecycle {
         previous.ev.removeAllListeners('contacts.update');
         previous.ev.removeAllListeners('chats.upsert');
         previous.ev.removeAllListeners('chats.update');
+        previous.ev.removeAllListeners('chats.delete');
         previous.ev.removeAllListeners('messaging-history.set');
         previous.ev.removeAllListeners('lid-mapping.update');
         previous.ev.removeAllListeners('group-participants.update');
@@ -373,13 +386,33 @@ export class BaileysLifecycle {
       // implementation, WhatsApp's message-retry protocol — triggered whenever a recipient's client
       // fails to decrypt on the first attempt — has nothing to resend, so the recipient is stuck on
       // "waiting for this message" indefinitely instead of the retry resolving it within seconds.
-      // Backed by the same messageStore used for reply/forward/react/delete-by-id.
+      // Backed by the same messageStore used for reply/forward/react/delete-by-id. Baileys relays the
+      // answer to key.remoteJid, and a retry receipt names its message by id alone, so a stored message
+      // from a provably different chat is refused: a forged receipt must not pull it into this one.
       getMessage: async key => {
         if (!key.id) {
           return undefined;
         }
         const stored = await this.host.config.messageStore?.getMessage(this.host.config.dbSessionId, key.id);
-        return stored?.message ?? undefined;
+        if (!stored) {
+          return undefined;
+        }
+        const neutral = (jid: string): string => this.host.toNeutralJid(jid);
+        const chat = [stored.key.remoteJid, stored.key.remoteJidAlt];
+        if (differentWaIds(chat, [key.remoteJid], neutral)) {
+          return undefined;
+        }
+        // A lid the session cannot map cannot be compared with a phone-number chat, so ask Baileys'
+        // own mapping (a local store read) for its phone number too. When neither knows it, the retry
+        // is still answered: refusing then would leave a real recipient waiting for good.
+        const lid = key.remoteJid;
+        if (lid?.endsWith('@lid') && neutral(lid).endsWith('@lid')) {
+          const pn = await this.sock?.signalRepository?.lidMapping?.getPNForLID(lid).catch(() => null);
+          if (pn && differentWaIds(chat, [pn], neutral)) {
+            return undefined;
+          }
+        }
+        return stored.message ?? undefined;
       },
       logger: baileysLogger,
     });
@@ -442,6 +475,14 @@ export class BaileysLifecycle {
         count: updates?.length ?? 0,
       });
       this.host.upsertChats(updates);
+    });
+    sock.ev.on('chats.delete', ids => {
+      this.host.logger.debug('Baileys chats event', {
+        action: 'baileys_chats',
+        event: 'delete',
+        count: ids?.length ?? 0,
+      });
+      this.host.removeChats(ids);
     });
     sock.ev.on('group-participants.update', event => this.host.handleGroupParticipantsUpdate(event));
     sock.ev.on('groups.update', updates => this.host.handleGroupsUpdate(updates));
@@ -560,6 +601,14 @@ export class BaileysLifecycle {
       this.qrCode = null;
       this.phoneNumber = this.host.extractPhone(this.sock?.user?.id);
       this.pushName = this.sock?.user?.name ?? null;
+      // The account's own lid<->phone pair. Baileys stores it in its own mapping without emitting
+      // lid-mapping.update, and an account whose only traffic is API sends never sees it on a message
+      // key either, so a lid-addressed group's `<lid>@lid` row for the account stayed unresolved and
+      // every self-admin check read it as somebody else.
+      const me = this.sock?.user;
+      if (me?.id && me.lid) {
+        this.host.addLidMappings([{ lid: `${userPart(me.lid)}@lid`, pn: `${userPart(me.id)}@s.whatsapp.net` }]);
+      }
       // I4: reset the reconnect counter on a successful connection.
       this.reconnectAttempts = 0;
       this.setStatus(EngineStatus.READY);
@@ -838,6 +887,7 @@ export class BaileysLifecycle {
       // DISCONNECTED before the awaited cleanup so no send/path observes a half-torn-down socket.
       this.localSocketShutdown(sourceSock);
       await this.host.config.messageStore?.clearSession(this.host.config.dbSessionId).catch(() => undefined);
+      await this.host.config.chatStateStore?.clearSession(this.host.config.sessionId).catch(() => undefined);
       // Wipe the multi-file auth dir so a fresh link starts clean — stale creds would otherwise be
       // reloaded on the next connect() and block re-linking (Baileys retries them, no QR emitted).
       // A removal failure propagates: completion requires cleanup, so the operation is incomplete.
@@ -905,6 +955,11 @@ export class BaileysLifecycle {
 
     const cleanup = (async (): Promise<void> => {
       try {
+        // The unlinked account's messages and chat states go with it, as they do on an API logout: the
+        // next account to link this session must not reply to, forward or retry them, nor inherit its
+        // muted, archived and pinned chats.
+        await this.host.config.messageStore?.clearSession(this.host.config.dbSessionId).catch(() => undefined);
+        await this.host.config.chatStateStore?.clearSession(this.host.config.sessionId).catch(() => undefined);
         await this.clearAuthState();
       } catch (err) {
         // A failed credential removal is terminal: report FAILED + onError instead of looking like a

@@ -26,6 +26,12 @@ export function parsePhoneFromJid(jid: string): string | null {
   return user;
 }
 
+// ITU-T E.164 country codes are prefix-free, so the leading digits alone fix the code's length:
+// 1 (NANP) and 7 (Russia, Kazakhstan) are the only 1-digit codes; 20, 27, 30-34, 36, 39, 40, 41,
+// 43-49, 51-58, 60-66, 81, 82, 84, 86, 90-95 and 98 are the 2-digit ones; every other prefix starts
+// a 3-digit code.
+const TWO_DIGIT_COUNTRY_CODE = /^(?:2[07]|3[0-469]|4[013-9]|5[1-8]|6[0-6]|8[1246]|9[0-58])/;
+
 /**
  * Format a digits-only phone number (already prefixed with its country code) into a
  * human-friendly international form. Uses 3-3-4 grouping after the country code; short codes
@@ -40,12 +46,10 @@ export function formatPhoneForDisplay(phoneOrJid: string): string | null {
   if (!digits) return null;
   if (digits.length <= 4) return `+${digits}`;
 
-  // Country-code heuristic: WhatsApp country codes are 1–3 digits. Prefer 2 when possible (covers
-  // the common 62/44/49/91/86… range), fall back to 1 (USA/Canada + a few others) for 11-digit
-  // numbers starting with 1, and 3 only when the prefix matches a known 3-digit plan.
-  let ccLen = 2;
-  if (digits.length === 11 && digits[0] === '1') ccLen = 1;
-  else if (digits.length <= 6) ccLen = 1;
+  // Country code by prefix (see TWO_DIGIT_COUNTRY_CODE); a short code keeps a 1-digit split.
+  let ccLen = 3;
+  if (digits.length <= 6 || digits[0] === '1' || digits[0] === '7') ccLen = 1;
+  else if (TWO_DIGIT_COUNTRY_CODE.test(digits)) ccLen = 2;
 
   const cc = digits.slice(0, ccLen);
   const rest = digits.slice(ccLen);

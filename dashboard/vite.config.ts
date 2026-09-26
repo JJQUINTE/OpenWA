@@ -27,7 +27,9 @@ export default defineConfig({
   server: {
     port: 2886,
     proxy: {
-      '/api': {
+      // With the trailing slash: Vite matches a plain key as a string prefix, so '/api' also
+      // captured the SPA route /api-keys and a reload of that page went to the backend.
+      '/api/': {
         target: 'http://localhost:2785',
         changeOrigin: true,
         secure: false,

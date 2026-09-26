@@ -169,6 +169,31 @@ describe('generateSafeLinkPreview', () => {
         title: '&lt;script&gt;',
       });
     });
+
+    it('reads content written before property, and a ">" inside a value', async () => {
+      respondWith('<meta content="Shop > Shoes" property="og:title"/><meta name="description" content="Size 42 > 41">');
+
+      await expect(generateSafeLinkPreview('https://example.com')).resolves.toMatchObject({
+        title: 'Shop > Shoes',
+        description: 'Size 42 > 41',
+      });
+    });
+  });
+
+  // The scan runs on the event loop, where the fetch timeout cannot interrupt it. A page of unclosed
+  // tags made the old attribute patterns backtrack from every tag to the end of the body.
+  describe('a hostile page cannot stall the process', () => {
+    it.each([
+      ['unclosed <meta tags', '<meta '],
+      ['unclosed <title tags', '<title'],
+    ])('scans a body of %s in linear time', async (_label, unit) => {
+      respondWith(unit.repeat((128 * 1024) / unit.length));
+
+      const started = Date.now();
+      await expect(generateSafeLinkPreview('https://example.com')).resolves.toBeUndefined();
+
+      expect(Date.now() - started).toBeLessThan(500);
+    });
   });
 
   describe('when there is nothing worth showing', () => {

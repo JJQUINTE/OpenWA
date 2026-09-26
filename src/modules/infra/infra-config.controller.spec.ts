@@ -260,6 +260,76 @@ describe('InfraConfigController.saveConfig rejects values that would inject extr
   });
 });
 
+describe('InfraConfigController.saveConfig writes values the next boot reads back unchanged', () => {
+  const newController = () => new InfraConfigController({} as never, {} as never, {} as never);
+
+  function savedPassword(password: string): { line: string | undefined; parsed: string | undefined } {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({ database: { type: 'postgres', builtIn: false, host: 'db', password } } as never);
+    const content = ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+    return {
+      line: content.split('\n').find(l => l.startsWith('DATABASE_PASSWORD=')),
+      parsed: jest.requireActual<typeof import('dotenv')>('dotenv').parse(content).DATABASE_PASSWORD,
+    };
+  }
+
+  // dotenv reads an unquoted `#` as a comment and trims outer quotes and whitespace, so a raw
+  // `KEY=value` line would boot with a different secret than the one saved.
+  it.each(['S3cr#tPass', ' spaced ', "'quoted'", '"dq"', 'p\\nq', `it's#`, `a'b"c#`])(
+    'round-trips %j through dotenv',
+    password => {
+      expect(savedPassword(password).parsed).toBe(password);
+    },
+  );
+
+  it('keeps a value that needs no quoting bare', () => {
+    expect(savedPassword('Str0ng!Passw0rd').line).toBe('DATABASE_PASSWORD=Str0ng!Passw0rd');
+  });
+
+  // Each line reads back on its own, but the next boot parses the whole file, where a quote one value
+  // leaves open can run on to a later line that holds the same quote character.
+  function savedFile(databasePassword: string, redisPassword: string): string {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    newController().saveConfig({
+      database: { type: 'postgres', builtIn: false, host: 'db', password: databasePassword },
+      redis: { enabled: true, builtIn: false, host: 'cache', password: redisPassword },
+    } as never);
+    return ((fs.writeFileSync as jest.Mock).mock.calls as Array<[string, string]>)[0][1];
+  }
+
+  it('keeps every key intact when a value opens a quote that a later line closes', () => {
+    const dotenv = jest.requireActual<typeof import('dotenv')>('dotenv');
+    const content = savedFile('"x7Kp', 'ab"#cd');
+    const whole = dotenv.parse(content);
+    const lineByLine = Object.assign({}, ...content.split('\n').map(line => dotenv.parse(line))) as Record<
+      string,
+      string
+    >;
+
+    expect(whole).toEqual(lineByLine);
+    expect(whole).toMatchObject({ DATABASE_TYPE: 'postgres', DATABASE_PASSWORD: '"x7Kp', REDIS_PASSWORD: 'ab"#cd' });
+  });
+
+  it('refuses a quoted value that a later line would extend, writing nothing', () => {
+    // `#x\` needs quoting, and its `\'` escapes the closing quote once a later line holds a `'#`.
+    expect(() => savedFile('#x\\', `a'#b`)).toThrow(/DATABASE_PASSWORD/);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a value no dotenv form can carry, writing nothing', () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.writeFileSync as jest.Mock).mockClear();
+    expect(() =>
+      newController().saveConfig({
+        database: { type: 'postgres', builtIn: false, host: 'db', password: `a'b"c\`d#` },
+      } as never),
+    ).toThrow(BadRequestException);
+    expect(fs.writeFileSync as jest.Mock).not.toHaveBeenCalled();
+  });
+});
+
 describe('InfraConfigController.saveConfig engine selection (persist ENGINE_TYPE — Infrastructure tile)', () => {
   const engineFactory = {
     getAvailableEngines: () => [{ id: 'whatsapp-web.js' }, { id: 'baileys' }],
@@ -753,7 +823,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       BUILTIN_MINIO_ENV,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -770,7 +840,7 @@ describe('InfraConfigController.saveConfig built-in/external mode flips and the 
         },
       },
       undefined,
-      /S3_ACCESS_KEY, S3_SECRET_KEY/,
+      /S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/,
     );
   });
 
@@ -1156,6 +1226,62 @@ describe('InfraConfigController.requestRestart constrains teardown to managed pr
       errors: ['Failed to stop redis'],
     });
     expect(JSON.stringify(result.removal)).not.toContain('removed');
+  });
+
+  describe('a service the environment pins the app to', () => {
+    const KEYS = ['DATABASE_HOST', 'REDIS_HOST', 'S3_ENDPOINT'];
+    let savedEnv: Array<[string, string | undefined]>;
+
+    beforeEach(() => {
+      savedEnv = KEYS.map(k => [k, process.env[k]]);
+    });
+    afterEach(() => {
+      for (const [k, v] of savedEnv) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      // Back to the no-snapshot default the rest of the file assumes.
+      recordPinnedEnvKeys(process.env);
+    });
+
+    it('is never stopped, since the restarted app would still point at it', async () => {
+      // The documented manual built-in Postgres setup: DATABASE_HOST=postgres in .env or on the host.
+      process.env.DATABASE_HOST = 'postgres';
+      process.env.REDIS_HOST = 'redis';
+      process.env.S3_ENDPOINT = 'http://minio:9000';
+      recordPinnedEnvKeys(process.env);
+      const stopManagedService = jest.fn().mockResolvedValue(true);
+      const controller = buildController({
+        isDockerAvailable: () => true,
+        stopManagedService,
+        orchestrateProfiles: jest.fn().mockResolvedValue({}),
+      });
+
+      const result = await controller.requestRestart({ profilesToRemove: ['postgres', 'redis', 'minio'] });
+
+      expect(stopManagedService).not.toHaveBeenCalled();
+      expect(result.profilesToRemove).toEqual([]);
+    });
+
+    it('is still stopped when the pin names a different host', async () => {
+      process.env.DATABASE_HOST = 'db.example.internal';
+      delete process.env.REDIS_HOST;
+      delete process.env.S3_ENDPOINT;
+      recordPinnedEnvKeys(process.env);
+      const stopManagedService = jest.fn().mockResolvedValue(true);
+      const controller = buildController({
+        isDockerAvailable: () => true,
+        stopManagedService,
+        orchestrateProfiles: jest.fn().mockResolvedValue({}),
+      });
+
+      await controller.requestRestart({ profilesToRemove: ['postgres', 'redis'] });
+
+      expect(stopManagedService.mock.calls.map(call => String((call as unknown[])[0])).sort()).toEqual([
+        'postgres',
+        'redis',
+      ]);
+    });
   });
 
   it('starts only allowlisted profiles, never an unknown entry (symmetry with teardown)', async () => {

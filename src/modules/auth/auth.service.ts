@@ -29,8 +29,11 @@ import { EventsGateway, type ApiKeyEvictionReason } from '../events/events.gatew
  * a developer explicitly opts in with `ALLOW_DEV_API_KEY=true`, never by default.
  */
 export function resolveSeedApiKey(): string {
-  if (process.env.API_MASTER_KEY) {
-    return process.env.API_MASTER_KEY;
+  // Trimmed because validateApiKey hashes the trimmed key: a seed hashed with a trailing newline could
+  // never authenticate. A whitespace-only value counts as unset.
+  const masterKey = process.env.API_MASTER_KEY?.trim();
+  if (masterKey) {
+    return masterKey;
   }
   if (process.env.ALLOW_DEV_API_KEY === 'true') {
     return 'dev-admin-key';

@@ -262,8 +262,7 @@ describe.each(['docker-compose.yml', 'docker-compose.dev.yml'])('every blank for
 /**
  * The rule above binds only the keys compose forwards blank. `.env.example`'s own header promises
  * something wider — "every setting the dashboard owns is commented out" — and the dashboard owns
- * keys that have no blank forward at all (DATABASE_SSL, POSTGRES_BUILTIN, REDIS_BUILTIN,
- * MINIO_BUILTIN, DATABASE_SSL_REJECT_UNAUTHORIZED, DATABASE_POOL_SIZE, REDIS_PASSWORD). Those slipped
+ * keys that have no blank forward at all (POSTGRES_BUILTIN, REDIS_BUILTIN, MINIO_BUILTIN). Those slipped
  * past the compose-derived check and shipped uncommented, pinning the matching Infrastructure control
  * for anyone who ran the documented `cp .env.example .env`.
  *

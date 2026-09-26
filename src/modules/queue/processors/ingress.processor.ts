@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,6 +9,9 @@ import { PluginLoaderService } from '../../../core/plugins/plugin-loader.service
 import { HookManager } from '../../../core/hooks';
 import { createLogger } from '../../../common/services/logger.service';
 import { KeyedAsyncLock, orderingKeyFor } from '../../integration/ordering-lock';
+
+// BullMQ's failedReason for a job that stalled more than maxStalledCount (see WebhookProcessor).
+const STALL_EXHAUSTION_MESSAGE = 'job stalled more than allowable limit';
 
 export interface IngressJobData {
   pluginId: string;
@@ -67,34 +70,72 @@ export class IngressProcessor extends WorkerHost {
         action: 'ingress_dispatch_failed',
       });
 
-      if (isFinalAttempt) {
-        await this.hooks.execute(
-          'ingress:error',
-          { ...d, error: errorMessage },
-          { sessionId: d.sessionId, source: 'IngressProcessor' },
-        );
-        await this.failures.save({
-          direction: 'inbound',
-          pluginId: d.pluginId,
-          instanceId: d.instanceId,
-          sessionId: d.sessionId ?? null,
-          deliveryId: d.deliveryId,
-          attempts: job.attemptsMade + 1,
-          lastError: errorMessage,
-          // Persist the FULL ingress payload (route + headers/rawBody) so P1 redrive is
-          // self-contained and never has to re-read ingress_events.
-          payload: {
-            route: d.route,
-            method: d.method,
-            providerConversationId: d.providerConversationId,
-            ingress: d.payload,
-          },
-          redriven: false,
-        });
-      }
+      if (isFinalAttempt) await this.deadLetter(d, job.attemptsMade + 1, errorMessage);
 
       // Re-throw to trigger BullMQ's exponential backoff / retry.
       throw err;
     }
+  }
+
+  /**
+   * A job failed by stall exhaustion never enters process(): the worker fails it internally and only
+   * emits 'failed'. The ingress_events row already retired its payload when the enqueue returned
+   * 'queued', so without this the failed BullMQ job (pruned by removeOnFail) is the only copy and no
+   * DLQ row exists to redrive. Any other failure was already recorded by process() on the final
+   * attempt, so only the stall sentinel is handled here. `job` is undefined once removeOnFail pruned it.
+   */
+  @OnWorkerEvent('failed')
+  async onWorkerFailed(job: Job<IngressJobData> | undefined, error: Error): Promise<void> {
+    if (!job || error.message !== STALL_EXHAUSTION_MESSAGE) return;
+    const d = job.data;
+    try {
+      this.logger.error('Ingress job failed after stalling beyond the recovery limit', error.message, {
+        pluginId: d.pluginId,
+        instanceId: d.instanceId,
+        route: d.route,
+        deliveryId: d.deliveryId,
+        attemptsMade: job.attemptsMade,
+        action: 'ingress_stall_exhausted',
+      });
+      await this.deadLetter(d, job.attemptsMade, error.message);
+    } catch (err) {
+      // An event listener's rejection would surface as an unhandled rejection; log it instead.
+      this.logger.error(
+        'Could not dead-letter a stall-exhausted ingress job',
+        err instanceof Error ? err.message : String(err),
+        {
+          pluginId: d.pluginId,
+          instanceId: d.instanceId,
+          deliveryId: d.deliveryId,
+          action: 'ingress_stall_dlq_failed',
+        },
+      );
+    }
+  }
+
+  private async deadLetter(d: IngressJobData, attempts: number, errorMessage: string): Promise<void> {
+    await this.hooks.execute(
+      'ingress:error',
+      { ...d, error: errorMessage },
+      { sessionId: d.sessionId, source: 'IngressProcessor' },
+    );
+    await this.failures.save({
+      direction: 'inbound',
+      pluginId: d.pluginId,
+      instanceId: d.instanceId,
+      sessionId: d.sessionId ?? null,
+      deliveryId: d.deliveryId,
+      attempts,
+      lastError: errorMessage,
+      // Persist the FULL ingress payload (route + headers/rawBody) so P1 redrive is
+      // self-contained and never has to re-read ingress_events.
+      payload: {
+        route: d.route,
+        method: d.method,
+        providerConversationId: d.providerConversationId,
+        ingress: d.payload,
+      },
+      redriven: false,
+    });
   }
 }

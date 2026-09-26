@@ -609,16 +609,64 @@ describe('BulkMessageService.processBatch', () => {
     );
   });
 
+  it('persists the mimetype the engine was given when a base64 item declares none', async () => {
+    const batch = makeBatch(1);
+    batch.messages = [{ chatId: 'c0@c.us', type: 'image', content: { image: { base64: 'AAAA' } } }];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ mimetype: 'image/jpeg', data: 'AAAA' }),
+    );
+    expect(messageService.saveOutgoingMessage).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ metadata: { media: { mimetype: 'image/jpeg', data: 'AAAA', filename: undefined } } }),
+    );
+  });
+
+  it('lets a URL item with no declared mimetype take the fetched type, as a single send does', async () => {
+    const batch = makeBatch(2);
+    batch.messages = [
+      { chatId: 'c0@c.us', type: 'image', content: { image: { url: 'https://x/y.png' } } },
+      { chatId: 'c1@c.us', type: 'audio', content: { audio: { url: 'https://x/v.ogg' } } },
+    ];
+    repo.findOne.mockResolvedValue(batch);
+
+    await runProcessBatch();
+
+    // The placeholder both engines read as "unknown", so the fetched Content-Type wins.
+    expect(engine.sendImageMessage).toHaveBeenCalledWith(
+      'c0@c.us',
+      expect.objectContaining({ mimetype: 'application/octet-stream', data: 'https://x/y.png' }),
+    );
+    expect(engine.sendAudioMessage).toHaveBeenCalledWith(
+      'c1@c.us',
+      expect.objectContaining({ mimetype: 'application/octet-stream', data: 'https://x/v.ogg' }),
+    );
+  });
+
   it('runs the message:sending gate for each bulk message (bulk no longer bypasses moderation)', async () => {
     repo.findOne.mockResolvedValue(makeBatch(1));
 
     await runProcessBatch();
 
+    // The recipient is in `input`, as on a single send, so a recipient-based plugin can decide.
     expect(hookManager.execute).toHaveBeenCalledWith(
       'message:sending',
-      expect.objectContaining({ type: 'text', sessionId: 's1' }),
+      expect.objectContaining({ type: 'text', sessionId: 's1', input: { text: 'hi', chatId: 'c0@c.us' } }),
       expect.objectContaining({ source: 'BulkMessageService' }),
     );
+    expect(engine.sendTextMessage).toHaveBeenCalledWith('c0@c.us', 'hi');
+  });
+
+  it('keeps sending an item to its own recipient when the gate rewrites input.chatId', async () => {
+    repo.findOne.mockResolvedValue(makeBatch(1));
+    hookManager.execute.mockResolvedValueOnce({ continue: true, data: { input: { text: 'hi', chatId: 'x@c.us' } } });
+
+    await runProcessBatch();
+
     expect(engine.sendTextMessage).toHaveBeenCalledWith('c0@c.us', 'hi');
   });
 
@@ -639,7 +687,7 @@ describe('BulkMessageService.processBatch', () => {
 
     expect(hookManager.execute).toHaveBeenCalledWith(
       'message:failed',
-      expect.objectContaining({ type: 'text', error: 'boom' }),
+      expect.objectContaining({ type: 'text', error: 'boom', input: { text: 'hi', chatId: 'c0@c.us' } }),
       expect.objectContaining({ source: 'BulkMessageService' }),
     );
   });

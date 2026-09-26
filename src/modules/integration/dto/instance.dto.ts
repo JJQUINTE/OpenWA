@@ -1,4 +1,14 @@
-import { IsBoolean, IsNotEmpty, IsObject, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IngressUrl } from '../ingress-url';
 import { ToStrictBoolean } from '../../../common/utils/strict-boolean';
@@ -65,16 +75,24 @@ export class UpdateInstanceDto {
     example: true,
   })
   @ToStrictBoolean()
-  @IsOptional()
+  // Not @IsOptional: that also skips null, which then reaches the NOT NULL column as a 500.
+  @ValidateIf((o: UpdateInstanceDto) => o.enabled !== undefined)
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ description: 'Session id the instance is scoped to. Omit for all sessions.' })
+  // @IsOptional skips null as well as undefined, so null reaches the service, which stores it as the
+  // same null an unscoped create does.
+  @ApiPropertyOptional({
+    description: 'Session id to bind the instance to, or null for all sessions. Omit to leave the scope unchanged.',
+    nullable: true,
+    // `string | null` reduces to `Object` under emitDecoratorMetadata; declare the real type.
+    type: String,
+  })
   @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'sessionScope must not be empty (omit it for all sessions)' })
+  @IsNotEmpty({ message: 'sessionScope must not be empty (send null for all sessions)' })
   @MaxLength(256)
-  sessionScope?: string;
+  sessionScope?: string | null;
 
   @ApiPropertyOptional({ description: 'Per-instance config slice passed to the adapter.' })
   @IsOptional()

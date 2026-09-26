@@ -243,7 +243,9 @@ export function useInfraConfigForm(
   const setRedisConnected = (connected: boolean) => setRedisConfig(prev => ({ ...prev, connected }));
 
   const buildSavePayload = (): SaveConfigPayload => ({
-    database: { ...dbConfig },
+    // A bundled container never receives a typed password (the field is hidden once built-in is on,
+    // but a value typed before the toggle survives in state). '' means "unchanged" on the backend.
+    database: dbConfig.builtIn ? { ...dbConfig, password: '' } : { ...dbConfig },
     // `connected` is runtime-only status, not persisted configuration. Keep it out of the
     // whitelisted backend DTO so a valid dashboard save cannot be rejected as an unknown field.
     redis: {
@@ -251,7 +253,7 @@ export function useInfraConfigForm(
       builtIn: redisConfig.builtIn,
       host: redisConfig.host,
       port: redisConfig.port,
-      password: redisConfig.password,
+      password: redisConfig.builtIn ? '' : redisConfig.password,
     },
     queue: { enabled: queueEnabled },
     storage: { ...storageConfig },

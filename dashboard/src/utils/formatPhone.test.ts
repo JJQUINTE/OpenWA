@@ -57,3 +57,11 @@ test('formatPhoneForDisplay passes short codes through unchanged with a + prefix
 test('formatPhoneForDisplay accepts a raw JID as input (delegates to parsePhoneFromJid)', () => {
   assert.equal(formatPhoneForDisplay('628123456789@c.us'), '+62 812 345 6789');
 });
+
+test('formatPhoneForDisplay picks the country code by its ITU prefix: 3 digits, and 1 for +7', () => {
+  assert.equal(formatPhoneForDisplay('971501234567'), '+971 501 23 4567');
+  assert.equal(formatPhoneForDisplay('2348012345678'), '+234 801 234 5678');
+  assert.equal(formatPhoneForDisplay('8801712345678'), '+880 171 234 5678');
+  assert.equal(formatPhoneForDisplay('79161234567'), '+7 916 123 4567');
+  assert.equal(formatPhoneForDisplay('447911123456'), '+44 791 112 3456');
+});

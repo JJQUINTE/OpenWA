@@ -181,6 +181,8 @@ export class EngineFactory implements OnModuleInit {
       { engine: 'whatsapp-web.js', dir: this.wwjsAuthDir(sessionId) },
       { engine: 'baileys', dir: this.baileysAuthDir(sessionId) },
     ];
+    // The caller withholds a name that is another session's id: the dirs it points at are then that
+    // session's live id-keyed credentials, and only the caller can see the table.
     if (legacyName !== undefined && isSafeSessionName(legacyName)) {
       const legacyDirs = [
         { engine: 'whatsapp-web.js', dir: this.wwjsAuthDir(legacyName) },

@@ -121,6 +121,7 @@ describe('PluginStorageService sandboxed per-plugin storage containment', () => 
     fs.writeFileSync(manifestPath, JSON.stringify({ id: pluginId }));
     fs.writeFileSync(packagePath, JSON.stringify({ name: pluginId }));
 
+    expect(await storage.list()).toEqual([]); // a listed key must be one get()/delete() will act on
     expect(await storage.get('manifest')).toBeNull();
     await storage.set('manifest', { pluginState: true });
     await storage.delete('manifest');

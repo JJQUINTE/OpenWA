@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import Docker from 'dockerode';
+import { isEnvPinned, isOsProvidedEnv } from '../../config/env-precedence';
+import { readGeneratedEnv } from '../infra/generated-env';
 
 /**
  * The only Docker profiles OpenWA manages (and may start/stop). Used to bound teardown so a
@@ -244,6 +246,13 @@ export class DockerService implements OnModuleInit {
     ports?: { container: number; host: number }[];
     securityOpt: string[];
   } | null {
+    // A container outlives the process that creates it, and after a dashboard save the restart that
+    // creates it runs in the OLD process, whose env still holds the values the save just replaced.
+    // Resolve what the next boot reads instead: a host or project .env value pins, the saved file
+    // supplies the rest. With no boot snapshot (unit tests) process.env is the only source there is.
+    let saved: Record<string, string> | undefined;
+    const nextBoot = (key: string): string | undefined =>
+      isEnvPinned(key) || isOsProvidedEnv(key) ? process.env[key] : (saved ??= readGeneratedEnv())[key];
     const specs: Record<string, ReturnType<typeof this.getContainerSpec>> = {
       redis: {
         image: 'redis:7-alpine',
@@ -295,8 +304,8 @@ export class DockerService implements OnModuleInit {
         env: [
           // Prefer the canonical names the app/dashboard use; fall back to the legacy ones, then the
           // built-in default, so the bundled MinIO and the app share credentials.
-          `MINIO_ROOT_USER=${process.env.S3_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY || 'minioadmin'}`,
-          `MINIO_ROOT_PASSWORD=${process.env.S3_SECRET_ACCESS_KEY || process.env.S3_SECRET_KEY || 'minioadmin'}`,
+          `MINIO_ROOT_USER=${nextBoot('S3_ACCESS_KEY_ID') || nextBoot('S3_ACCESS_KEY') || 'minioadmin'}`,
+          `MINIO_ROOT_PASSWORD=${nextBoot('S3_SECRET_ACCESS_KEY') || nextBoot('S3_SECRET_KEY') || 'minioadmin'}`,
         ],
         volumes: [{ name: 'openwa_minio-data', path: '/data' }],
         ports: [

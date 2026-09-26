@@ -7,6 +7,7 @@ import { AuditService } from '../../modules/audit/audit.service';
 import { AuditAction } from '../../modules/audit/entities/audit-log.entity';
 import { KeyRateLimiter, readIpRateLimitConfig } from '../../modules/mcp/mcp-rate-limit';
 import { limiterKeyForIp, resolveClientIp } from '../utils/ip';
+import { bearerToken } from './bearer-token';
 import { setRequestActor } from '../services/request-context';
 
 /**
@@ -141,11 +142,8 @@ export class BullBoardAuthMiddleware implements NestMiddleware {
     const header = req.headers['x-api-key'];
     if (typeof header === 'string' && header) return header;
 
-    const authHeader = req.headers['authorization'];
-    if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
-
     // No ?apiKey query fallback — an admin key in the URL leaks into logs/history.
-    return undefined;
+    return bearerToken(req.headers['authorization']);
   }
 
   private getClientIp(req: Request): string {

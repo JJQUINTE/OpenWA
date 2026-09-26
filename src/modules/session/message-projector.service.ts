@@ -86,6 +86,15 @@ export class MessageProjector {
     this.logger.error(`Unexpected failure applying message mutation: ${key}`, String(err));
   });
 
+  // Inbound messages whose `message:received` chain is running, by `${sessionId}:${waMessageId}`. The
+  // row is written only after the chain, so a handler that quotes the message reads it from here, and
+  // a revoke or edit landing meanwhile finds no row to update: it is recorded here and applied once
+  // the row is written (see applyChangesMadeInFlight).
+  private readonly inboundInFlight = new Map<
+    string,
+    { message: InboundMessageData; revoked?: boolean; editedBody?: string }
+  >();
+
   // Reaction/edit applies, extracted to a plain collaborator. It shares this instance's
   // messageMutations queue, so the public enqueue path and the queued applies serialize on one chain.
   private readonly mutationProjector: MessageMutationProjector;
@@ -138,18 +147,42 @@ export class MessageProjector {
     void this.sessionRepository.update(id, { lastActiveAt: new Date() }).catch(() => undefined);
     // Convert IncomingMessage to plain object for dispatch
     const messageData = { ...message };
+    // Tracks the chain's current copy, so a quote taken mid-chain carries an earlier handler's rewrite.
+    const inFlightKey = `${id}:${message.id}`;
+    // A re-fire of the same id keeps a change recorded against the chain it replaces.
+    const { revoked, editedBody } = this.inboundInFlight.get(inFlightKey) ?? {};
+    const inFlight = { message: messageData, revoked, editedBody };
+    this.inboundInFlight.set(inFlightKey, inFlight);
 
     // Execute hook for message received - plugins can modify or stop processing
     void this.hookManager
       .execute('message:received', messageData, {
         sessionId: id,
         source: 'Engine',
-        accept: isMessagePayload,
+        accept: data => {
+          if (!isMessagePayload(data)) return false;
+          inFlight.message = data;
+          return true;
+        },
       })
       .then(({ data }) =>
         this.projectInboundMessage(id, engine, this.messageOrEngineCopy(id, 'message:received', data, message)),
       )
-      .catch(err => this.logger.error(`onMessage handler failed for ${id}`, String(err)));
+      .catch(err => this.logger.error(`onMessage handler failed for ${id}`, String(err)))
+      .finally(() => {
+        // A re-fire of the same id may have replaced the entry; leave that one to its own chain.
+        if (this.inboundInFlight.get(inFlightKey) === inFlight) this.inboundInFlight.delete(inFlightKey);
+      });
+  }
+
+  /**
+   * The inbound message a `message:received` chain is carrying, as the chain last rewrote it, from the
+   * moment the chain starts until the message's row is written; undefined otherwise. The row does not
+   * exist while the chain runs, so a handler that replies to the message finds nothing to quote in the
+   * table.
+   */
+  inFlightInbound(sessionId: string, waMessageId: string): Pick<IncomingMessage, 'chatId' | 'body'> | undefined {
+    return waMessageId ? this.inboundInFlight.get(`${sessionId}:${waMessageId}`)?.message : undefined;
   }
 
   /**
@@ -323,6 +356,7 @@ export class MessageProjector {
       const result = await this.messageRepository.insert(dbMessage as unknown as QueryDeepPartialEntity<Message>);
       Object.assign(dbMessage, result.identifiers[0] ?? {}, result.generatedMaps?.[0] ?? {});
       persisted = true;
+      this.applyChangesMadeInFlight(id, incoming.id);
     } catch (err) {
       if (isUniqueViolation(err)) {
         isNewMessage = false;
@@ -334,6 +368,25 @@ export class MessageProjector {
       return null; // duplicate re-fire — the original already persisted and dispatched
     }
     return { dbMessage, persisted };
+  }
+
+  /**
+   * Write a revoke or edit that arrived while the message's `message:received` chain ran onto the row
+   * that chain just inserted: its own UPDATE matched no row then. Queued on the message's mutation
+   * chain, so it lands after any edit already queued, and a revoke wins over an edit. A change arriving
+   * after the insert finds the row itself.
+   */
+  private applyChangesMadeInFlight(id: string, waMessageId: string): void {
+    const pending = waMessageId ? this.inboundInFlight.get(`${id}:${waMessageId}`) : undefined;
+    if (!pending?.revoked && pending?.editedBody === undefined) return;
+    this.enqueueMessageMutation(id, waMessageId, async () => {
+      const change = pending.revoked ? { body: '', type: 'revoked' } : { body: pending.editedBody };
+      try {
+        await this.messageRepository.update({ sessionId: id, waMessageId }, change);
+      } catch (err) {
+        this.logger.error(`Failed to apply a revoke or edit to message ${waMessageId}`, String(err));
+      }
+    });
   }
 
   /** Fan an accepted inbound message out: `message:persisted` plugin hook, webhook, websocket emit. */
@@ -593,6 +646,8 @@ export class MessageProjector {
     // `message.id` is the revocation notification, which never matches a stored row.
     // `revokedId` falls back to `id` (Baileys, where the two are the same).
     const revokedWaMessageId = message.revokedId ?? message.id;
+    const inFlight = this.inboundInFlight.get(`${id}:${revokedWaMessageId}`);
+    if (inFlight) inFlight.revoked = true;
     void this.messageRepository
       .update({ sessionId: id, waMessageId: revokedWaMessageId }, { body: '', type: 'revoked' })
       .catch(err => {
@@ -607,8 +662,10 @@ export class MessageProjector {
   }
 
   /** History backfill persist, extracted to message-history-projector.ts (stateless function). */
-  persistHistoryMessages(id: string, messages: IncomingMessage[]): Promise<void> {
-    return persistHistoryMessages(this.messageRepository, this.configService, id, messages, this.logger);
+  persistHistoryMessages(id: string, engine: IWhatsAppEngine, messages: IncomingMessage[]): Promise<void> {
+    return persistHistoryMessages(this.messageRepository, this.configService, id, messages, this.logger, () =>
+      this.engines.isLive(id, engine),
+    );
   }
 
   /** Reaction apply, queued on the per-message mutation chain — see MessageMutationProjector. */
@@ -618,6 +675,8 @@ export class MessageProjector {
 
   /** Edit apply, queued on the per-message mutation chain — see MessageMutationProjector. */
   applyMessageEditQueued(id: string, message: EditedMessage): void {
+    const inFlight = this.inboundInFlight.get(`${id}:${message.messageId}`);
+    if (inFlight) inFlight.editedBody = message.body;
     this.mutationProjector.applyMessageEditQueued(id, message);
   }
 

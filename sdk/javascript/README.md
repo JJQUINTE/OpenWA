@@ -22,9 +22,12 @@ const client = new OpenWAClient({
   apiKey: 'owa_k1_…',
 });
 
-await client.sessions.start('my-session');
+// Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+// afterwards, find its id with client.sessions.list({ name: 'my-session' }).
+const session = await client.sessions.create({ name: 'my-session' });
+await client.sessions.start(session.id);
 
-const result = await client.messages.sendText('my-session', {
+const result = await client.messages.sendText(session.id, {
   chatId: '628123456789@c.us',
   text: 'Hello from the OpenWA SDK!',
 });
@@ -39,15 +42,21 @@ CommonJS consumers use `require('@rmyndharis/openwa')` identically.
 
 ## Errors
 
-Non-2xx responses throw a typed `OpenWAApiError` subclass
-(`OpenWAAuthError`, `OpenWAForbiddenError`, `OpenWANotFoundError`,
-`OpenWAConflictError`, `OpenWARateLimitError`, `OpenWANotImplementedError`,
-`OpenWAServiceUnavailableError` — 503, the only retryable one),
-each carrying `.status` and the parsed `.body`. Timeouts throw
-`OpenWATimeoutError`. The SDK does **not** retry — wrap calls with your own
-backoff if needed. In a routed deployment only 503 proves the request was
-never carried out: a forward that fails after the request reached the owner
-node answers 502 or 504.
+Non-2xx responses throw a typed `OpenWAApiError` subclass (`OpenWAAuthError`,
+`OpenWAForbiddenError`, `OpenWANotFoundError`, `OpenWAConflictError`,
+`OpenWARateLimitError`, `OpenWANotImplementedError`,
+`OpenWAServiceUnavailableError` for 503), each carrying `.status` and the
+parsed `.body`. Timeouts throw `OpenWATimeoutError`. The SDK does **not**
+retry — wrap calls with your own backoff if needed. 503 is transient, but a
+catalog 503 can persist because WhatsApp may never answer that query, so bound
+any retry. A 429 from the global rate limiter lifts when its window expires
+(seconds for the per-second tier, up to an hour for the hourly tier by
+default); its delay is only in the `Retry-After` response header, which the
+error does not carry. A 429 whose body has `code: "SEND_PACING_LIMITED"` is
+not transient: do not retry it before the body's `retryAfterSeconds`, which
+can be hours. In a routed deployment only 503 proves the request was never
+carried out: a forward that fails after the request reached the owner node
+answers 502 or 504.
 
 ## Releasing
 

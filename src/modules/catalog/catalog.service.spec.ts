@@ -2,6 +2,7 @@ import { NotFoundException, NotImplementedException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { EngineNotSupportedError } from '../../common/errors/engine-not-supported.error';
+import { EngineRefusedError } from '../../common/errors/engine-refused.error';
 import type { SendPacingService } from '../message/send-pacing.service';
 import type {
   IWhatsAppEngine,
@@ -28,7 +29,12 @@ describe('CatalogService', () => {
   const makeService = (engine: Partial<IWhatsAppEngine> | undefined, pacing?: { assertSendAllowed: jest.Mock }) => {
     const engines = new EngineRegistry();
     if (engine) engines.set('s1', engine as IWhatsAppEngine);
-    const sendPacing = pacing ?? { assertSendAllowed: jest.fn().mockResolvedValue(undefined) };
+    const sendPacing = {
+      assertSendAllowed: jest.fn().mockResolvedValue(undefined),
+      recordSendSuccess: jest.fn(),
+      recordSendFailure: jest.fn(),
+      ...pacing,
+    };
     return { svc: new CatalogService(engines, sendPacing as unknown as SendPacingService), pacing: sendPacing };
   };
 
@@ -134,6 +140,27 @@ describe('CatalogService', () => {
       const down = new Error('socket closed');
       const sendProduct = jest.fn().mockRejectedValue(down);
       await expect(makeService({ sendProduct }).svc.sendProduct('s1', '628123@c.us', 'prod-1')).rejects.toBe(down);
+    });
+
+    it('reports the engine outcome of a product send to the pacing breaker', async () => {
+      const sendProduct = jest.fn().mockResolvedValue(sent);
+      const { svc, pacing } = makeService({ sendProduct });
+      await svc.sendProduct('s1', '628123@c.us', 'prod-1');
+      expect(pacing.recordSendSuccess).toHaveBeenCalledWith('s1');
+
+      const refused = new EngineRefusedError('refused');
+      sendProduct.mockRejectedValue(refused);
+      await expect(svc.sendProduct('s1', '628123@c.us', 'prod-1')).rejects.toBe(refused);
+      expect(pacing.recordSendFailure).toHaveBeenCalledWith('s1');
+    });
+
+    it('does not feed a client-fault or unsupported refusal to the breaker', async () => {
+      const sendProduct = jest.fn().mockRejectedValue(new NotFoundException('Product not found'));
+      const sendCatalog = jest.fn().mockRejectedValue(new EngineNotSupportedError('sendCatalog'));
+      const { svc, pacing } = makeService({ sendProduct, sendCatalog });
+      await expect(svc.sendProduct('s1', '628123@c.us', 'prod-404')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.sendCatalog('s1', '628123@c.us')).rejects.toBeInstanceOf(EngineNotSupportedError);
+      expect(pacing.recordSendFailure).not.toHaveBeenCalled();
     });
   });
 });

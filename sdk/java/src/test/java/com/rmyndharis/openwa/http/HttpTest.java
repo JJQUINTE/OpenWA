@@ -49,5 +49,13 @@ class HttpTest {
         assertEquals("abc", out.get("X-Trace"));
     }
 
+    @Test
+    void mergeHeadersDropsCallerCopiesThatDifferOnlyInCase() {
+        // Header names are case-insensitive: a lowercase copy left in the map is sent alongside ours.
+        Map<String, String> defaults = Map.of("x-api-key", "EVIL", "content-type", "text/plain");
+        Map<String, String> out = Http.mergeHeaders(defaults, null, "owa_k1_secret");
+        assertEquals(Map.of("Content-Type", "application/json", "X-API-Key", "owa_k1_secret"), out);
+    }
+
     private record Query(String chatId, Integer limit, String cursor) {}
 }

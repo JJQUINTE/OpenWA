@@ -79,7 +79,10 @@ export function Sessions() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  // Only the id: the detail modal renders the row as it is in `sessions` now, so a status push or a
+  // list read shows there too, and a row that is gone closes it.
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSession = selectedSessionId ? (sessions.find(s => s.id === selectedSessionId) ?? null) : null;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [killConfirmId, setKillConfirmId] = useState<string | null>(null);
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
@@ -109,15 +112,52 @@ export function Sessions() {
   // Spends the one retry the recovery effect below is allowed per connect. Given back by a read that
   // actually succeeded, so a later independent failure on the same connection is retried too.
   const retriedThisConnect = useRef(false);
+  // List reads overlap (every status push that needs server fields starts one) and can answer out of
+  // order, and a read is a snapshot from before any row the page wrote while it was in flight. So a
+  // read is applied only if no newer read has been applied and no row was written since it started;
+  // `rowWrites` counts those writes. A read that loses to a write is sent again, unless a newer read
+  // is already on its way, so what it would have brought (a restriction, the rows after a socket gap)
+  // still arrives. A read dropped for a newer applied one returns the rows the page holds; one dropped
+  // while a newer read is in flight answers with that read (`latestList`), so a caller deciding on
+  // server fields (the disconnect handler's engine check) never decides on rows a push wrote.
+  const listRequest = useRef(0);
+  const listApplied = useRef(0);
+  const rowWrites = useRef(0);
+  const latestList = useRef<Promise<Session[]>>(Promise.resolve([]));
 
-  const fetchSessions = useCallback(async (): Promise<Session[]> => {
+  // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
+  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Every
+  // writer moves the ref in the same tick as its setState (a list read directly, row writes through
+  // `updateSessions`), so a push handled before React re-renders sees what the last write produced. No
+  // effect copies `sessions` back in: one flushing after such a push would move the ref to an older list.
+  const sessionsRef = useRef<Session[]>([]);
+  // A row write: applied to the ref now, and to state as a functional update, so it builds on every
+  // write queued before it instead of replacing the list with an older copy.
+  const updateSessions = useCallback((update: (list: Session[]) => Session[]) => {
+    sessionsRef.current = update(sessionsRef.current);
+    setSessions(update);
+  }, []);
+
+  const readSessions = useCallback(async (): Promise<Session[]> => {
     listReadFailed.current = false;
+    let request = 0;
     try {
       // Background refetches — a websocket push, a mutation reloading the list — would otherwise
       // replace the whole page with a spinner for the length of a round-trip, so a restriction
       // arriving on a live page reads as a full reload.
       if (!initialLoadDone.current) setLoading(true);
-      const data = await sessionApi.list();
+      let data: Session[];
+      for (;;) {
+        request = ++listRequest.current;
+        const writes = rowWrites.current;
+        data = await sessionApi.list();
+        if (request < listApplied.current) return sessionsRef.current;
+        if (rowWrites.current === writes) break;
+        // Only the most recently started read can hold the newest request, so this is never itself.
+        if (request !== listRequest.current) return latestList.current;
+      }
+      listApplied.current = request;
+      sessionsRef.current = data;
       setSessions(data);
       // The list is current again, so an error left by an earlier failed read (or a create, whose toast
       // already reported it) no longer describes the page, and the recovery retry is available again.
@@ -133,6 +173,8 @@ export function Sessions() {
       void invalidateSessionQueries(queryClient, queryKeys.sessions);
       return data;
     } catch (err) {
+      // A failure older than a read already applied says nothing about the list on screen.
+      if (request < listApplied.current) return sessionsRef.current;
       listReadFailed.current = true;
       setError(err instanceof Error ? err.message : t('sessions.create.errorDefault'));
       return [];
@@ -141,14 +183,7 @@ export function Sessions() {
       setLoading(false);
     }
   }, [t, queryClient]);
-
-  // Mirror the latest sessions in a ref so the WS handler can compare against the current status without
-  // depending on `sessions` (which would churn the callback identity and re-subscribe the socket). Kept
-  // in sync with every state update (fetch / create / delete / WS) via the effect below.
-  const sessionsRef = useRef<Session[]>([]);
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
+  const fetchSessions = useCallback(() => (latestList.current = readSessions()), [readSessions]);
 
   const {
     qrData,
@@ -183,7 +218,8 @@ export function Sessions() {
     onCreated: newSession => {
       // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
       // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
-      setSessions(current => [...current, newSession]);
+      rowWrites.current += 1;
+      updateSessions(current => [...current, newSession]);
       void invalidateSessionQueries(queryClient, queryKeys.sessions);
     },
     onFailed: msg => setError(msg),
@@ -198,13 +234,12 @@ export function Sessions() {
   // disconnected session's stale code.
   const applySessionResponse = useCallback(
     async (updated: Session) => {
-      sessionsRef.current = replaceSession(sessionsRef.current, updated);
-      setSessions(sessionsRef.current);
-      setSelectedSession(current => (current?.id === updated.id ? updated : current));
+      rowWrites.current += 1;
+      updateSessions(current => replaceSession(current, updated));
       dismissQrForSession(updated.id);
       await reconcileSessionCache(queryClient, queryKeys.sessions, updated);
     },
-    [queryClient, dismissQrForSession],
+    [queryClient, dismissQrForSession, updateSessions],
   );
 
   // A restriction push and a recovered socket mean the same thing to this page: the local list may be
@@ -227,24 +262,30 @@ export function Sessions() {
       (event: { sessionId: string; status: string }) => {
         const prev = sessionsRef.current.find(s => s.id === event.sessionId);
         // Some engines double-signal one transition; only react to an ACTUAL status change so the toast
-        // and the failed-refresh don't fire on every redundant envelope. Update the ref synchronously so
-        // a duplicate arriving in the same tick (before the sync effect runs) is also caught.
+        // and the failed-refresh don't fire on every redundant envelope. `updateSessions` moves the ref
+        // synchronously, so a duplicate arriving before React re-renders is also caught.
         if (prev && prev.status === event.status) return;
+        // A push for a row the page does not hold yet changes nothing, so it must not void the read
+        // that is about to bring that row (the mount read, before any row is on screen).
+        if (prev) rowWrites.current += 1;
         // Drop `engineLoaded` alongside the status patch: it is server-owned live state the status
         // envelope does not carry, so keeping the previous value would pair a fresh status with a
         // stale engine answer and the card could offer Start to a running session (or Unlink to one
         // with no engine). Clearing it makes isSessionStarted fall back to the status set until an
         // authoritative response arrives — and for `disconnected`, where that fallback is knowingly
         // wrong, the branch below refetches.
-        sessionsRef.current = sessionsRef.current.map(s =>
-          s.id === event.sessionId ? { ...s, status: event.status as Session['status'], engineLoaded: undefined } : s,
+        updateSessions(current =>
+          current.map(s =>
+            s.id === event.sessionId ? { ...s, status: event.status as Session['status'], engineLoaded: undefined } : s,
+          ),
         );
-        setSessions(sessionsRef.current);
         // Mark the shared session queries stale so sibling views refetch — but ONLY on a real
         // transition (the dedup guard above already swallows the redundant double-signals, so this
         // does not re-invalidate on duplicate envelopes).
         void invalidateSessionQueries(queryClient, queryKeys.sessions);
         if (event.status === 'ready') {
+          // Refresh so the card picks up the phone and lastActive the gateway writes on READY.
+          void fetchSessions();
           toast.success(t('sessions.toasts.readyTitle'), t('sessions.toasts.readyDesc'));
         } else if (event.status === 'disconnected') {
           // Refresh so the card picks up `engineLoaded` from the API. `disconnected` is the one status
@@ -277,7 +318,7 @@ export function Sessions() {
           toast.error(t('sessions.toasts.failedTitle'), t('sessions.toasts.failedDesc'));
         }
       },
-      [toast, t, fetchSessions, queryClient, dismissQrForSession, clearQrCodeForSession],
+      [toast, t, fetchSessions, queryClient, dismissQrForSession, clearQrCodeForSession, updateSessions],
     ),
   });
 
@@ -310,7 +351,8 @@ export function Sessions() {
     try {
       await sessionApi.delete(id);
       // Functional removal (no stale `sessions` capture), then invalidate the prefix.
-      setSessions(current => current.filter(s => s.id !== id));
+      rowWrites.current += 1;
+      updateSessions(current => current.filter(s => s.id !== id));
       await invalidateSessionQueries(queryClient, queryKeys.sessions);
       toast.success(
         t('sessions.delete.successTitle'),
@@ -338,7 +380,7 @@ export function Sessions() {
       // from before the start, which now includes `engineLoaded` and would leave the card offering
       // Start for a session that just acquired an engine.
       const started = await sessionApi.start(id);
-      setSessions(current => replaceSession(current, started));
+      updateSessions(current => replaceSession(current, started));
       // A 200 does not promise the engine is still there when the list is read back: a concurrent stop
       // retires the start, and an engine can fail right after answering. Skip the modal when the re-read
       // shows the session without one. A failed re-read gives no answer, so the start's success decides.
@@ -388,7 +430,6 @@ export function Sessions() {
 
   // Load the config when the detail modal opens and drop it when it closes, so a value fetched for
   // one session can never render against another.
-  const selectedSessionId = selectedSession?.id ?? null;
   useEffect(() => {
     setSessionConfig(null);
     if (!selectedSessionId) return;
@@ -568,6 +609,9 @@ export function Sessions() {
   // One term: isValidProxyUrl rejects '' too, so the emptiness check was redundant, and its
   // `string && boolean` shape widened this to `boolean | ""`, which the disabled prop rejects.
   const createProxyInvalid = useProxy && !isValidProxyUrl(createProxyUrl.trim());
+  // Shared by the Create button and the name field's Enter key, which would otherwise post a name
+  // the button refuses, or post the same name twice while the first create is in flight.
+  const createDisabled = creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid;
 
   if (loading) {
     return (
@@ -659,11 +703,7 @@ export function Sessions() {
               <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                 {t('common.cancel')}
               </button>
-              <button
-                className="btn-primary"
-                onClick={handleCreate}
-                disabled={creating || !canCreateSession(newSessionName, existingSessionNames) || createProxyInvalid}
-              >
+              <button className="btn-primary" onClick={handleCreate} disabled={createDisabled}>
                 {creating ? <Loader2 className="animate-spin" size={16} /> : t('common.create')}
               </button>
             </>
@@ -679,12 +719,13 @@ export function Sessions() {
               const value = e.target.value.toLowerCase().replace(/\s+/g, '-');
               setNewSessionName(value);
             }}
-            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            onKeyDown={e => e.key === 'Enter' && !createDisabled && handleCreate()}
           />
           <p className="input-hint">
             <Trans i18nKey="sessions.create.hint" components={{ code: <code /> }} />
           </p>
           {nameIssues.includes('format') && <p className="input-error">{t('sessions.create.invalidChars')}</p>}
+          {nameIssues.includes('too-short') && <p className="input-error">{t('sessions.create.tooShort')}</p>}
           {nameIssues.includes('too-long') && (
             <p className="input-error">{t('sessions.create.tooLong', { length: newSessionName.length })}</p>
           )}
@@ -870,11 +911,11 @@ export function Sessions() {
       {selectedSession && (
         <Modal
           open
-          onClose={() => setSelectedSession(null)}
+          onClose={() => setSelectedSessionId(null)}
           title={t('sessions.details.title')}
           closeLabel={t('common.close')}
           footer={
-            <button className="btn-secondary" onClick={() => setSelectedSession(null)}>
+            <button className="btn-secondary" onClick={() => setSelectedSessionId(null)}>
               {t('common.close')}
             </button>
           }
@@ -1193,7 +1234,7 @@ export function Sessions() {
               )}
 
               <div className="card-actions">
-                <button className="btn-action" onClick={() => setSelectedSession(session)}>
+                <button className="btn-action" onClick={() => setSelectedSessionId(session.id)}>
                   <Eye size={16} />
                   {t('sessions.actions.view')}
                 </button>

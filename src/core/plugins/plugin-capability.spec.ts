@@ -288,6 +288,18 @@ describe('PluginLoaderService capability facade — ctx.engine', () => {
     expect(engine.getChatHistory).toHaveBeenNthCalledWith(2, 'c@c.us', 1, false);
   });
 
+  // A sandboxed caller's args cross structured clone unvalidated; NaN would reach the engine as "no limit".
+  it.each([['x'], [NaN], [{}], [Infinity]])(
+    'engine.getChatHistory defaults a non-finite limit (%p) to 50',
+    async limit => {
+      const engine = { getChatHistory: jest.fn().mockResolvedValue([]) };
+      build(engine);
+      const ctx = contextFor(makePlugin(['*'], ['engine:read']));
+      await ctx.engine.getChatHistory('sess-1', 'c@c.us', limit as number);
+      expect(engine.getChatHistory).toHaveBeenCalledWith('c@c.us', 50, false);
+    },
+  );
+
   it('denies engine.getChatHistory without the engine:read permission', async () => {
     const { sessionService } = build({ getChatHistory: jest.fn() });
     const ctx = contextFor(makePlugin(['*'], ['messages:send']));

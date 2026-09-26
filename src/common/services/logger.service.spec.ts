@@ -95,6 +95,50 @@ describe('LoggerService', () => {
     });
   });
 
+  // Plugin ctx.logger meta reaches the logger verbatim, so caller metadata must not be able to rewrite
+  // the fields a reader trusts to say who logged what, at which level.
+  describe('structural fields', () => {
+    it('keeps level, context, message, timestamp, trace and requestId out of reach of caller metadata', () => {
+      logger.log('[plugin-a] hi', {
+        level: 'error',
+        context: 'AuthService',
+        message: 'API key rotated',
+        timestamp: '1970-01-01T00:00:00.000Z',
+        trace: 'forged stack',
+        requestId: 'forged',
+        pluginId: 'plugin-a',
+      });
+
+      const output = getLogOutput(consoleSpy) as unknown as Record<string, unknown>;
+      expect(output.level).toBe('info');
+      expect(output.context).toBe('TestContext');
+      expect(output.message).toBe('[plugin-a] hi');
+      expect(output.timestamp).not.toBe('1970-01-01T00:00:00.000Z');
+      expect(output).not.toHaveProperty('trace');
+      expect(output).not.toHaveProperty('requestId');
+      expect(output.pluginId).toBe('plugin-a');
+    });
+
+    it("still takes error()'s trace and string context from its own parameters", () => {
+      const errorSpy = jest.spyOn(console, 'error');
+      logger.error('boom', 'real stack', 'OtherContext');
+
+      const output = getLogOutput(errorSpy);
+      expect(output.context).toBe('OtherContext');
+      expect(output.trace).toBe('real stack');
+    });
+
+    it("keeps error()'s own trace over one smuggled in its metadata", () => {
+      const errorSpy = jest.spyOn(console, 'error');
+      logger.error('boom', 'real stack', { trace: 'forged stack', sessionId: 's1' });
+
+      const output = getLogOutput(errorSpy);
+      expect(output.trace).toBe('real stack');
+      expect(output.context).toBe('TestContext');
+      expect(output.sessionId).toBe('s1');
+    });
+  });
+
   describe('warn', () => {
     it('should log warning messages to console.warn', () => {
       const warnSpy = jest.spyOn(console, 'warn');

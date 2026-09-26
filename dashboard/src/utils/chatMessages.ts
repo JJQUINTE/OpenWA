@@ -126,8 +126,10 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
     if (!m.author || !m.chatName) continue;
     const local = m.author.split('@')[0].split(':')[0];
     // A push name is sender-controlled: strip the span delimiters so a name cannot close its own
-    // mention early and hand its tail back to Linkify and the format parser.
-    const name = m.chatName.replace(MENTION_DELIMITERS, '').trim();
+    // mention early and hand its tail back to Linkify and the format parser. Backticks go too:
+    // parseMessageBody peels code before it sees a mention span, so one in the name would pair
+    // with another backtick and split the span the same way.
+    const name = m.chatName.replace(MENTION_DELIMITERS, '').replace(/`/g, '').trim();
     // Rows are ascending by time, so the last write is the participant's current push name.
     if (name && !blankMentionName(name) && /^\d+$/.test(local)) map.set(local, name);
   }
@@ -135,6 +137,13 @@ export function buildMentionNameMap(messages: Pick<ChatMessage, 'author' | 'chat
 }
 
 const MENTION_DELIMITERS = new RegExp(`[${MENTION_OPEN}${MENTION_CLOSE}]`, 'g');
+
+/**
+ * Drop any span delimiter already present in raw message text. Only resolveMentions may place one:
+ * parseMessageBody reads every MENTION_OPEN...MENTION_CLOSE pair as a mention, so a body that
+ * carries them itself would lose its formatting and links inside the pair.
+ */
+export const stripMentionDelimiters = (text: string): string => text.replace(MENTION_DELIMITERS, '');
 
 // Characters that render as nothing yet survive `.trim()`: format controls (zero-width space, soft
 // hyphen, word joiner, bidi marks), combining marks, the Hangul fillers and the blank braille
@@ -145,9 +154,10 @@ function blankMentionName(name: string): boolean {
   return name.replace(INVISIBLE, '').trim() === '';
 }
 
-// The left boundary is the start of the text, whitespace, opening punctuation, or a format opener
-// (`*_~`), so `*@digits*` resolves into a bold mention the way WhatsApp renders it.
-const MENTION_TOKEN = /(^|[\s([{"'*_~])@(\d{7,})/gu;
+// The left boundary is the start of the text or whitespace, optionally followed by a run of opening
+// punctuation or format openers (`*_~`), so `*@digits*` resolves into a bold mention the way
+// WhatsApp renders it while a `_@digits` or `(@digits` inside a URL does not.
+const MENTION_TOKEN = /((?:^|\s)[([{"'*_~]*)@(\d{7,})/gu;
 
 // parseMessageBody peels code after this runs, so a mention inside a code span or block is left as
 // digits here: rewriting it would split the span and render its backticks literally.
@@ -167,12 +177,15 @@ const CODE_SEGMENT = /(```[\s\S]*?```|`[^`]*`)/;
  * clickable link (character-stripping alone does not stop linkify-react auto-linking a bare word
  * like "localhost").
  *
- * The left boundary only fires at the start of the text, after whitespace, or after opening
- * punctuation — not after `/` or a backtick — so a URL path segment or an inline-code span with
- * the same digits is left untouched (this runs on the raw body, before parseMessageBody splits
- * out code spans).
+ * The left boundary only fires at the start of the text or after whitespace, optionally through
+ * a run of opening punctuation or format markers. It never fires after `/` or a word, so a URL
+ * with the same digits is left untouched, and digits inside a code span are never rewritten (this
+ * runs on the raw body, before parseMessageBody splits out code spans). Right after a closing
+ * backtick a bare "@digits" is left as it is, while an opener run such as `*@digits*` or
+ * `(@digits` still starts a mention: the span has already been split off, so it cannot break.
  */
-export function resolveMentions(text: string, names: Map<string, string>): string {
+export function resolveMentions(raw: string, names: Map<string, string>): string {
+  const text = stripMentionDelimiters(raw);
   if (names.size === 0 || !text.includes('@')) return text;
   return text
     .split(CODE_SEGMENT)
@@ -180,9 +193,15 @@ export function resolveMentions(text: string, names: Map<string, string>): strin
       i % 2
         ? part
         : part.replace(MENTION_TOKEN, (full: string, prefix: string, digits: string) => {
-            // `^` only counts at the start of the whole text, not right after a closing backtick.
+            // A bare `^` only counts at the start of the whole text, not right after a closing
+            // backtick; `^` followed by an opener run does (see above).
             if (i > 0 && prefix === '') return full;
-            const first = names.get(digits)?.split(' ')[0];
+            // The first word that renders as something: a name like "\u3164 Bob" is not blank as a
+            // whole, but its first word alone would show as a bare "@".
+            const first = names
+              .get(digits)
+              ?.split(' ')
+              .find(word => !blankMentionName(word));
             return first ? `${prefix}${MENTION_OPEN}@${first}${MENTION_CLOSE}` : full;
           }),
     )

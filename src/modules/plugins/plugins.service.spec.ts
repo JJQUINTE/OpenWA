@@ -122,6 +122,21 @@ describe('PluginsService — install / uninstall (real loader + disk)', () => {
     }
   });
 
+  it('preserves a legacy (pre-encoding) ctx.storage file across an in-place package update', async () => {
+    service.install({ buffer: pkg({ version: '1.0.0' }) });
+    const storage = pluginStorage.createPluginStorage('svc-plg');
+    fs.writeFileSync(path.join(pluginsDir, 'svc-plg', 'cursor.json'), JSON.stringify({ lastId: 'msg-7' }));
+
+    await service.updatePackage('svc-plg', pkg({ version: '2.0.0' }));
+
+    expect(await storage.get('cursor')).toEqual({ lastId: 'msg-7' });
+    // The new package's own manifest is never overwritten by the backed-up one.
+    const shipped = JSON.parse(fs.readFileSync(path.join(pluginsDir, 'svc-plg', 'manifest.json'), 'utf8')) as {
+      version: string;
+    };
+    expect(shipped.version).toBe('2.0.0');
+  });
+
   it('updatePackage rejects a package whose id does not match', async () => {
     service.install({ buffer: pkg() });
     await expect(service.updatePackage('svc-plg', pkg({ id: 'other-plg' }))).rejects.toThrow(/does not match/i);
@@ -934,4 +949,36 @@ describe('PluginsService — recovering a plugin whose code went missing', () =>
 
     expect(fs.existsSync(path.join(pluginsDir, 'svc-plg', 'legacy.js'))).toBe(true);
   });
+});
+
+describe('PluginsService remote catalog', () => {
+  const fetchMock = fetchSafeBuffer as unknown as jest.Mock;
+  const service = (): PluginsService => {
+    const config = {
+      get: (k: string) => (k === 'plugins.catalogUrl' ? 'https://catalog.example/plugins.json' : undefined),
+    } as unknown as ConfigService;
+    return new PluginsService({ getAllPlugins: () => [] } as unknown as PluginLoaderService, config);
+  };
+  const serveOnce = (json: string): void => {
+    fetchMock.mockImplementationOnce(() => Promise.resolve(Buffer.from(json)));
+  };
+
+  it('annotates a well-formed catalog', async () => {
+    serveOnce('[{"id":"a","name":"A","version":"1.0.0"}]');
+    await expect(service().getCatalog()).resolves.toEqual([
+      { id: 'a', name: 'A', version: '1.0.0', installed: false, installedVersion: null, updateAvailable: false },
+    ]);
+  });
+
+  it.each(['[null]', '[{"id":"a","name":"A","version":"1.0.0"},5]', '[[]]'])(
+    'answers 400, not 500, for a catalog with a non-object entry (%s)',
+    async json => {
+      serveOnce(json);
+      const err: unknown = await service()
+        .getCatalog()
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).message).toMatch(/Invalid plugin catalog JSON/);
+    },
+  );
 });

@@ -45,7 +45,7 @@ afterEach(() => {
   rtl.cleanup();
   textReads = 0;
   globalThis.fetch = emptyFetch;
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 interface BulkItem {
@@ -88,7 +88,7 @@ function stubGateway(): { bulkBodies: { messages: BulkItem[] }[] } {
 }
 
 async function renderBulkAsWriter(): Promise<HTMLElement> {
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   const { container } = rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
@@ -137,7 +137,7 @@ let restoreFetch: (() => void) | null = null;
 afterEach(() => {
   restoreFetch?.();
   restoreFetch = null;
-  window.localStorage.removeItem('openwa_user_role');
+  window.sessionStorage.removeItem('openwa_user_role');
 });
 
 function groupJsonResponse(data: unknown, status = 200): Response {
@@ -170,7 +170,7 @@ function stubGroupGateway(groups: { id: string; name?: string }[], refuseFirstWi
 }
 
 async function renderGroupsAsWriter(): Promise<void> {
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
@@ -291,7 +291,7 @@ test('a session that stops being ready is replaced by what the selector shows', 
     }
     return Promise.resolve(jsonResponse([]));
   }) as typeof fetch;
-  window.localStorage.setItem('openwa_user_role', 'admin');
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
   const { container } = rtl.render(
     createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
@@ -316,7 +316,7 @@ test('a session that stops being ready is replaced by what the selector shows', 
   status.s1 = 'disconnected';
   await client.invalidateQueries({ queryKey: ['sessions'] });
   await rtl.waitFor(() => assert.equal(select.value, ''));
-  assert.equal(sendButton().disabled, true);
+  await rtl.waitFor(() => assert.equal(sendButton().disabled, true));
 });
 
 test('a recipients file over the cap is refused without being read', async () => {
@@ -405,6 +405,66 @@ test('a bulk send that resolves after the page is left starts no progress pollin
   assert.equal(pollers.length, 0);
 });
 
+test('a progress poll that answers after Cancel does not undo the cancel', async () => {
+  const progress = { total: 1, sent: 0, failed: 0, pending: 0, cancelled: 0 };
+  let answerPoll: (response: Response) => void = () => {};
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(jsonResponse([{ id: 's1', name: 'Main', status: 'ready', phone: '15550000000' }]));
+    }
+    if (url.endsWith('/messages/send-bulk')) {
+      return Promise.resolve(jsonResponse({ batchId: 'b1', status: 'pending', totalMessages: 1 }, 202));
+    }
+    if (url.endsWith('/messages/batch/b1/cancel')) {
+      return Promise.resolve(
+        jsonResponse({ batchId: 'b1', status: 'cancelled', progress: { ...progress, cancelled: 1 }, results: [] }),
+      );
+    }
+    if (url.endsWith('/messages/batch/b1')) {
+      return new Promise<Response>(resolve => {
+        answerPoll = resolve;
+      });
+    }
+    return Promise.resolve(jsonResponse([]));
+  }) as typeof fetch;
+
+  // Run the progress poll by hand instead of waiting out its 2 s interval.
+  const polls: Array<() => void> = [];
+  const timers: ReturnType<typeof setInterval>[] = [];
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = ((handler: () => void, ms?: number) => {
+    const id = ms === 2000 ? realSetInterval(() => {}, 2 ** 30) : realSetInterval(handler, ms);
+    if (ms === 2000) polls.push(handler);
+    timers.push(id);
+    return id;
+  }) as typeof setInterval;
+  try {
+    const container = await renderBulkAsWriter();
+    type(container, '#mt-11', '15550000001');
+    rtl.fireEvent.change(rtl.screen.getByPlaceholderText('Enter your message here...'), { target: { value: 'hi' } });
+    await rtl.waitFor(() => assert.equal(sendButton().disabled, false));
+    rtl.fireEvent.click(sendButton());
+    const cancel = await rtl.screen.findByRole('button', { name: 'Cancel Batch' });
+    const badge = () => container.querySelector('.batch-badge')?.textContent;
+
+    polls[0]();
+    rtl.fireEvent.click(cancel);
+    await rtl.waitFor(() => assert.equal(badge(), 'Cancelled'));
+    await rtl.act(async () => {
+      answerPoll(
+        jsonResponse({ batchId: 'b1', status: 'processing', progress: { ...progress, pending: 1 }, results: [] }),
+      );
+      await new Promise(resolve => setTimeout(resolve, 50));
+    });
+
+    assert.equal(badge(), 'Cancelled', 'a poll that answered after the cancel put the batch back to processing');
+  } finally {
+    globalThis.setInterval = realSetInterval;
+    timers.forEach(clearInterval);
+  }
+});
+
 test('an inline file too large for the recipient count keeps Send disabled', async () => {
   stubGateway();
   const container = await renderBulkAsWriter();
@@ -476,4 +536,41 @@ test('a media file that cannot be read is reported and not attached', async () =
   } finally {
     globalThis.FileReader.prototype.readAsDataURL = readAsDataURL;
   }
+});
+
+function renderTesterAsWriter(): void {
+  window.sessionStorage.setItem('openwa_user_role', 'admin');
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 1_000 } } });
+  rtl.render(
+    createElement(QueryClientProvider, { client }, createElement(RoleProvider, null, createElement(MessageTester))),
+  );
+}
+
+test('a failed sessions read is reported, not shown as "no ready sessions"', async () => {
+  globalThis.fetch = ((): Promise<Response> =>
+    Promise.resolve(jsonResponse({ message: 'gateway restarting' }, 502))) as typeof fetch;
+  renderTesterAsWriter();
+
+  const alert = await rtl.screen.findByRole('alert');
+  rtl.within(alert).getByText(/Failed to load data/);
+  rtl.within(alert).getByText(/gateway restarting/);
+  assert.equal(rtl.screen.queryByRole('option', { name: 'No ready sessions' }), null);
+});
+
+test('a failed groups read is reported, not shown as "no groups found"', async () => {
+  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.endsWith('/sessions')) {
+      return Promise.resolve(jsonResponse([{ id: 's1', name: 'Main', status: 'ready', phone: '15550000000' }]));
+    }
+    if (url.endsWith('/sessions/s1/groups')) return Promise.resolve(jsonResponse({ message: 'engine busy' }, 500));
+    return Promise.resolve(jsonResponse([]));
+  }) as typeof fetch;
+  renderTesterAsWriter();
+  await rtl.screen.findByRole('option', { name: /Main/ });
+  rtl.fireEvent.click(rtl.screen.getByRole('button', { name: 'Group' }));
+
+  const alert = await rtl.screen.findByRole('alert');
+  rtl.within(alert).getByText(/Failed to load data/);
+  assert.equal(rtl.screen.queryByText('No groups found'), null);
 });

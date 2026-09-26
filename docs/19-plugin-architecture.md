@@ -329,7 +329,7 @@ export interface PluginEngineReadCapability {
   getContactById(sessionId: string, contactId: string): Promise<...>;
   checkNumberExists(sessionId: string, phone: string): Promise<...>;
   getChats(sessionId: string): Promise<...>;
-  // Recent messages for a chat, both directions (history backfill). `limit` is clamped host-side to 1-100.
+  // Recent messages for a chat, both directions, oldest first (history backfill). `limit` is clamped host-side to 1-100.
   getChatHistory(sessionId: string, chatId: string, limit?: number, includeMedia?: boolean): Promise<...>;
   // Canonical form of a chat id: resolves a known '@lid' privacy id to its stable '<phone>@c.us',
   // otherwise returns the id unchanged (best-effort).
@@ -413,6 +413,13 @@ plain-object `payload` the same way.
 On a **pre-action** event it is a veto, because the action has not been taken yet: `false` on
 `message:sending` blocks the send (the caller gets a `400`), and on `webhook:before` it cancels that one
 delivery.
+
+A bulk send (`POST /api/sessions/:sessionId/messages/send-bulk`) runs `message:sending` once per item,
+and fires `message:failed` for an item that fails for any reason other than a plugin block or a pacing
+refusal. Both carry the item's content with its recipient `chatId` added as `input`, so a handler that
+reads `input.chatId` on a single send reads it here too. A handler may rewrite the content, but a
+rewritten `chatId` is ignored: the item always goes to its own recipient. On a single send the rewritten
+`input` is what gets sent, `chatId` included.
 
 > **`message:sending` does not see every attempted send.** With send pacing enabled
 > (`SEND_PACING_ENABLED`), the pacing governor runs _before_ this hook, so a send it refuses never
@@ -641,7 +648,7 @@ URL / catalog), not an npm/github source descriptor.
 | `GET /plugins/catalog`               | List the remote plugin catalog, annotated with install state                                               |
 | `GET /plugins/:id`                   | Get a single plugin                                                                                        |
 | `POST /plugins/install`              | Install from an uploaded `.zip` (`multipart/form-data`, field `file`, ≤ 5 MB)                              |
-| `POST /plugins/install-url`          | Install by downloading a `.zip` from an https URL (SSRF-guarded; optional `#sha256=` digest pin)           |
+| `POST /plugins/install-url`          | Install by downloading a `.zip` from an https URL (SSRF-guarded; `#sha256=` pin required in production)    |
 | `POST /plugins/:id/update`           | Update an installed plugin in place from a URL (staged swap, crash-safe; preserves config + enabled state) |
 | `POST /plugins/:id/enable`           | Enable a plugin                                                                                            |
 | `POST /plugins/:id/disable`          | Disable a plugin                                                                                           |

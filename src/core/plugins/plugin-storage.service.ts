@@ -379,12 +379,15 @@ export class PluginStorageService {
       list: (prefix?: string): Promise<string[]> => {
         try {
           const files = fs.readdirSync(pluginDataDir);
+          // A legacy stem is listed only when get()/delete() would consult it, so the package's own
+          // manifest.json/package.json never surface as keys that read back null.
           let keys = Array.from(
             new Set(
               files
                 .filter(f => f.endsWith('.json'))
                 .map(f => f.slice(0, -'.json'.length))
-                .map(stem => decodeStorageFileName(stem) ?? stem),
+                .map(stem => decodeStorageFileName(stem) ?? (resolveLegacyKeyPath(stem) ? stem : null))
+                .filter((k): k is string => k !== null),
             ),
           );
 

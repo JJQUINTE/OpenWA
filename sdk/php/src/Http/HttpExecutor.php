@@ -132,8 +132,13 @@ class HttpExecutor
             // Never auto-follow redirects: doing so would re-send the X-API-Key
             // header to the redirect target (potentially a different origin).
             'allow_redirects' => false,
-            // Caller default headers first; auth/JSON win so they can't be clobbered.
-            'headers' => array_merge($this->defaultHeaders, [
+            // Caller default headers first; auth/JSON win so they can't be clobbered. Header names are
+            // case-insensitive and PSR-7 keeps every value, so a caller's copy in another case is dropped.
+            'headers' => array_merge(array_filter(
+                $this->defaultHeaders,
+                fn ($name) => !in_array(strtolower((string) $name), ['x-api-key', 'content-type', 'accept'], true),
+                ARRAY_FILTER_USE_KEY
+            ), [
                 'X-API-Key' => $this->apiKey,
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json',
@@ -188,7 +193,12 @@ class HttpExecutor
         $envelope = is_array($data) && isset($data['statusCode'], $data['message']) ? $data : null;
         $rawMessage = $envelope['message'] ?? $data;
         if (is_array($rawMessage)) {
-            $messageText = implode(', ', array_map('strval', $rawMessage));
+            // A body without the envelope (the readiness 503's {status, details}) can nest arrays,
+            // which strval() cannot convert; render those as JSON.
+            $messageText = implode(', ', array_map(
+                fn ($v) => is_array($v) ? json_encode($v) : (string) $v,
+                $rawMessage,
+            ));
         } elseif (is_string($rawMessage)) {
             $messageText = $rawMessage;
         } else {

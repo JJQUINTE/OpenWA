@@ -6,5 +6,5 @@ metadata:
     {{- include "openwa.labels" . | nindent 4 }}
 data:
   {{- range $key, $value := .Values.env }}
-  {{ $key }}: {{ $value | quote }}
+  {{ $key }}: {{ include "openwa.envValue" $value }}
   {{- end }}

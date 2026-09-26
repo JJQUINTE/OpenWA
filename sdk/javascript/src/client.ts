@@ -13,8 +13,10 @@
  *   apiKey: 'owa_k1_…',
  * });
  *
- * await client.sessions.start('my-session');
- * await client.messages.sendText('my-session', {
+ * // Sessions are addressed by the UUID that create() returns, not by name.
+ * const session = await client.sessions.create({ name: 'my-session' });
+ * await client.sessions.start(session.id);
+ * await client.messages.sendText(session.id, {
  *   chatId: '628123456789@c.us',
  *   text: 'Hello from the OpenWA SDK!',
  * });
@@ -23,7 +25,7 @@
  * @packageDocumentation
  */
 
-import { request, requestBytes, encodeSegment, warnIfInsecureHttpUrl, type BinaryResponse, type ClientConfig, type FetchLike, type RequestOptions } from './http.js';
+import { request, requestBytes, encodeSegment, toTimeoutMs, warnIfInsecureHttpUrl, type BinaryResponse, type ClientConfig, type FetchLike, type RequestOptions } from './http.js';
 import { CallsResource } from './resources/calls.js';
 import { MediaResource } from './resources/media.js';
 import { CatalogResource } from './resources/catalog.js';
@@ -47,7 +49,7 @@ export interface OpenWAClientOptions {
   baseUrl: string;
   /** API key sent as `X-API-Key`. */
   apiKey: string;
-  /** Per-request timeout in milliseconds (default 30000). */
+  /** Per-request timeout in milliseconds (default 30000); `0` or `Infinity` turns it off. */
   timeoutMs?: number;
   /** Default headers applied to every request. */
   defaultHeaders?: Record<string, string>;
@@ -65,9 +67,11 @@ export class OpenWAClient {
     this.config = {
       baseUrl: options.baseUrl,
       apiKey: options.apiKey,
-      timeoutMs: options.timeoutMs ?? 30000,
+      timeoutMs: toTimeoutMs(options.timeoutMs ?? 30000),
       defaultHeaders: options.defaultHeaders ?? {},
-      fetch: options.fetch ?? globalThis.fetch,
+      // Looked up on each call rather than captured here, so a fetch installed on globalThis after
+      // the client is built (a polyfill or a test stub) is the one used.
+      fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
     };
 
     warnIfInsecureHttpUrl(options.baseUrl);

@@ -23,8 +23,14 @@ export interface BaileysContactsHost {
   findContact(contactId: string): Contact | null;
   resolvePhone(contactId: string): string | null;
   listChats(): ChatSummary[];
-  /** The chat's last known message (the handle readMessages/chatModify need), or null when none. */
-  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null;
+  /**
+   * The chat's last known message (the handle chatModify needs), or null when none.
+   * `jid` is the id the chat itself is keyed under, which for a lid-migrated contact is its lid
+   * whatever id was passed.
+   */
+  lastMessage(chatId: string): { key: WAMessageKey; timestamp: number; jid: string } | null;
+  /** The newest message the chat received, the one a read receipt can acknowledge, or null when none. */
+  lastInboundMessage(chatId: string): { key: WAMessageKey; timestamp: number } | null;
   /**
    * Stored copies of the named messages, in whatever order the store returns them. Ids the store
    * has never seen are absent, so neither the length nor the order tracks the input. `undefined`
@@ -33,6 +39,8 @@ export interface BaileysContactsHost {
   getStoredMessages(messageIds: string[]): Promise<WAMessage[]> | undefined;
   /** Fold a neutral @c.us id to the engine @s.whatsapp.net form used as the app-state index key. */
   toEngineJid(jid: string): string;
+  /** The id the chat is keyed under (its lid for a lid-migrated contact), the app-state index key. */
+  chatJid(chatId: string): string;
   /** Fold an engine jid back to the neutral dialect before it crosses the engine boundary. */
   toNeutralJid(jid: string): string;
 }
@@ -340,14 +348,14 @@ export class BaileysContacts {
   }
 
   /**
-   * The keys a read receipt should acknowledge: the messages the caller named, or the chat's newest
-   * one when it named none.
+   * The keys a read receipt should acknowledge: the messages the caller named, or the newest one the
+   * chat received when it named none.
    *
    * Baileys acknowledges individual messages, not chats, and the receipt node enumerates ids rather
    * than carrying a read-up-to watermark. Caller-supplied ids are what make that correct: the
-   * lastMessage fallback holds only the newest message, so a burst of three inbound messages left
-   * the first two permanently unread, and a session that restarted since the message arrived had
-   * nothing to acknowledge at all (a silent false under a 200).
+   * lastInboundMessage fallback holds only the newest message, so a burst of three inbound messages
+   * left the first two permanently unread, and a session that restarted since the message arrived
+   * had nothing to acknowledge at all (a silent false under a 200).
    *
    * Named ids are resolved through the message store rather than synthesised, because the receipt
    * needs the whole key. A synthesised key carries no `participant`, so a group receipt names no
@@ -360,7 +368,9 @@ export class BaileysContacts {
     // null as well as undefined: the REST body rejects an explicit null, but this is the engine
     // boundary and an internal caller reaching it with one used to dereference it below as a 500.
     if (messageIds === undefined || messageIds === null) {
-      const last = this.host.lastMessage(chatId);
+      // The newest RECEIVED message, not the preview: after an API reply the preview is an own key,
+      // which Baileys drops from the receipt, so the call would answer true having sent nothing.
+      const last = this.host.lastInboundMessage(chatId);
       return last ? [last.key] : [];
     }
     if (messageIds.length === 0) {
@@ -395,7 +405,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { markRead: false, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the unread mark',
     );
@@ -411,7 +421,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { clear: true, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the chat clear',
     );
@@ -427,7 +437,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { archive, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the archive change',
     );
@@ -438,7 +448,7 @@ export class BaileysContacts {
     this.host.ensureReady();
     // Deliberately no lastMessage lookup: the `mute` member of ChatModification carries no
     // `lastMessages`, unlike archive/clear/delete, so a chat with no known history mutes fine.
-    await this.confirmed(this.sock().chatModify({ mute: muteUntil }, this.host.toEngineJid(chatId)), 'the mute change');
+    await this.confirmed(this.sock().chatModify({ mute: muteUntil }, this.host.chatJid(chatId)), 'the mute change');
   }
 
   async pinChat(chatId: string, pin: boolean): Promise<boolean> {
@@ -447,7 +457,7 @@ export class BaileysContacts {
     // archive/clear/delete, so a chat with no known history pins fine. Always true — Baileys writes
     // the app-state patch and reports nothing back, so it has no equivalent of the whatsapp-web.js
     // three-pin refusal to surface.
-    await this.confirmed(this.sock().chatModify({ pin }, this.host.toEngineJid(chatId)), 'the pin change');
+    await this.confirmed(this.sock().chatModify({ pin }, this.host.chatJid(chatId)), 'the pin change');
     return true;
   }
 
@@ -460,7 +470,7 @@ export class BaileysContacts {
     await this.confirmed(
       this.sock().chatModify(
         { delete: true, lastMessages: [{ key: last.key, messageTimestamp: last.timestamp }] },
-        this.host.toEngineJid(chatId),
+        last.jid,
       ),
       'the chat delete',
     );

@@ -1,7 +1,9 @@
 package openwa
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -27,9 +29,12 @@ var idempotentMethods = map[string]bool{
 // could double-send a WhatsApp message.
 func isIdempotent(method string) bool { return idempotentMethods[method] }
 
-// backpressureStatuses are the statuses that mean the server declined the
-// request before acting on it: 429 (rate limited) and 503 (unavailable). Only
-// these are safe to retry for a non-idempotent method.
+// backpressureStatuses are the statuses a non-idempotent method may retry on:
+// 429 (rate limited) and 503 (unavailable), which usually mean the server
+// declined the request before acting on it. Not always: a 503 for a write
+// WhatsApp did not confirm in time can follow a write that was applied, so a
+// replayed POST may then report a conflict for a change that succeeded, and a
+// send-pacing 429 is never retried at all (see isSendPacingRefusal).
 //
 // The rest of the retryable set (500/502/504) can be returned AFTER the gateway
 // has already sent the WhatsApp message — a 504 from a reverse proxy is the
@@ -58,9 +63,13 @@ func retryableForMethod(method string, status int) bool {
 // Non-idempotent requests (POST — every send endpoint) are retried
 // conservatively, because the SDK has no idempotency key to deduplicate with:
 // never after a network error, and on a retryable status only for 429 and 503,
-// which prove the server declined the request before acting on it. A
+// which usually mean the server declined the request before acting on it. A
 // 500/502/504 may arrive after the gateway already sent the message, so a POST
 // is not replayed on those. Idempotent methods retry the full policy.
+//
+// A 429 whose body carries code SEND_PACING_LIMITED is never retried, whatever
+// the method: it has no Retry-After, and its delay (body.retryAfterSeconds)
+// can be hours, so the refusal goes back to the caller at once.
 //
 // Because every request the SDK issues sets req.GetBody, request bodies are
 // safely rewound on each attempt.
@@ -77,7 +86,9 @@ type RetryPolicy struct {
 	// Defaults (via DefaultRetryPolicy) to 429, 500, 502, 503, 504.
 	RetryableStatuses []int
 	// RespectRetryAfter honors a Retry-After header on a 429/503 response,
-	// using it as the delay when it is longer than the computed backoff.
+	// using it as the delay when it is longer than the computed backoff. A
+	// delay that would outlast the request deadline is not waited out: the
+	// response is returned as-is.
 	RespectRetryAfter bool
 }
 
@@ -146,6 +157,25 @@ func parseRetryAfter(resp *http.Response) (time.Duration, bool) {
 	return 0, false
 }
 
+// isSendPacingRefusal reports whether resp is the gateway's send-pacing 429,
+// which must not be retried before the body's retryAfterSeconds. It reads the
+// body and puts the bytes back, so the caller still gets the full error.
+func isSendPacingRefusal(resp *http.Response) bool {
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Body == nil {
+		return false
+	}
+	data, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(data))
+	if err != nil {
+		return false
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	return json.Unmarshal(data, &body) == nil && body.Code == "SEND_PACING_LIMITED"
+}
+
 // retryMiddleware retries network errors and retryable statuses per policy,
 // rewinding the body via req.GetBody and respecting context cancellation.
 func retryMiddleware(p RetryPolicy, log Logger) Middleware {
@@ -177,25 +207,34 @@ func retryMiddleware(p RetryPolicy, log Logger) Middleware {
 					retryable = isIdempotent(req.Method)
 				case resp != nil && p.retryableStatus(resp.StatusCode):
 					// A retryable HTTP status is the server explicitly telling
-					// us to back off — but only 429/503 prove it declined the
-					// request before acting on it. A 500/502/504 can arrive
+					// us to back off, but only 429/503 usually mean it declined
+					// the request before acting on it. A 500/502/504 can arrive
 					// after the gateway already sent the message, so replaying
-					// a POST on those would double-send.
-					retryable = retryableForMethod(req.Method, resp.StatusCode)
+					// a POST on those would double-send. A send-pacing 429 is
+					// not transient, so it goes back to the caller.
+					retryable = retryableForMethod(req.Method, resp.StatusCode) &&
+						attempt < p.MaxRetries && !isSendPacingRefusal(resp)
 				}
 				if !retryable || attempt >= p.MaxRetries {
 					return resp, err
 				}
 
+				delay := p.backoff(attempt)
+				if resp != nil && p.RespectRetryAfter {
+					if ra, ok := parseRetryAfter(resp); ok && ra > delay {
+						delay = ra
+					}
+				}
+				// A wait that outlasts the request deadline can only end in a
+				// timeout. Return this attempt's result now, so the caller gets
+				// the typed 429/503 at once instead of a *TimeoutError later.
+				if dl, ok := req.Context().Deadline(); ok && time.Until(dl) < delay {
+					return resp, err
+				}
+
 				// Drain and close the response body so the connection can be
 				// reused before the next attempt.
-				delay := p.backoff(attempt)
 				if resp != nil {
-					if p.RespectRetryAfter {
-						if ra, ok := parseRetryAfter(resp); ok && ra > delay {
-							delay = ra
-						}
-					}
 					_, _ = io.Copy(io.Discard, resp.Body)
 					_ = resp.Body.Close()
 				}

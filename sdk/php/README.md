@@ -25,9 +25,12 @@ $client = new Client([
     'apiKey'  => 'owa_k1_…',
 ]);
 
-$client->sessions->start('my-session');
+// Sessions are addressed by the UUID that create() returns, not by name. Create a session once;
+// afterwards, find its id with $client->sessions->list(['name' => 'my-session']).
+$session = $client->sessions->create(['name' => 'my-session']);
+$client->sessions->start($session['id']);
 
-$result = $client->messages->sendText('my-session', [
+$result = $client->messages->sendText($session['id'], [
     'chatId' => '628123456789@c.us',
     'text'   => 'Hello from the OpenWA PHP SDK!',
 ]);
@@ -38,7 +41,7 @@ For tests, inject a Guzzle client whose handler is a `MockHandler` — no networ
 
 ```php
 $client = new Client([
-    'baseUrl'    => 'http://x',
+    'baseUrl'    => 'http://localhost',
     'apiKey'     => 'k',
     'httpClient' => $mockGuzzleClient,
 ]);
@@ -53,17 +56,21 @@ $client = new Client([
 A non-2xx response throws a typed `OpenWA\Exceptions\OpenWAApiException` subclass —
 `OpenWAAuthException` (401), `OpenWAForbiddenException` (403), `OpenWANotFoundException` (404),
 `OpenWAConflictException` (409), `OpenWARateLimitException` (429),
-`OpenWANotImplementedException` (501), `OpenWAServiceUnavailableException` (503 — the only
-retryable one) — each exposing `getStatus()` and the parsed `getBody()`.
-A timeout throws `OpenWATimeoutException`. In a routed deployment only 503 proves the request
-was never carried out: a forward that fails after the request reached the owner node answers
-502 or 504.
+`OpenWANotImplementedException` (501), `OpenWAServiceUnavailableException` (503) — each
+exposing `getStatus()` and the parsed `getBody()`. A timeout throws `OpenWATimeoutException`.
+503 is transient, but a catalog 503 can persist because WhatsApp may never answer that query,
+so bound any retry. A 429 from the global rate limiter lifts when its window expires (seconds for
+the per-second tier, up to an hour for the hourly tier by default); its delay is only in the
+`Retry-After` response header, which the error does not carry. A 429 whose body has
+`code: "SEND_PACING_LIMITED"` is not transient: do not retry it before the body's
+`retryAfterSeconds`, which can be hours. In a routed deployment only 503 proves the request was
+never carried out: a forward that fails after the request reached the owner node answers 502 or 504.
 
 ```php
 use OpenWA\Exceptions\OpenWANotFoundException;
 
 try {
-    $client->sessions->get('missing');
+    $client->sessions->get('00000000-0000-0000-0000-000000000000');
 } catch (OpenWANotFoundException $e) {
     echo $e->getStatus();  // 404
 }
@@ -72,6 +79,8 @@ try {
 ## Notes
 
 - **Use HTTPS in production** — the API key is sent as `X-API-Key` and is bearer-equivalent.
+  Over plaintext `http://` to a non-localhost host the client writes a warning with `error_log()`;
+  pass `'allowInsecureHttp' => true` to skip it (for example on a private Docker network).
 - The SDK does **not** retry, and **never follows redirects** (so the key is never re-sent to
   a redirect target). Path segments are percent-encoded; a base-URL path prefix (e.g. behind a
   reverse proxy) is preserved.

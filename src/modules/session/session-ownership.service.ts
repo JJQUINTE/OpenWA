@@ -343,6 +343,16 @@ export class SessionOwnershipService {
     return count > 0;
   }
 
+  /** {@link isHeldByOtherNode} for a row already loaded, so a list can answer it without a query per row. */
+  heldByOtherLiveNode(session: Pick<Session, 'nodeId' | 'leaseExpiresAt'>, now = new Date()): boolean {
+    return (
+      session.nodeId != null &&
+      session.nodeId !== this.nodeId &&
+      session.leaseExpiresAt != null &&
+      session.leaseExpiresAt > now
+    );
+  }
+
   async heldByOtherNodes(now = new Date()): Promise<string[]> {
     const rows = await this.sessions
       .createQueryBuilder('session')

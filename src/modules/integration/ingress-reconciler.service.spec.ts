@@ -1,12 +1,14 @@
 import { DataSource, Repository } from 'typeorm';
 import { IngressEvent } from './entities/ingress-event.entity';
 import { IntegrationDeliveryFailure } from './entities/integration-delivery-failure.entity';
+import { PluginInstance } from './entities/plugin-instance.entity';
 import { IngressReconcilerService, IngressReconcilerOptions } from './ingress-reconciler.service';
-import { IngressEnqueueService } from './ingress-enqueue.service';
+import { IngressEnqueueService, sanitizeIngressJobId } from './ingress-enqueue.service';
 import { PluginInstanceService } from './plugin-instance.service';
 import { PluginLoaderService } from '../../core/plugins/plugin-loader.service';
 import { RedriveService } from './redrive.service';
 import { IngressJobData } from '../queue/processors/ingress.processor';
+import { ConfigService } from '@nestjs/config';
 
 const OPTS: IngressReconcilerOptions = { intervalMs: 60_000, graceMs: 60_000, batchSize: 50, maxAttempts: 5 };
 
@@ -28,19 +30,22 @@ describe('IngressReconcilerService.sweep', () => {
     ds = new DataSource({
       type: 'better-sqlite3',
       database: ':memory:',
-      entities: [IngressEvent, IntegrationDeliveryFailure],
+      entities: [IngressEvent, IntegrationDeliveryFailure, PluginInstance],
       synchronize: true,
     });
     await ds.initialize();
     events = ds.getRepository(IngressEvent);
     failures = ds.getRepository(IntegrationDeliveryFailure);
+    await ds
+      .getRepository(PluginInstance)
+      .save({ id: 'plug:inst', pluginId: 'plug', instanceId: 'inst', secret: 's', enabled: true });
     enqueue = jest.fn().mockResolvedValue({ outcome: 'queued' });
     getPlugin = jest.fn().mockReturnValue(undefined);
     resolveInstance = jest.fn().mockResolvedValue({ enabled: true });
     service = new IngressReconcilerService(
       events,
       failures,
-      { enqueue } as unknown as IngressEnqueueService,
+      { enqueue, existingJobState: jest.fn().mockResolvedValue(undefined) } as unknown as IngressEnqueueService,
       { getPlugin } as unknown as PluginLoaderService,
       { resolve: resolveInstance } as unknown as PluginInstanceService,
     );
@@ -115,11 +120,31 @@ describe('IngressReconcilerService.sweep', () => {
 
     const stats = await service.sweep(OPTS);
 
-    expect(stats).toMatchObject({ scanned: 0, skipped: 1 });
+    expect(stats).toMatchObject({ scanned: 0, skipped: 0 }); // filtered out before it can hold a batch slot
     expect(enqueue).not.toHaveBeenCalled();
     const event = await stored(id);
     expect(event.dispatchState).toBe('pending');
     expect(event.dispatchAttempts).toBe(0);
+  });
+
+  it('does not let rows it cannot replay starve a later row of an enabled instance', async () => {
+    await ds
+      .getRepository(PluginInstance)
+      .save({ id: 'plug:off', pluginId: 'plug', instanceId: 'off', secret: 's', enabled: false });
+    resolveInstance.mockImplementation((_p: string, i: string) =>
+      Promise.resolve(i === 'off' ? { enabled: false } : { enabled: true }),
+    );
+    const disabled = await insertEvent({ instanceId: 'off', createdAt: minutesAgo(10) });
+    await insertEvent({ instanceId: 'gone', createdAt: minutesAgo(9) }); // instance deleted
+    await insertEvent({ payload: null, createdAt: minutesAgo(8) });
+    const live = await insertEvent({ createdAt: minutesAgo(5) });
+
+    const stats = await service.sweep({ ...OPTS, batchSize: 3 });
+
+    expect(stats.replayed).toBe(1);
+    expect(enqueuedJobs().map(([d]) => d.instanceId)).toEqual(['inst']);
+    expect((await stored(live)).dispatchState).toBe('dispatched');
+    expect((await stored(disabled)).dispatchState).toBe('pending'); // replayed once re-enabled
   });
 
   it('re-derives the conversation lane from the manifest route instead of degrading per-instance', async () => {
@@ -273,6 +298,94 @@ describe('IngressReconcilerService.sweep', () => {
     await service.sweep(OPTS);
 
     expect((await failures.findOneByOrFail({ id: dlq.id })).redriven).toBe(true);
+  });
+
+  // The live path's add() succeeded but its outcome mark was lost, and the job then failed every
+  // attempt: IngressProcessor already dead-lettered it. A replay under the same jobId is swallowed by
+  // BullMQ as a duplicate (add() still resolves), so it must not count as delivered.
+  describe('when the live path already queued a job for the delivery', () => {
+    let queue: { add: jest.Mock; getJobState: jest.Mock };
+
+    beforeEach(() => {
+      queue = { add: jest.fn().mockResolvedValue(undefined), getJobState: jest.fn() };
+      const realEnqueue = new IngressEnqueueService(
+        { dispatchWebhookForInstance: jest.fn() } as unknown as PluginLoaderService,
+        { get: jest.fn().mockReturnValue(true) } as unknown as ConfigService,
+        queue as never,
+      );
+      service = new IngressReconcilerService(
+        events,
+        failures,
+        realEnqueue,
+        { getPlugin } as unknown as PluginLoaderService,
+        { resolve: resolveInstance } as unknown as PluginInstanceService,
+      );
+    });
+
+    const processorDeadLetter = () =>
+      failures.save(
+        failures.create({
+          direction: 'inbound',
+          pluginId: 'plug',
+          instanceId: 'inst',
+          sessionId: 'sess-1',
+          deliveryId: 'd-1',
+          attempts: 3,
+          lastError: 'no live sandbox host',
+          payload: { route: 'chatwoot', ingress: { headers: {}, query: {}, body: '{}', rawBody: '{}' } },
+          redriven: false,
+        }),
+      );
+
+    it('keeps the dead-letter row of a failed job redrivable and does not re-add the job', async () => {
+      const id = await insertEvent();
+      const dlq = await processorDeadLetter();
+      queue.getJobState.mockResolvedValue('failed');
+
+      const stats = await service.sweep(OPTS);
+
+      expect(queue.getJobState).toHaveBeenCalledWith(sanitizeIngressJobId('d-1', 'plug\u0000inst'));
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(stats).toMatchObject({ scanned: 1, replayed: 0, failed: 1 });
+      expect((await failures.findOneByOrFail({ id: dlq.id })).redriven).toBe(false);
+      expect(await failures.count({ where: { deliveryId: 'd-1' } })).toBe(1);
+      const event = await stored(id);
+      expect(event.dispatchState).toBe('failed');
+      expect(event.payload).toBeNull();
+    });
+
+    it('writes the dead-letter row itself when the failed job left none, before retiring the payload', async () => {
+      const id = await insertEvent();
+      queue.getJobState.mockResolvedValue('failed');
+
+      await service.sweep(OPTS);
+
+      const [row] = await failures.find({ where: { deliveryId: 'd-1' } });
+      expect(row).toMatchObject({ direction: 'inbound', redriven: false });
+      expect(row.payload).toMatchObject({ route: 'chatwoot', ingress: { rawBody: '{}' } });
+      expect((await stored(id)).dispatchState).toBe('failed');
+    });
+
+    it('does not re-add a job that is still live, and closes the event row', async () => {
+      const id = await insertEvent();
+      queue.getJobState.mockResolvedValue('delayed');
+
+      const stats = await service.sweep(OPTS);
+
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(stats.replayed).toBe(1);
+      expect((await stored(id)).dispatchState).toBe('dispatched');
+    });
+
+    it('re-adds the job when the queue holds none for the delivery', async () => {
+      const id = await insertEvent();
+      queue.getJobState.mockResolvedValue('unknown');
+
+      await service.sweep(OPTS);
+
+      expect(queue.add).toHaveBeenCalledTimes(1);
+      expect((await stored(id)).dispatchState).toBe('dispatched');
+    });
   });
 
   it('does not replay an event a manual redrive already delivered', async () => {

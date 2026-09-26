@@ -1377,7 +1377,8 @@ export interface CreateInstanceInput {
 
 export interface UpdateInstanceInput {
   enabled?: boolean;
-  sessionScope?: string;
+  /** null resets a scoped instance to all sessions; omit to leave the scope unchanged. */
+  sessionScope?: string | null;
   config?: Record<string, unknown>;
 }
 

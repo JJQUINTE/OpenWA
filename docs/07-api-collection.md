@@ -237,8 +237,8 @@ curl -X POST "$BASE/api/sessions/8f3c2b1a-9d4e-4c7a-8b2f-1e6d5a4c3b2a/chats/read
   -d '{ "chatId": "1234567890@c.us", "messageIds": ["3EB0C767D26B8A3F1A2B"] }'
 ```
 
-`messageIds` is optional and holds up to 100 ids. Omit it and only the newest message the engine still
-holds in memory is acknowledged, which on Baileys leaves the earlier messages of a burst unread.
+`messageIds` is optional and holds up to 100 ids. Omit it and only the newest received message the engine
+still holds in memory is acknowledged, which on Baileys leaves the earlier messages of a burst unread.
 
 #### POST /api/sessions/:sessionId/chats/unread
 
@@ -1278,7 +1278,7 @@ curl -X DELETE "$BASE/api/auth/api-keys/3f2a1c9e-1b2d-4a5f-9c8e-aa11bb22cc33" \
 
 #### POST /api/auth/validate
 
-Validate the supplied key and report its role (empty body; key read from the header).
+Validate the supplied key and report its role and the running engine (`engineType`); empty body, key read from the header.
 
 ```bash
 curl -X POST "$BASE/api/auth/validate" \
@@ -1562,13 +1562,14 @@ curl -X POST "$BASE/api/plugins/install" \
 
 #### POST /api/plugins/install-url
 
-Install a plugin by downloading its .zip from a URL (SSRF-guarded).
+Install a plugin by downloading its .zip from a URL (SSRF-guarded). Under `NODE_ENV=production` the
+URL needs a `#sha256=` pin by default; the digest below is a placeholder for the SHA-256 of the `.zip`.
 
 ```bash
 curl -X POST "$BASE/api/plugins/install-url" \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "url": "https://github.com/openwa-plugins/chat-flow/releases/download/v1.0.0/chat-flow.zip" }'
+  -d '{ "url": "https://github.com/openwa-plugins/chat-flow/releases/download/v1.0.0/chat-flow.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }'
 ```
 
 #### POST /api/plugins/:id/enable
@@ -1624,13 +1625,14 @@ curl -X PUT "$BASE/api/plugins/chat-flow/sessions" \
 
 #### POST /api/plugins/:id/update
 
-Update an installed plugin in place from a URL.
+Update an installed plugin in place from a URL. The URL follows the same pin rule as `install-url`; the
+digest below is a placeholder for the SHA-256 of the `.zip`.
 
 ```bash
 curl -X POST "$BASE/api/plugins/chat-flow/update" \
   -H "X-API-Key: $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "url": "https://example.com/plugins/chat-flow-1.1.0.zip" }'
+  -d '{ "url": "https://example.com/plugins/chat-flow-1.1.0.zip#sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }'
 ```
 
 #### DELETE /api/plugins/:id

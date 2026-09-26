@@ -12,7 +12,9 @@ import {
   HttpStatus,
   ParseUUIDPipe,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { SessionService } from './session.service';
 import {
@@ -73,9 +75,9 @@ export class SessionController {
   ) {}
 
   private transformSession(session: Session): SessionResponseDto {
-    // isActive() is the engine map itself, so this is read at response time — a session that just
+    // engineLoaded() reads the engine map itself, so this is read at response time: a session that just
     // finished reconnecting reports the engine in the same response that reports its status.
-    return SessionResponseDto.fromEntity(session, this.sessionService.isActive(session.id));
+    return SessionResponseDto.fromEntity(session, this.sessionService.engineLoaded(session));
   }
 
   @Post()
@@ -534,9 +536,10 @@ export class SessionController {
     status: 200,
     description:
       'Returns `{ success }`. `false` means the engine declined to act: the Baileys engine sends the ' +
-      "read receipt against the chat's last known message, so a chat it has seen no message in is " +
-      'reported as declined rather than marked read. The whatsapp-web.js engine reads the chat from ' +
-      'the page and needs no local history.',
+      'read receipt against the newest message the chat received, so a chat it has received no ' +
+      "message in (one holding only the account's own sends included) is reported as declined " +
+      'rather than marked read. The whatsapp-web.js engine reads the chat from the page and needs no ' +
+      'local history.',
     type: SessionActionResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Session not ready' })
@@ -635,9 +638,14 @@ export class SessionController {
   async getPresence(
     @Param('sessionId', ParseUUIDPipe) id: string,
     @Param('chatId') chatId: string,
-  ): Promise<ChatPresenceResponseDto | null> {
+    @Res() res: Response,
+  ): Promise<void> {
     const presence = await this.sessionService.getPresence(id, chatId);
-    return presence ? { ...presence, observedAt: new Date(presence.observedAt) } : null;
+    const body: ChatPresenceResponseDto | null = presence
+      ? { ...presence, observedAt: new Date(presence.observedAt) }
+      : null;
+    // Written directly: Nest answers a returned null with an empty body, not the JSON `null` above.
+    res.json(body);
   }
 
   @ChatScoped('fenced')

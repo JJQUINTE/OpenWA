@@ -22,3 +22,13 @@ export function parseInstanceConfig(raw: string): ParseResult {
     return { ok: false };
   }
 }
+
+/**
+ * The edit form's session scope. Blank means all sessions: omitted when the instance already serves
+ * all sessions, and null when it is scoped, because PATCH reads an omitted field as unchanged.
+ */
+export function parseEditScope(current: string | null, raw: string): string | null | undefined {
+  const value = raw.trim();
+  if (value) return value;
+  return current ? null : undefined;
+}

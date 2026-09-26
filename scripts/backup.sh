@@ -7,9 +7,13 @@
 #   - data store    — openwa.sqlite (SQLite) OR a pg_dump (when DATABASE_TYPE=postgres)
 #   - sessions/     — whatsapp-web.js LocalAuth session data
 #   - baileys/      — Baileys engine authentication state
-#   - media/        — locally-stored media (skipped automatically when using S3)
+#   - media/        — the local media dir (STORAGE_LOCAL_PATH), archived whenever it exists. Under
+#                     STORAGE_TYPE=s3 it holds only media the app could not write to the bucket
+#                     (unreachable, or no credentials); the bucket's contents are not archived and
+#                     need a backup of their own
 #   - plugin-packages/ — installed plugin packages from PLUGINS_DIR
-#   - plugin-state/    — registry and persisted ctx.storage state under OPENWA_DATA_DIR
+#   - plugin-state/    — registry and persisted ctx.storage state under PLUGIN_STATE_DIR/plugins
+#                        (default: <data dir>/plugins)
 #   - .env.generated and .api-key — dashboard config and plaintext bootstrap admin key
 #
 # The previous runbook backed up the wrong file (openwa.db) and omitted main.sqlite,
@@ -29,7 +33,16 @@
 #   DATABASE_TYPE     sqlite (default) | postgres
 #   SESSION_DATA_PATH, BAILEYS_AUTH_DIR, STORAGE_LOCAL_PATH, PLUGINS_DIR
 #                     override the corresponding state directories
+#   PLUGIN_STATE_DIR  root whose plugins/ holds the plugin registry and ctx.storage (default: the
+#                     data dir)
+#   BOOTSTRAP_KEY_FILE  the plaintext admin key to archive (default: <data dir>/.api-key)
+#                     These paths resolve through the same layers as the databases.
 #   For postgres: DATABASE_URL, or DATABASE_HOST/PORT/USERNAME/PASSWORD/NAME
+#                     DATABASE_URL is read by this script only (the app uses the DATABASE_* keys)
+#                     and wins over them when set. It is passed to pg_dump as an argument, which
+#                     other local users can read in the process list, so leave the password out of
+#                     it and supply PGPASSWORD or ~/.pgpass instead; the DATABASE_* path already
+#                     passes DATABASE_PASSWORD through PGPASSWORD.
 #
 # Failure policy: a missing source database is FATAL (no silent empty backup), and the finished
 # archive must contain every configured database or it is deleted and the run fails. When the
@@ -59,7 +72,7 @@ MAIN_DB="$(openwa_resolve MAIN_DATABASE_NAME ./data/main.sqlite)"
 DATA_DB="$(openwa_resolve DATABASE_NAME ./data/openwa.sqlite)"
 SESSIONS_DIR="$(openwa_resolve SESSION_DATA_PATH "$DATA_DIR/sessions")"
 BAILEYS_DIR="$(openwa_resolve BAILEYS_AUTH_DIR "$DATA_DIR/baileys")"
-MEDIA_DIR="$(openwa_resolve STORAGE_LOCAL_PATH "$DATA_DIR/media")"
+MEDIA_DIR="$(openwa_media_dir)"
 # Installed plugin code. The app defaults this to <dataDir>/plugins — the same tree as the
 # registry and each plugin's ctx.storage below — so an unset PLUGINS_DIR must resolve there
 # too, or the archive silently omits the plugin packages.
@@ -73,7 +86,8 @@ PLUGIN_PACKAGES_DIR="$(openwa_resolve PLUGINS_DIR "$DATA_DIR/plugins")"
 PLUGIN_STATE_ROOT="$(openwa_resolve PLUGIN_STATE_DIR "$DATA_DIR")"
 PLUGIN_STATE_DIR="$PLUGIN_STATE_ROOT/plugins"
 GENERATED_ENV="$DATA_DIR/.env.generated"
-ADMIN_KEY_FILE="$DATA_DIR/.api-key"
+# The app writes the generated admin key to BOOTSTRAP_KEY_FILE when that is set.
+ADMIN_KEY_FILE="$(openwa_resolve BOOTSTRAP_KEY_FILE "$DATA_DIR/.api-key")"
 
 log() { echo "[backup] $*"; }
 
@@ -160,33 +174,45 @@ else
   REQUIRED_MEMBERS+=("./openwa.sqlite")
 fi
 
+# The state directories below are copied with -H: a directory an operator moved to another disk and
+# linked back is archived by its content. Without it the archive held only the link, with no data.
 if [ -d "$SESSIONS_DIR" ]; then
   log "Backing up whatsapp-web.js sessions"
-  cp -pR "$SESSIONS_DIR" "$STAGE/sessions"
+  cp -pRH "$SESSIONS_DIR" "$STAGE/sessions"
 else
   log "WARN: $SESSIONS_DIR not found — skipping sessions"
 fi
 
 if [ -d "$BAILEYS_DIR" ]; then
   log "Backing up Baileys authentication state"
-  cp -pR "$BAILEYS_DIR" "$STAGE/baileys"
+  cp -pRH "$BAILEYS_DIR" "$STAGE/baileys"
 elif [ "${ENGINE_TYPE:-}" = "baileys" ]; then
   log "WARN: ENGINE_TYPE=baileys but $BAILEYS_DIR was not found — restored sessions will require pairing"
 fi
 
 if [ -d "$MEDIA_DIR" ]; then
   log "Backing up local media"
-  cp -pR "$MEDIA_DIR" "$STAGE/media"
+  cp -pRH "$MEDIA_DIR" "$STAGE/media"
+else
+  log "WARN: $MEDIA_DIR not found; skipping local media"
 fi
 
 if [ -d "$PLUGIN_PACKAGES_DIR" ]; then
   log "Backing up installed plugin packages"
-  cp -pR "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
+  cp -pRH "$PLUGIN_PACKAGES_DIR" "$STAGE/plugin-packages"
+fi
+
+# With PLUGINS_DIR unset the app also loads packages from ./plugins, its default up to 0.12.1 (see
+# plugin-package-scanner.ts). The archive does not carry that directory, so say so.
+if [ -z "$(openwa_resolve PLUGINS_DIR '')" ] &&
+  [ -n "$(find -H ./plugins -mindepth 2 -maxdepth 2 -name manifest.json ! -path './plugins/.*' 2>/dev/null)" ]; then
+  log "WARN: ./plugins holds plugin packages the app still loads, and this archive does not carry them;"
+  log "      move them into $PLUGIN_PACKAGES_DIR, or set PLUGINS_DIR=./plugins, and back up again"
 fi
 
 if [ -d "$PLUGIN_STATE_DIR" ]; then
   log "Backing up plugin registry and persisted state"
-  cp -pR "$PLUGIN_STATE_DIR" "$STAGE/plugin-state"
+  cp -pRH "$PLUGIN_STATE_DIR" "$STAGE/plugin-state"
 fi
 
 if [ -f "$GENERATED_ENV" ]; then

@@ -9,16 +9,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 let webhooksStatus = 200;
 let webhookList: unknown[] = [];
+let sessionList: unknown[] = [];
+let createCalls = 0;
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 function installFetchStub(): void {
-  globalThis.fetch = ((input: RequestInfo | URL): Promise<Response> => {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const path = url.replace(/^https?:\/\/[^/]+/, '');
-    if (path === '/api/sessions') return Promise.resolve(jsonResponse([]));
+    if (path === '/api/sessions') return Promise.resolve(jsonResponse(sessionList));
+    if (init?.method === 'POST' && path === '/api/sessions/sess-1/webhooks') {
+      // Never answers: the create stays in flight, like one held up by the gateway's URL check.
+      createCalls++;
+      return new Promise<Response>(() => {});
+    }
     if (path === '/api/webhooks') {
       if (webhooksStatus === 403) {
         return Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: operator' }, 403));
@@ -40,7 +47,7 @@ before(async () => {
   const { installJsdomGlobals } = await import('../test-helpers/jsdom.ts');
   await installJsdomGlobals();
   installFetchStub();
-  window.localStorage.setItem('openwa_user_role', 'viewer');
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
   const { i18nReady } = await import('../i18n/index.ts');
   await i18nReady;
   rtl = await import('@testing-library/react');
@@ -54,6 +61,9 @@ afterEach(() => {
   queryClient?.clear();
   queryClient = undefined;
   webhookList = [];
+  sessionList = [];
+  createCalls = 0;
+  window.sessionStorage.setItem('openwa_user_role', 'viewer');
 });
 
 function renderWebhooks(): void {
@@ -98,4 +108,82 @@ test('a failed refetch keeps the cached list and flags the error above it', asyn
   await rtl.act(() => queryClient!.refetchQueries({ queryKey: ['webhooks'] }));
   await rtl.screen.findByText('Failed to load data');
   rtl.screen.getByText('https://example.test/hook');
+});
+
+test('the filter badge popover names enum values in words, like the filter builder', async () => {
+  webhooksStatus = 200;
+  webhookList = [
+    {
+      id: 'w1',
+      sessionId: 'sess-1',
+      url: 'https://example.test/hook',
+      events: ['message.received'],
+      active: true,
+      filters: {
+        conditions: [
+          { field: 'type', operator: 'is', value: ['image', 'unknown', 'future-type'] },
+          { field: 'kind', operator: 'isNot', value: ['individual'] },
+          { field: 'sender', operator: 'is', value: ['628123@c.us'] },
+        ],
+      },
+    },
+  ];
+  renderWebhooks();
+  const badge = (await rtl.screen.findByText('3 filters')).closest('.filter-badge') as HTMLElement;
+  rtl.fireEvent.focus(badge);
+
+  const rows = Array.from(document.querySelectorAll('.filter-popover-row')).map(r => r.textContent);
+  assert.deepEqual(rows, [
+    // An unmapped value stays raw rather than disappearing.
+    'Message type is Image, Unknown type, future-type',
+    'Chat kind is not Individual',
+    // A contact field has no labels; its JIDs are shown as they are.
+    'Sender is 628123@c.us',
+  ]);
+});
+
+test('a second click on Create while the first create is in flight sends nothing', async () => {
+  const { screen, fireEvent, waitFor } = rtl;
+  webhooksStatus = 200;
+  sessionList = [{ id: 'sess-1', name: 'Main', status: 'ready', createdAt: '2026-01-01T00:00:00.000Z' }];
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  renderWebhooks();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Webhook' }));
+  const sessionSelect = screen.getByLabelText<HTMLSelectElement>('Session');
+  await rtl.findByText(sessionSelect, 'Main');
+  fireEvent.change(sessionSelect, { target: { value: 'sess-1' } });
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.test/hook' } });
+
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: 'Create' });
+  fireEvent.click(create);
+  await waitFor(() => assert.equal(createCalls, 1));
+  // A double click lands a moment later, after the pending create has rendered.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  fireEvent.click(create);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(createCalls, 1);
+});
+
+test('Create stays disabled until both a session and a URL are filled in', async () => {
+  const { screen, fireEvent } = rtl;
+  webhooksStatus = 200;
+  sessionList = [{ id: 'sess-1', name: 'Main', status: 'ready', createdAt: '2026-01-01T00:00:00.000Z' }];
+  window.sessionStorage.setItem('openwa_user_role', 'operator');
+  renderWebhooks();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Webhook' }));
+  const create = screen.getByRole<HTMLButtonElement>('button', { name: 'Create' });
+  const sessionSelect = screen.getByLabelText<HTMLSelectElement>('Session');
+  await rtl.findByText(sessionSelect, 'Main');
+  assert.equal(create.disabled, true, 'nothing filled in');
+
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.test/hook' } });
+  assert.equal(create.disabled, true, 'URL without a session');
+
+  fireEvent.change(sessionSelect, { target: { value: 'sess-1' } });
+  assert.equal(create.disabled, false);
+
+  fireEvent.change(screen.getByLabelText('URL'), { target: { value: '' } });
+  assert.equal(create.disabled, true, 'session without a URL');
 });

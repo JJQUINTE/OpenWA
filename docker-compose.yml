@@ -131,6 +131,9 @@ services:
       # PostgreSQL schema (blank-forwarded like the other DATABASE_* keys so a dashboard-saved
       # POSTGRES_SCHEMA in data/.env.generated applies; a real host value pins). Ignored for sqlite.
       - POSTGRES_SCHEMA=${POSTGRES_SCHEMA:-}
+      # TLS to a managed PostgreSQL, blank-forwarded the same way.
+      - DATABASE_SSL=${DATABASE_SSL:-}
+      - DATABASE_SSL_REJECT_UNAUTHORIZED=${DATABASE_SSL_REJECT_UNAUTHORIZED:-}
       - DATABASE_SYNCHRONIZE=${DATABASE_SYNCHRONIZE:-false}
       # Engine. Forwarded empty by default so the dashboard (Infrastructure > Engine) selects the
       # active engine via data/.env.generated (defaults to whatsapp-web.js); main.ts treats a blank

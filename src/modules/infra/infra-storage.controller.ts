@@ -133,7 +133,8 @@ export class InfraStorageController implements OnApplicationBootstrap {
     status: 200,
     description:
       'JSON pointing at the archive that was written under data/exports/. This route does NOT stream ' +
-      'the tar.gz itself — fetch it from the returned `download` path.',
+      'the tar.gz, and no route serves it: `download` is a server-side path to pass as `filePath` to ' +
+      'POST /api/infra/storage/import.',
     type: StorageExportResponseDto,
   })
   async exportStorage(): Promise<{ message: string; download: string }> {

@@ -161,10 +161,15 @@ type SessionResponse struct {
 	// Restriction reports a limit WhatsApp itself has placed on the account, or nil when there is
 	// none. Distinct from LastError, which describes a fault on the gateway's side.
 	Restriction *AccountRestriction `json:"restriction,omitempty"`
-	// EngineLoaded reports whether the gateway holds a live engine for this session -- the
-	// precondition stop/logout/force-kill require and start refuses. Not derivable from Status:
-	// "disconnected" covers both a session mid automatic-reconnect (engine present) and one stopped
-	// with no engine. Nil from a gateway that predates the field.
+	// EngineLoaded reports whether the gateway holds a live engine for this session: an engine in
+	// the answering process or, in a multi-node deployment, a live claim by the node running it. On
+	// the node running the session, true means stop/logout/force-kill can act and start is refused.
+	// For a session another node runs, those routes act only when request routing (NODE_URL on
+	// every node) forwards them; without it, other nodes answer 409 to start and stop and 400 to
+	// logout and force-kill. Not derivable from Status: "disconnected" covers both a session mid
+	// automatic-reconnect (engine present) and one stopped with no engine. A gateway that predates
+	// the field omits it, which decodes as false; against such a gateway false does not mean no
+	// engine is loaded, so fall back to Status.
 	EngineLoaded bool `json:"engineLoaded"`
 }
 

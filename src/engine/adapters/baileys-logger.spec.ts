@@ -30,4 +30,24 @@ describe('createBaileysLogger redacts credentials the library hands it', () => {
       process.env.BAILEYS_LOG_LEVEL = previous;
     }
   });
+
+  it("keeps an error's message and stack, nested or passed alone, and still redacts its props", () => {
+    const previous = process.env.BAILEYS_LOG_LEVEL;
+    process.env.BAILEYS_LOG_LEVEL = 'debug';
+    try {
+      const logger = createBaileysLogger();
+      const err = Object.assign(new Error('Socks5 proxy rejected connection'), {
+        options: { proxy: { host: 'p', password: 'hunter2' } },
+      });
+      for (const payload of [{ err }, err]) {
+        const line = JSON.stringify(captureLine(logger.error, payload));
+        expect(line).toContain('"message":"Socks5 proxy rejected connection"');
+        expect(line).toContain('baileys-logger.spec.ts');
+        expect(line).not.toContain('hunter2');
+        expect(line).toContain('"host":"p"');
+      }
+    } finally {
+      process.env.BAILEYS_LOG_LEVEL = previous;
+    }
+  });
 });

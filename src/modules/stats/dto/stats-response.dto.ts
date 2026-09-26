@@ -63,11 +63,15 @@ export class StatsBySessionDto {
   @ApiProperty({ example: 34 }) received!: number;
 }
 
+const CHAT_NAME_DESCRIPTION =
+  "The contact's push name for a 1:1 chat, taken from its incoming messages. Null for a group chat, " +
+  'or when no name is known.';
+
 export class StatsTopChatDto {
   @ApiProperty({ example: '628123456789@c.us' })
   chatId!: string;
 
-  @ApiProperty({ type: String, nullable: true, description: 'Null when no name is known for the chat.' })
+  @ApiProperty({ type: String, nullable: true, description: CHAT_NAME_DESCRIPTION })
   chatName!: string | null;
 
   @ApiProperty({ example: 42 }) messageCount!: number;
@@ -108,7 +112,7 @@ export class SessionStatsTopChatDto {
   @ApiProperty({ example: '628123456789@c.us' })
   chatId!: string;
 
-  @ApiProperty({ type: String, nullable: true, description: 'Null when no name is known for the chat.' })
+  @ApiProperty({ type: String, nullable: true, description: CHAT_NAME_DESCRIPTION })
   chatName!: string | null;
 
   @ApiProperty({ example: 42 }) count!: number;

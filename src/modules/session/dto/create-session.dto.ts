@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, Validate } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, Validate } from 'class-validator';
 import { HasDecodableProxyCredentialsConstraint } from './has-decodable-proxy-credentials.validator';
 
 export class CreateSessionDto {
@@ -25,11 +25,13 @@ export class CreateSessionDto {
       'reconnectBaseDelay (1000-300000 ms, default 5000) sets the backoff base, both for the ' +
       "gateway's own reconnect only (on Baileys the engine retries a transient drop itself, with a " +
       'fixed backoff and no cap). Anything else is ' +
-      'stored but ignored. All three can be changed later with PATCH /api/sessions/{sessionId}/config, ' +
-      'without restarting the session.',
+      'stored but ignored. All three can be changed later with PATCH /api/sessions/{sessionId}/config ' +
+      'without a restart: autoRejectCalls applies from the next incoming call, the two reconnect settings ' +
+      'from the next session start.',
     example: { autoRejectCalls: false, maxReconnectAttempts: 5, reconnectBaseDelay: 5000 },
   })
   @IsOptional()
+  @IsObject()
   config?: Record<string, unknown>;
 
   // Phase 3: Proxy per session

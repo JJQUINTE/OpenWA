@@ -53,6 +53,7 @@ import { applyGlobalValidation } from '../src/config/app-validation';
 import { PluginLoaderService } from '../src/core/plugins/plugin-loader.service';
 import { PluginInstance } from '../src/modules/integration/entities/plugin-instance.entity';
 import { IngressEvent } from '../src/modules/integration/entities/ingress-event.entity';
+import { sanitizeIngressJobId } from '../src/modules/integration/ingress-enqueue.service';
 import { QUEUE_NAMES } from '../src/modules/queue/queue-names';
 import { IngressJobData } from '../src/modules/queue/processors/ingress.processor';
 import { AuthService } from '../src/modules/auth/auth.service';
@@ -70,9 +71,9 @@ import { WebhookService } from '../src/modules/webhook/webhook.service';
  *     ingress-queue provider did not resolve) stays silent — the broken wiring it guards against
  *     (IntegrationModule not importing QueueModule) would crash this suite's beforeAll;
  *   - a signed ingress delivery fast-acks 202 with its job persisted in `ingress-queue`
- *     (jobId = deliveryId, awaited before the ack — deterministic proof the enqueue path ran, since
- *     the inline fallback never touches the queue), and the IngressProcessor worker then performs
- *     the dispatch;
+ *     (its jobId derived from the deliveryId, awaited before the ack — deterministic proof the
+ *     enqueue path ran, since the inline fallback never touches the queue), and the IngressProcessor
+ *     worker then performs the dispatch;
  *   - WebhookService.dispatch() enqueues onto `webhook-queue` (the queue.add spy fires before
  *     dispatch() resolves — the direct-delivery fallback never calls it) and the WebhookProcessor
  *     worker POSTs to a live local receiver.
@@ -227,8 +228,8 @@ describeQueueOn('Queued dispatch paths (e2e, QUEUE_ENABLED=true)', () => {
   });
 
   it('enqueues the ingress delivery and the worker dispatches it', async () => {
-    // Unique per run: the enqueue sets jobId = deliveryId and BullMQ dedups a repeated jobId while
-    // the previous job still lingers (auto-evicted, 1h window) — a fixed id would make a fast local
+    // Unique per run: the enqueue derives the jobId from deliveryId and BullMQ dedups a repeated jobId
+    // while the previous job still lingers (auto-evicted, 1h window) — a fixed id would make a fast local
     // rerun enqueue nothing and time out below.
     const deliveryId = `queue-on-${Date.now()}`;
     const res = await request(app.getHttpServer())
@@ -241,7 +242,8 @@ describeQueueOn('Queued dispatch paths (e2e, QUEUE_ENABLED=true)', () => {
     expect(res.status).toBe(202);
     // The no-`response` route awaits the enqueue before the ack, so the job MUST already exist; the
     // inline fallback never touches the queue, making this the queued-vs-inline discriminator.
-    const job = await ingressQueue.getJob(deliveryId);
+    // The job id is the delivery id hashed with its plugin/instance namespace, as the enqueue mints it.
+    const job = await ingressQueue.getJob(sanitizeIngressJobId(deliveryId, 'chatwoot\u0000acct1'));
     expect(job).toBeDefined();
     // The enqueue outcome was recorded on the event row (queued counts as reached-the-dispatch-tier).
     const event = await eventRepo.findOneByOrFail({ providerDeliveryId: deliveryId });

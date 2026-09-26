@@ -78,9 +78,27 @@ test('chats.channels.subscribers: count=1 renders singular, count>1 renders plur
   assert.equal(i18n.t('chats.channels.subscribers', { count: 4 }), '4 subscribers');
 });
 
+test('common.minAgo and common.hoursAgo agree with the count', () => {
+  assert.equal(i18n.t('common.hoursAgo', { count: 1 }), '1 hour ago');
+  assert.equal(i18n.t('common.hoursAgo', { count: 2 }), '2 hours ago');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 1 }), 'Il y a 1 heure');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'fr', count: 3 }), 'Il y a 3 heures');
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'he', count: 2 }), 'לפני שעתיים');
+  // 'पहले' governs the oblique case, so Hindi keeps 'घंटे' for one hour too.
+  assert.equal(i18n.t('common.hoursAgo', { lng: 'hi', count: 1 }), '1 घंटे पहले');
+  assert.equal(i18n.t('common.minAgo', { lng: 'te', count: 5 }), '5 నిమిషాల క్రితం');
+  assert.equal(i18n.t('common.minAgo', { lng: 'ar', count: 3 }), 'منذ 3 دقائق');
+});
+
 test('count badges resolve to a non-key, interpolated string in every locale', () => {
   for (const lng of LOCALE_IDS) {
-    for (const key of ['webhooks.filters.badge', 'chats.unreadBadge', 'chats.channels.subscribers']) {
+    for (const key of [
+      'webhooks.filters.badge',
+      'chats.unreadBadge',
+      'chats.channels.subscribers',
+      'common.minAgo',
+      'common.hoursAgo',
+    ]) {
       for (const count of [1, 2]) {
         const value = i18n.t(key, { lng, count });
         assert.ok(value && !value.startsWith(key), `${lng} ${key} count=${count} did not resolve (got "${value}")`);
@@ -98,6 +116,11 @@ test('Hebrew dual + Arabic plural categories resolve for the filter badge', () =
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'he', count: 2 }), 'שני מסננים');
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'he', count: 5 }), '5 מסננים');
   assert.equal(i18n.t('webhooks.filters.badge', { lng: 'ar', count: 3 }), '3 عوامل تصفية');
+});
+
+test('Arabic takes the singular noun from 100 up and the plural from 3 to 10', () => {
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 100 }), '100 تحديث');
+  assert.equal(i18n.t('chats.status.itemCount', { lng: 'ar', count: 3 }), '3 تحديثات');
 });
 
 test('every session-scope API key string resolves in every locale', () => {
@@ -130,6 +153,31 @@ test('new plugins.* keys carry the expected English copy', () => {
   assert.equal(i18n.t('plugins.installModal.tabUpload'), 'Upload .zip');
   assert.equal(i18n.t('plugins.catalog.installed'), 'Installed');
   assert.equal(i18n.t('plugins.toasts.updateFailed'), 'Update failed');
+});
+
+// Mirrors the `status` and `type` unions on `Plugin` in services/api.ts. The plugin card renders
+// both through these keys; a missing one falls back to the raw English value.
+const PLUGIN_STATUSES = ['installed', 'enabled', 'disabled', 'error'];
+const PLUGIN_TYPES = ['engine', 'storage', 'queue', 'auth', 'extension'];
+
+test('every plugin status and type label resolves in every locale', () => {
+  for (const lng of LOCALE_IDS) {
+    for (const [group, values] of [
+      ['statuses', PLUGIN_STATUSES],
+      ['types', PLUGIN_TYPES],
+    ] as const) {
+      for (const value of values) {
+        const key = `plugins.${group}.${value}`;
+        const label = i18n.t(key, { lng });
+        assert.ok(
+          label && label !== key && label !== value,
+          `${lng}: ${key} missing, card would render raw "${value}"`,
+        );
+      }
+    }
+  }
+  assert.equal(i18n.t('plugins.statuses.installed'), 'Installed');
+  assert.equal(i18n.t('plugins.types.extension'), 'Extension');
 });
 
 test('sessionStatus.failed and sessionStatus.authenticating resolve in every locale', () => {
@@ -293,4 +341,37 @@ test('rtlLanguages only names shipped locales', () => {
   const rtl = localeIdsIn(section('export const rtlLanguages:'));
   assert.ok(rtl.length > 0, 'rtlLanguages parsed as empty — the anchor or the pattern has drifted');
   for (const id of rtl) assert.ok(LOCALE_IDS.includes(id), `rtlLanguages names "${id}", which has no locale file`);
+});
+
+// The parity checker flags a value identical to English only from 20 characters up, so a short label
+// left in English passes it. These pin the ones that sit next to translated text on a translated screen.
+const NON_EN_LOCALES = LOCALE_IDS.filter(id => id !== 'en');
+
+test('the proxy modal Save button is translated in every locale', () => {
+  for (const lng of NON_EN_LOCALES) {
+    assert.notEqual(i18n.t('common.save', { lng }), 'Save', `${lng} common.save is still English`);
+  }
+});
+
+test('the session proxy button uses the same script as the modal title it opens', () => {
+  const latin = /[A-Za-z]/;
+  for (const lng of LOCALE_IDS) {
+    // Latin-script locales, and he, whose title writes "proxy" too, keep the Latin term.
+    if (latin.test(i18n.t('sessions.proxy.title', { lng }))) continue;
+    const label = i18n.t('sessions.actions.proxy', { lng });
+    assert.ok(!latin.test(label), `${lng} sessions.actions.proxy is "${label}", the modal title is translated`);
+  }
+});
+
+test('the webhook filter chat-kind field is translated in every locale', () => {
+  for (const lng of NON_EN_LOCALES) {
+    const label = i18n.t('webhooks.filters.fields.kind', { lng });
+    assert.notEqual(label, 'Chat kind', `${lng} webhooks.filters.fields.kind is still English`);
+  }
+});
+
+test('the Templates nav item reads the same as the page it opens in every locale', () => {
+  for (const lng of LOCALE_IDS) {
+    assert.equal(i18n.t('nav.templates', { lng }), i18n.t('templates.title', { lng }), `${lng} nav.templates`);
+  }
 });

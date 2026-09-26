@@ -216,9 +216,9 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
             extra: {
               max: configService.get<number>('dataDatabase.poolSize', 10),
               // Runtime query/pool timeouts so a stuck query or saturated pool fails fast instead of
-              // hanging requests. statement_timeout bounds live runtime queries; the boot migrations
-              // reset it to 0 per-transaction via SET LOCAL, so a long
-              // CREATE INDEX / backfill at boot is never aborted by it.
+              // hanging requests. statement_timeout applies to the runtime pool only: the boot
+              // migration chain runs on a separate pool built without it (pg-boot-migrations.ts),
+              // so a long CREATE INDEX / backfill at boot is never aborted by it.
               statement_timeout: configService.get<number>('dataDatabase.statementTimeoutMs', 30000),
               idleTimeoutMillis: configService.get<number>('dataDatabase.idleTimeoutMs', 30000),
               connectionTimeoutMillis: configService.get<number>('dataDatabase.connectionTimeoutMs', 10000),

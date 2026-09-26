@@ -1,7 +1,7 @@
 import { Injectable, OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { JobState, Queue } from 'bullmq';
 import { createHash } from 'crypto';
 import { PluginLoaderService } from '../../core/plugins/plugin-loader.service';
 import { IngressJobData } from '../queue/processors/ingress.processor';
@@ -43,26 +43,27 @@ export function resolveIngressJobOptions(): { attempts: number; backoff: { type:
  * '0:'-prefixed id ("JobId cannot be '0' or start with '0:'"). Providers send numeric dedup headers
  * (`svix-Id: 12345`), and the redrive path mints `redrive:<uuid>`, so these refusals happen in
  * practice, and because enqueue()'s catch-all treats ANY add() throw as "Redis unreachable", the job
- * silently degraded to inline dispatch with no retry, no backoff, and a blocked redrive loop. Map the
- * refused shapes to a deterministic sha256 prefix: BullMQ's exactly-once dedup only needs the id
- * STABLE per delivery, not recognizable, and the reconciler replays through this same function so
- * its dedup against an earlier enqueue is preserved.
+ * silently degraded to inline dispatch with no retry, no backoff, and a blocked redrive loop. Every id
+ * therefore maps to a deterministic sha256 prefix, which BullMQ always accepts: its exactly-once dedup
+ * only needs the id STABLE per delivery, not recognizable, and the reconciler replays through this
+ * same function so its dedup against an earlier enqueue is preserved.
  *
- * The hash input is namespaced with the plugin/instance pair. BullMQ dedups jobIds across the WHOLE
- * shared ingress queue, while the database dedup is (pluginId, instanceId, providerDeliveryId), and
- * numeric provider ids are exactly the short, per-account sequence style that two instances of one
- * provider can share. Without the namespace, the second instance's delivery would collide with the
- * first's job id and BullMQ would silently discard it (resolved as the existing job, no DLQ row);
- * with it, the queue-level dedup matches the database-level scope. A non-string id (a duplicated
- * header can surface as string[]) is coerced rather than trusted to reach BullMQ's own checks.
+ * The hash input is namespaced with the plugin/instance pair, for EVERY id rather than only the
+ * refused shapes. BullMQ dedups jobIds across the WHOLE shared ingress queue, while the database dedup
+ * is (pluginId, instanceId, providerDeliveryId), and two instances can share a provider id: numeric
+ * per-account sequences, or one Standard Webhooks message fanned out to two endpoints with the same
+ * `webhook-id`. Without the namespace, the second instance's delivery would collide with the first's
+ * job id and BullMQ would silently discard it (resolved as the existing job, no DLQ row); with it, the
+ * queue-level dedup matches the database-level scope. A non-string id (a duplicated header can surface
+ * as string[]) is coerced rather than trusted to reach BullMQ's own checks.
  */
 export function sanitizeIngressJobId(jobId: string, namespace = ''): string {
   const raw = typeof jobId === 'string' ? jobId : String(jobId);
-  const looksInteger = `${parseInt(raw, 10)}` === raw;
-  const badColon = raw.includes(':') && raw.split(':').length !== 3;
-  const zeroPrefixed = raw === '0' || raw.startsWith('0:');
-  if (!looksInteger && !badColon && !zeroPrefixed) return raw;
   return `ing-${createHash('sha256').update(`${namespace}\u0000${raw}`).digest('hex').slice(0, 40)}`;
+}
+
+function queueJobId(data: IngressJobData, jobId: string): string {
+  return sanitizeIngressJobId(jobId, `${data.pluginId}\u0000${data.instanceId}`);
 }
 
 /**
@@ -124,6 +125,30 @@ export class IngressEnqueueService implements OnApplicationBootstrap {
     }
   }
 
+  /**
+   * State of the job an earlier enqueue() of this delivery left in the queue, or undefined when the
+   * queue is off, holds no such job, or cannot answer. add() resolves for a duplicate jobId whatever
+   * state the existing job is in, so a caller replaying under the original jobId must look first: a
+   * retained failed job (removeOnFail keeps it for a day) would silently swallow the replay.
+   */
+  async existingJobState(data: IngressJobData, jobId: string): Promise<JobState | undefined> {
+    if (!this.config.get<boolean>('queue.enabled', false) || !this.ingressQueue) return undefined;
+    try {
+      const state = await this.ingressQueue.getJobState(queueJobId(data, jobId));
+      return state === 'unknown' ? undefined : state;
+    } catch (err) {
+      // Redis unreachable: enqueue() then takes its own inline fallback, as it would without the probe.
+      this.logger.warn('Ingress job state lookup failed', {
+        pluginId: data.pluginId,
+        instanceId: data.instanceId,
+        deliveryId: data.deliveryId,
+        error: err instanceof Error ? err.message : String(err),
+        action: 'ingress_job_state_lookup_failed',
+      });
+      return undefined;
+    }
+  }
+
   async enqueue(data: IngressJobData, jobId: string): Promise<EnqueueOutcome> {
     const queueEnabled = this.config.get<boolean>('queue.enabled', false);
     const useQueue = queueEnabled && !!this.ingressQueue;
@@ -135,7 +160,7 @@ export class IngressEnqueueService implements OnApplicationBootstrap {
         // is sanitized because BullMQ refuses several id shapes at add() (see sanitizeIngressJobId),
         // which would otherwise read as a Redis failure here and fall through to inline dispatch.
         await this.ingressQueue.add('ingress', data, {
-          jobId: sanitizeIngressJobId(jobId, `${data.pluginId}\u0000${data.instanceId}`),
+          jobId: queueJobId(data, jobId),
           ...resolveIngressJobOptions(),
         });
         return { outcome: 'queued' };

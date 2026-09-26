@@ -7,6 +7,8 @@ import { MessageBatch } from '../message/entities/message-batch.entity';
 import { Webhook } from '../webhook/entities/webhook.entity';
 import { Template } from '../template/entities/template.entity';
 import { BaileysStoredMessage } from '../../engine';
+import { ChatState } from '../../engine/adapters/baileys-chat-state.entity';
+import { StatusUpdate } from '../status-store/entities/status-update.entity';
 import { EngineFactory } from '../../engine/engine.factory';
 import { EngineRegistry } from '../../engine/engine-registry.service';
 import { IWhatsAppEngine } from '../../engine/interfaces/whatsapp-engine.interface';
@@ -568,10 +570,13 @@ export class SessionEngineControls {
       // better-sqlite3 defaults `foreign_keys` ON and TypeORM's driver re-asserts it at connection
       // creation — so their explicit deletes are belt-and-braces rather than required; they stay
       // because depending on a pragma neither this file nor a test pins is a thinner guarantee than
-      // an explicit delete, and the ordering mirrors the restore path's explicit-clear.
+      // an explicit delete, and the ordering mirrors the restore path's explicit-clear. chat_states and
+      // status_updates are in the no-FK group too.
       await this.host.dataSource().transaction(async manager => {
         await manager.delete(Message, { sessionId: id });
         await manager.delete(MessageBatch, { sessionId: id });
+        await manager.delete(ChatState, { sessionId: id });
+        await manager.delete(StatusUpdate, { sessionId: id });
         await manager.delete(Webhook, { sessionId: id });
         await manager.delete(Template, { sessionId: id });
         await manager.delete(BaileysStoredMessage, { sessionId: id });
@@ -590,8 +595,14 @@ export class SessionEngineControls {
       // session's WhatsApp credentials stay on the volume. Best-effort inside the factory — never
       // fails an otherwise-successful delete. By this point both fences passed, so no old remover is
       // live against this session's directories. The name goes too: it is the key the directories
-      // carried before 0.23.5, and the boot migration keeps a legacy one it could not rename.
-      await this.engineFactory.purgeSessionData(session.id, session.name);
+      // carried before 0.23.5, and the boot migration keeps a legacy one it could not rename. Unless
+      // it is another session's id, whatever its shape (an import accepts any safe key): the dirs it
+      // names are then that session's live login, the same exact-id guard the migration keeps. A
+      // failed lookup withholds the name rather than fail a delete that has already committed.
+      // Keyed by `id`, not `session.id`: TypeORM clears a removed entity's primary key, so session.id
+      // is undefined here and the purge would refuse it as an unsafe key and remove nothing.
+      const nameIsAnId = await this.sessionRepository.exists({ where: { id: session.name } }).catch(() => true);
+      await this.engineFactory.purgeSessionData(id, nameIsAnId ? undefined : session.name);
     } finally {
       // Always clear the teardown mark so a later recreate/start with this id isn't suppressed. This
       // stop mark was set after fence #1, so clearing it on a rejected 409 only undoes what THIS

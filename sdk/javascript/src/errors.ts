@@ -76,7 +76,13 @@ export class OpenWAForbiddenError extends OpenWAApiError {}
 export class OpenWANotFoundError extends OpenWAApiError {}
 /** 409 Conflict — typically an {@link EngineNotReadyError} from the backend. */
 export class OpenWAConflictError extends OpenWAApiError {}
-/** 429 Too Many Requests — rate limited. */
+/**
+ * 429 Too Many Requests — rate limited. The global rate limiter's 429 lifts when its window
+ * expires (seconds for the per-second tier, up to an hour for the hourly tier by default); its
+ * delay is only in the `Retry-After` response header, which this error does not carry. A 429 whose
+ * `body` has `code: 'SEND_PACING_LIMITED'` is not transient: do not retry it before
+ * `body.retryAfterSeconds`, which can be hours.
+ */
 export class OpenWARateLimitError extends OpenWAApiError {}
 /** 501 Not Implemented — the active engine does not support this operation. */
 export class OpenWANotImplementedError extends OpenWAApiError {}
@@ -84,7 +90,8 @@ export class OpenWANotImplementedError extends OpenWAApiError {}
 /**
  * 503 Service Unavailable — a transport failure, not a refusal. The gateway answers this when the
  * engine did not confirm the operation in time: WhatsApp never replied, the socket was down, or the
- * request budget ran out. **Retryable**, unlike every other typed error here.
+ * request budget ran out. **Retryable**, but a catalog 503 can persist because WhatsApp may never
+ * answer that query, so bound any retry.
  *
  * Not every 503 is safe to repeat blindly: the non-idempotent sends (group create, channel create,
  * media send) are deliberately left unbounded by the gateway so a slow WhatsApp reply never answers
@@ -149,5 +156,8 @@ function isNestEnvelope(body: unknown): body is NestErrorEnvelope {
 function describeMessage(message: string | string[] | unknown): string {
   if (Array.isArray(message)) return message.join(', ');
   if (typeof message === 'string') return message;
+  // A body without the envelope, such as the readiness 503's `{ status, details }`. It came from
+  // JSON.parse, so it always stringifies.
+  if (typeof message === 'object' && message !== null) return JSON.stringify(message);
   return String(message);
 }

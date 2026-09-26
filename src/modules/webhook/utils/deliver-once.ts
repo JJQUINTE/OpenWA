@@ -8,12 +8,17 @@ import { recordWebhookDeliveryFailure, statusCodeFromError } from './record-deli
 /**
  * Drop operator-supplied custom headers that target reserved names (Content-Type or any
  * X-OpenWA-* header) so a webhook config cannot forge the signature/event/idempotency
- * headers. Spread the result BEFORE the system headers so system always wins.
+ * headers. Spread the result BEFORE the system headers so system always wins. Connection-level
+ * and framing headers are dropped too: the HTTP client owns them, undici throws on several
+ * (failing every delivery) and a wrong Content-Length breaks the request.
  */
 export function sanitizeCustomHeaders(custom: Record<string, string> | null | undefined): Record<string, string> {
   const safe: Record<string, string> = {};
   for (const [key, value] of Object.entries(custom ?? {})) {
-    if (!/^(content-type|x-openwa-)/i.test(key)) {
+    if (
+      !/^(content-type|x-openwa-)/i.test(key) &&
+      !/^(connection|content-length|expect|keep-alive|te|trailer|transfer-encoding|upgrade)$/i.test(key)
+    ) {
       safe[key] = value;
     }
   }

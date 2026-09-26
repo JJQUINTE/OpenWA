@@ -189,6 +189,11 @@ export class WwebjsLabels {
       }
       throw error;
     }
+    // The page drops an id it does not know and resolves, so the write left the chat unchanged. Checked
+    // after the write, not before, so a personal account (no labels at all) still gets the LT01 422.
+    if (add && !(await this.getLabels()).some(label => label.id === labelId)) {
+      throw new LabelNotFoundError(labelId);
+    }
     this.host.logger.log(`${add ? 'Added' : 'Removed'} label ${labelId} ${add ? 'to' : 'from'} chat ${chatId}`);
   }
 }

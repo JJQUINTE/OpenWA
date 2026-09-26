@@ -120,8 +120,8 @@ Start workflows when WhatsApp events occur.
   "event": "message.received",
   "timestamp": "2024-01-15T10:30:00Z",
   "sessionId": "default",
-  "idempotencyKey": "a1b2c3d4e5f6...",
-  "deliveryId": "9f8e7d6c5b4a...",
+  "idempotencyKey": "msg_default_3EB0F5A2B4C..._f1e2d3c4-b5a6-7890-1234-567890abcdef",
+  "deliveryId": "dlv_0f8c1a2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b",
   "data": {
     "id": "3EB0F5A2B4C...",
     "chatId": "628123456789@c.us",
@@ -285,8 +285,12 @@ Always use the correct format for chat IDs:
    whatsapp-web.js and `call.received` is not reliable there (see the note under the trigger event
    table above)
 7. Ask OpenWA which side dropped the event:
-   `GET /api/webhooks/delivery-failures?sessionId={sessionId}` (ADMIN key). A row means OpenWA
-   delivered and n8n rejected it; an empty list means the event never reached delivery at all
+   `GET /api/webhooks/delivery-failures?sessionId={sessionId}` (ADMIN key). A row with an HTTP
+   `lastStatusCode` means OpenWA delivered and n8n rejected it. A row without one and with
+   `attempts: 0` was never sent (shed under load, dropped at shutdown, over the payload size cap, or
+   failed before sending; a shed or shutdown row is replayed later); with attempts, n8n timed out or
+   was unreachable. An empty list means nothing has failed permanently yet: retries still in flight
+   show only in the server logs, and an event that never matched the webhook leaves no row
 
 ### Message Not Sending
 
@@ -337,6 +341,7 @@ docker run -it --rm \
 - [OpenWA API Specification](./06-api-specification.md)
 - [Webhook System](./03-system-architecture.md#353-webhook-system)
 - [n8n Appointment Booking Workflow](./examples/n8n-appointment-booking.md)
+- [n8n to Discord Workflow](./examples/n8n/README.md), built from n8n's own Webhook and HTTP Request nodes
 - [n8n Documentation](https://docs.n8n.io/)
 
 ---

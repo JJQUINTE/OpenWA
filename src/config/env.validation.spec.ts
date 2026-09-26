@@ -97,6 +97,22 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ STORAGE_TYPE: 's3' })).not.toThrow();
   });
 
+  // The runtime compares these raw (`=== 'postgres'`, the engine plugin lookup, `=== 's3'`), so a
+  // padded value that only matches after trimming would validate here and then take the default branch.
+  it.each([
+    ['DATABASE_TYPE', 'postgres '],
+    ['DATABASE_TYPE', 'sqlite\r'],
+    ['ENGINE_TYPE', 'baileys '],
+    ['STORAGE_TYPE', ' s3'],
+  ])('rejects a padded %s %j instead of validating the trimmed value', (key, value) => {
+    const pg = { DATABASE_HOST: 'db', DATABASE_USERNAME: 'u', DATABASE_PASSWORD: 'p' };
+    expect(() => validateEnv({ ...pg, [key]: value })).toThrow(new RegExp(`${key} must be`));
+  });
+
+  it('still treats a whitespace-only enum (a blank compose forward) as unset', () => {
+    expect(() => validateEnv({ DATABASE_TYPE: '  ', ENGINE_TYPE: '', STORAGE_TYPE: ' ' })).not.toThrow();
+  });
+
   // Every production hardening in the repo compares NODE_ENV against the exact string 'production',
   // so an unrecognised value silently selects the permissive branch of each one — including the
   // ALLOW_DEV_API_KEY rejection that stops the public `dev-admin-key` being seeded as an ADMIN
@@ -412,6 +428,14 @@ describe('validateEnv', () => {
     ).not.toThrow();
   });
 
+  it("catches MAIN_DATABASE_NAME pointing at the data connection's default file", () => {
+    // DATABASE_NAME unset resolves to ./data/openwa.sqlite at runtime, so the guard must compare that.
+    expect(() => validateEnv({ MAIN_DATABASE_NAME: './data/openwa.sqlite' })).toThrow(/\.\/data\/openwa\.sqlite/);
+    expect(() => validateEnv({ DATABASE_TYPE: 'sqlite', MAIN_DATABASE_NAME: './data/../data/openwa.sqlite' })).toThrow(
+      /main database file/,
+    );
+  });
+
   it('rejects DATABASE_SYNCHRONIZE=true with DATABASE_TYPE=postgres (drops body_ts → /search 501)', () => {
     // The Postgres data connection hardcodes migrationsRun=true; an opted-in synchronize=true makes
     // TypeORM re-sync from entities on every boot, dropping the migration-created `body_ts` generated
@@ -498,5 +522,42 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ MEDIA_CONVERSION_CONCURRENCY: '0' })).toThrow(/positive integer/);
     expect(() => validateEnv({ MEDIA_CONVERSION_TIMEOUT_MS: 'abc' })).toThrow(/positive integer/);
     expect(() => validateEnv({ MEDIA_CONVERSION_MAX_OUTPUT_BYTES: '52428800' })).not.toThrow();
+  });
+
+  // Read with parseInt and a `> 0` guard, so `1h` became a 1 ms sweep interval rather than the default.
+  it.each([
+    'CHAT_MEDIA_ARCHIVE_MAX_BYTES',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'CHAT_MEDIA_ORPHAN_GRACE_MS',
+    'STATUS_MEDIA_MAX_BYTES',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_GRACE_MS',
+    'S3_REPROBE_INTERVAL_MS',
+    'STORAGE_EXPORT_TTL_MS',
+    'STORAGE_EXPORT_SWEEP_MAX_AGE_MS',
+  ])('rejects a unit-suffixed or non-positive %s and accepts a plain count', key => {
+    expect(() => validateEnv({ [key]: '1h' })).toThrow(new RegExp(`${key} must be a positive integer`));
+    expect(() => validateEnv({ [key]: '0' })).toThrow(new RegExp(`${key} must be a positive integer`));
+    expect(() => validateEnv({ [key]: '3600000' })).not.toThrow();
+  });
+
+  it('rejects a unit-suffixed CHAT_MEDIA_ARCHIVE_TTL_DAYS but keeps 0 (keep forever)', () => {
+    expect(() => validateEnv({ CHAT_MEDIA_ARCHIVE_TTL_DAYS: '30d' })).toThrow(/CHAT_MEDIA_ARCHIVE_TTL_DAYS/);
+    expect(() => validateEnv({ CHAT_MEDIA_ARCHIVE_TTL_DAYS: '0' })).not.toThrow();
+  });
+
+  // Node fires a timer delay above 2^31-1 ms after 1 ms, so these would spin instead of waiting.
+  it.each([
+    'MEDIA_CONVERSION_TIMEOUT_MS',
+    'CHAT_MEDIA_ORPHAN_SWEEP_INTERVAL_MS',
+    'STATUS_ORPHAN_SWEEP_INTERVAL_MS',
+    'S3_REPROBE_INTERVAL_MS',
+    'STORAGE_EXPORT_TTL_MS',
+    'MESSAGE_REAPER_INTERVAL_MS',
+    'WEBHOOK_RECONCILE_INTERVAL_MS',
+    'INGRESS_RECONCILE_INTERVAL_MS',
+  ])('rejects a %s above the Node timer ceiling', key => {
+    expect(() => validateEnv({ [key]: '2147483648' })).toThrow(new RegExp(`${key} must not exceed 2147483647 ms`));
+    expect(() => validateEnv({ [key]: '2147483647' })).not.toThrow();
   });
 });

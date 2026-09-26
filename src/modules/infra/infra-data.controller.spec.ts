@@ -1740,12 +1740,20 @@ describe('InfraDataController.importData status_updates + runtime reconciliation
   let ds: DataSource;
   const cfg = { get: (key: string, def?: unknown) => (key === 'dataDatabase.type' ? 'sqlite' : def) };
 
-  // Positional service constructor: (config, dataDs, auditService?, sessionService?, lidMappingStore?).
-  // The @Optional args trail the required ones; auditService is unused in these tests, so its slot
-  // stays undefined.
-  const build = (opts: { sessionService?: unknown; lidMappingStore?: unknown } = {}) =>
+  // Positional service constructor: (config, dataDs, auditService?, sessionService?, lidMappingStore?,
+  // ownership?, chatStateStore?). The @Optional args trail the required ones; auditService and
+  // ownership are unused in these tests, so their slots stay undefined.
+  const build = (opts: { sessionService?: unknown; lidMappingStore?: unknown; chatStateStore?: unknown } = {}) =>
     new InfraDataController(
-      new InfraDataService(cfg as never, ds, undefined, opts.sessionService as never, opts.lidMappingStore as never),
+      new InfraDataService(
+        cfg as never,
+        ds,
+        undefined,
+        opts.sessionService as never,
+        opts.lidMappingStore as never,
+        undefined,
+        opts.chatStateStore as never,
+      ),
     );
 
   beforeEach(async () => {
@@ -1955,22 +1963,26 @@ describe('InfraDataController.importData status_updates + runtime reconciliation
     expect((await ds.getRepository(Message).findOneByOrFail({ id: 'm1' })).body).toBe('hello');
   });
 
-  it('reloads the in-memory lid mappings after a committed restore', async () => {
+  it('reloads the in-memory lid mappings and chat states after a committed restore', async () => {
     await seedSession('s1');
     const lidMappingStore = { reload: jest.fn().mockResolvedValue(undefined) };
-    const controller = build({ lidMappingStore });
+    const chatStateStore = { reload: jest.fn().mockResolvedValue(undefined) };
+    const controller = build({ lidMappingStore, chatStateStore });
     const dump = await controller.exportData();
     const res = await controller.importData({ tables: dump.tables });
     expect(res.imported).toBe(true);
     expect(lidMappingStore.reload).toHaveBeenCalledTimes(1);
+    expect(chatStateStore.reload).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT reload lid mappings when the import is refused (nothing committed)', async () => {
+  it('does NOT reload lid mappings or chat states when the import is refused (nothing committed)', async () => {
     await seedSession('s1');
     const lidMappingStore = { reload: jest.fn().mockResolvedValue(undefined) };
-    const res = await build({ lidMappingStore }).importData({ tables: {} });
+    const chatStateStore = { reload: jest.fn().mockResolvedValue(undefined) };
+    const res = await build({ lidMappingStore, chatStateStore }).importData({ tables: {} });
     expect(res.imported).toBe(false);
     expect(lidMappingStore.reload).not.toHaveBeenCalled();
+    expect(chatStateStore.reload).not.toHaveBeenCalled();
   });
 
   it('409s when a live engine would be orphaned by the replace — unless force=true', async () => {

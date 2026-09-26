@@ -17,12 +17,20 @@ function makeRepo(initial: Partial<ChatState>[] = []) {
   }
   const repo = {
     rows,
-    find: jest.fn(() => Promise.resolve([...rows.values()])),
+    find: jest.fn((opts?: { where?: { sessionId: string } }) =>
+      Promise.resolve([...rows.values()].filter(r => !opts?.where || r.sessionId === opts.where.sessionId)),
+    ),
     findOne: jest.fn(({ where }: { where: { sessionId: string; chatId: string } }) =>
       Promise.resolve(rows.get(KEY(where.sessionId, where.chatId))),
     ),
+    // TypeORM's upsert overwrites only the columns the entity carries, so a partial one merges.
     upsert: jest.fn((v: ChatState) => {
-      rows.set(KEY(v.sessionId, v.chatId), { ...v });
+      rows.set(KEY(v.sessionId, v.chatId), { ...rows.get(KEY(v.sessionId, v.chatId)), ...v });
+      return Promise.resolve(undefined);
+    }),
+    delete: jest.fn(({ sessionId, chatId }: { sessionId: string; chatId?: string }) => {
+      for (const [k, r] of rows)
+        if (r.sessionId === sessionId && (chatId === undefined || r.chatId === chatId)) rows.delete(k);
       return Promise.resolve(undefined);
     }),
   };
@@ -46,6 +54,19 @@ describe('ChatStateStoreService', () => {
     const svc = svcWith(makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 123, archived: true, pinned: false }]));
     await svc.reload();
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: 123, archived: true, pinned: false });
+  });
+
+  it('clearSession drops one session from the table and the cache, and leaves the others', async () => {
+    const repo = makeRepo([
+      { sessionId: 's', chatId: 'c', archived: true },
+      { sessionId: 't', chatId: 'c', pinned: true },
+    ]);
+    const svc = svcWith(repo);
+    await svc.reload();
+    await svc.clearSession('s');
+    expect([...repo.rows.values()].map(r => r.sessionId)).toEqual(['t']);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    expect(svc.get('t', 'c')).toEqual({ muteEndTime: null, archived: false, pinned: true });
   });
 
   it('returns undefined for an unknown chat', () => {
@@ -89,6 +110,18 @@ describe('ChatStateStoreService', () => {
     expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ muteEndTime: 999, archived: true, pinned: true });
   });
 
+  it('writes only the patched column when the read-through for a cache-missed chat fails', async () => {
+    const repo = makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 999, archived: true, pinned: false }]);
+    repo.findOne.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    const svc = svcWith(repo);
+    await svc.remember('s', 'c', { pinned: true });
+    expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ muteEndTime: 999, archived: true, pinned: true });
+    // Nothing guessed is cached: the next read warms from the table.
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: 999, archived: true, pinned: true });
+  });
+
   it('does not churn a row when a cache-missed patch matches the persisted state', async () => {
     const repo = makeRepo([{ sessionId: 's', chatId: 'c', muteEndTime: 999, archived: true, pinned: false }]);
     const svc = svcWith(repo);
@@ -105,6 +138,104 @@ describe('ChatStateStoreService', () => {
     expect(svc.get('s', 'c')).toEqual({ muteEndTime: 5, archived: false, pinned: true });
   });
 
+  it('does not query again for a chat the table has no row for', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(repo.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads through again once a chat known to have no row gets one and is evicted', async () => {
+    process.env[ENV] = '1';
+    const svc = svcWith(makeRepo());
+    svc.get('s', 'c');
+    await tick(); // 'c' is now known to have no row
+    await svc.remember('s', 'c', { archived: true });
+    await svc.remember('s', 'd', { pinned: true }); // cap 1: evicts 'c' from the cache
+    expect(svc.get('s', 'c')).toBeUndefined();
+    await tick();
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
+  });
+
+  describe('refreshSession (a start: another node may have written the rows since)', () => {
+    it('serves one session from the table on the very next read, cached or known absent', async () => {
+      const repo = makeRepo([
+        { sessionId: 's', chatId: 'muted', muteEndTime: -1 },
+        { sessionId: 's', chatId: 'gone', pinned: true },
+        { sessionId: 't', chatId: 'c', pinned: true },
+      ]);
+      const svc = svcWith(repo);
+      await svc.reload();
+      svc.get('s', 'new');
+      await tick(); // 'new' is now known to have no row
+      // Written by the node that held the session meanwhile.
+      await repo.upsert({ sessionId: 's', chatId: 'muted', muteEndTime: null } as ChatState);
+      await repo.upsert({ sessionId: 's', chatId: 'new', archived: true } as ChatState);
+      await repo.delete({ sessionId: 's', chatId: 'gone' });
+      await repo.upsert({ sessionId: 't', chatId: 'c', pinned: false } as ChatState);
+      await svc.refreshSession('s');
+      expect(svc.get('s', 'muted')).toEqual(expect.objectContaining({ muteEndTime: null }));
+      expect(svc.get('s', 'new')).toEqual(expect.objectContaining({ archived: true }));
+      expect(svc.get('s', 'gone')).toBeUndefined();
+      expect(svc.get('t', 'c')).toEqual(expect.objectContaining({ pinned: true })); // another session is untouched
+    });
+
+    it('keeps the cache when the table cannot be read, and reads the absent chats through again', async () => {
+      const repo = makeRepo([{ sessionId: 's', chatId: 'c', archived: true }]);
+      const svc = svcWith(repo);
+      await svc.reload();
+      svc.get('s', 'new');
+      await tick();
+      repo.find.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+      await expect(svc.refreshSession('s')).resolves.toBeUndefined();
+      expect(svc.get('s', 'c')).toEqual(expect.objectContaining({ archived: true }));
+      await repo.upsert({ sessionId: 's', chatId: 'new', pinned: true } as ChatState);
+      svc.get('s', 'new');
+      await tick();
+      expect(svc.get('s', 'new')).toEqual(expect.objectContaining({ pinned: true }));
+    });
+  });
+
+  it('forget drops the named chats of one session from the table and the cache, after their pending writes', async () => {
+    const repo = makeRepo([
+      { sessionId: 's', chatId: 'd', pinned: true },
+      { sessionId: 't', chatId: 'c', pinned: true },
+    ]);
+    const svc = svcWith(repo);
+    await svc.reload();
+    const pending = svc.remember('s', 'c', { archived: true }); // not awaited, as the session store calls it
+    await svc.forget('s', ['c', 'd']);
+    await pending;
+    expect([...repo.rows.keys()]).toEqual([KEY('t', 'c')]);
+    expect(svc.get('s', 'c')).toBeUndefined();
+    expect(svc.get('s', 'd')).toBeUndefined();
+    expect(svc.get('t', 'c')).toEqual(expect.objectContaining({ pinned: true }));
+  });
+
+  it('forget swallows a repo error', async () => {
+    const repo = makeRepo();
+    repo.delete.mockRejectedValueOnce(new Error('SQLITE_BUSY'));
+    await expect(svcWith(repo).forget('s', ['c'])).resolves.toBeUndefined();
+  });
+
+  it('keeps both of two concurrent patches for a chat that is not cached yet', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    await Promise.all([svc.remember('s', 'c', { archived: true }), svc.remember('s', 'c', { pinned: true })]);
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: true });
+    expect(repo.rows.get(KEY('s', 'c'))).toMatchObject({ archived: true, pinned: true });
+  });
+
+  it('does not let a concurrent no-op patch reset the cached state of an uncached chat', async () => {
+    const repo = makeRepo();
+    const svc = svcWith(repo);
+    await Promise.all([svc.remember('s', 'c', { pinned: true }), svc.remember('s', 'c', { archived: false })]);
+    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: false, pinned: true });
+  });
+
   it('swallows a repo error on reload and remember (table may not exist yet)', async () => {
     const repo = {
       find: jest.fn(() => Promise.reject(new Error('no such table'))),
@@ -114,7 +245,12 @@ describe('ChatStateStoreService', () => {
     const svc = new ChatStateStoreService(repo as unknown as Repository<ChatState>);
     await expect(svc.reload()).resolves.toBeUndefined();
     await expect(svc.remember('s', 'c', { archived: true })).resolves.toBeUndefined();
-    // the in-memory mirror still updated even though the write failed
-    expect(svc.get('s', 'c')).toEqual({ muteEndTime: null, archived: true, pinned: false });
+    // The read failed too, so there is no merge base: only the patched column is written, and no
+    // guessed state is cached (the chat reads from its live record until the table answers).
+    const [written] = repo.upsert.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(written).toMatchObject({ sessionId: 's', chatId: 'c', archived: true });
+    expect(written).not.toHaveProperty('muteEndTime');
+    expect(written).not.toHaveProperty('pinned');
+    expect(svc.get('s', 'c')).toBeUndefined();
   });
 });

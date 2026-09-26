@@ -32,7 +32,9 @@
     "never": "Never",
     "justNow": "Just now",
     "minAgo": "{{count}} min ago",
-    "hoursAgo": "{{count}} hours ago",
+    "minAgo_other": "{{count}} min ago",
+    "hoursAgo": "{{count}} hour ago",
+    "hoursAgo_other": "{{count}} hours ago",
     "optional": "optional",
     "language": "Language",
     "back": "Back",
@@ -99,6 +101,25 @@
       "delete": "Delete message"
     },
     "replyingTo": "Replying to {{name}}",
+    "messageType": {
+      "text": "Text",
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "voice": "Voice message",
+      "document": "Document",
+      "sticker": "Sticker",
+      "location": "Location",
+      "contact": "Contact",
+      "poll": "Poll",
+      "call": "Call",
+      "revoked": "Deleted message",
+      "order": "Order",
+      "product": "Product",
+      "masked": "Hidden message",
+      "unknown": "Message",
+      "unknownType": "Unknown type"
+    },
     "you": "You",
     "youPrefix": "You: ",
     "yesterday": "Yesterday",
@@ -121,7 +142,9 @@
       "group": "Group",
       "channel": "Channel",
       "status": "Status",
-      "broadcast": "Broadcast"
+      "broadcast": "Broadcast",
+      "individual": "Individual",
+      "unknown": "Unknown"
     },
     "tab": {
       "chats": "Chats",
@@ -165,7 +188,8 @@
       "react": "Failed to react to message",
       "delete": "Failed to delete message",
       "clickButton": "Failed to click button",
-      "fileTooLarge": "File is too large (max 18 MB)"
+      "fileTooLarge": "File is too large (max 18 MB)",
+      "searchHitSessionNotReady": "The session of this message is not connected"
     },
     "loadMessagesError": "Couldn't load messages. Check the server logs.",
     "messageStatus": {
@@ -276,7 +300,8 @@
       "successTitle": "Session Created",
       "successDesc": "Session \"{{name}}\" created successfully",
       "errorTitle": "Create Failed",
-      "errorDefault": "Failed to create session"
+      "errorDefault": "Failed to create session",
+      "tooShort": "Name must be at least 3 characters."
     },
     "delete": {
       "title": "Confirm Delete",
@@ -598,7 +623,10 @@
     },
     "empty": {
       "title": "No API keys created",
-      "description": "Create an API key to authenticate your requests"
+      "description": "Create an API key to authenticate your requests",
+      "loadErrorTitle": "Could not load API keys",
+      "forbiddenTitle": "No access to API keys",
+      "forbiddenDesc": "Managing API keys requires an admin key that is not restricted to specific sessions."
     },
     "confirm": {
       "deleteTitle": "Delete API Key",
@@ -651,7 +679,12 @@
       "filteredTitle": "No matches on this page",
       "filteredDescription": "The search filters the current page only. Clear it, page through, or use the severity filter to narrow server-side.",
       "filteredServerDescription": "No logs match these filters. Adjust the severity filter to widen the search."
-    }
+    },
+    "exportFailed": "Couldn't export the audit log",
+    "exportTruncated": "The export covers only the newest {{rows}} entries. Narrow the severity filter to export older ones.",
+    "exportThrottled": "The export covers only the newest {{rows}} entries because the gateway is rate-limiting audit log reads. Wait a minute and export again.",
+    "exportNoMatches": "No audit log entries match the search, so nothing was exported.",
+    "exportNoMatchesTruncated": "None of the newest {{rows}} entries scanned match the search, so nothing was exported. Older entries were not searched."
   },
   "messageTester": {
     "title": "Message Tester",
@@ -894,7 +927,8 @@
     "toasts": {
       "saveFailed": "Save Failed"
     },
-    "statusLoadError": "Couldn't load the current infrastructure status. Refresh to try again."
+    "statusLoadError": "Couldn't load the current infrastructure status. Refresh to try again.",
+    "configLoadError": "Couldn't load the saved configuration, so it can't be edited here. Refresh to try again."
   },
   "plugins": {
     "title": "Plugins",
@@ -902,6 +936,19 @@
     "refresh": "Refresh",
     "builtIn": "Built-in",
     "noDescription": "No description available",
+    "statuses": {
+      "installed": "Installed",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "error": "Error"
+    },
+    "types": {
+      "engine": "Engine",
+      "storage": "Storage",
+      "queue": "Queue",
+      "auth": "Auth",
+      "extension": "Extension"
+    },
     "enable": "Enable",
     "disable": "Disable",
     "healthCheck": "Health Check",
@@ -999,7 +1046,8 @@
         "title": "Instance created",
         "hint": "Copy the secret now — it is shown only once.",
         "secret": "Signing secret",
-        "ingressUrls": "Ingress URL(s)"
+        "ingressUrls": "Ingress URL(s)",
+        "verifyToken": "Verify token"
       },
       "regenerate": {
         "title": "Regenerate secret",

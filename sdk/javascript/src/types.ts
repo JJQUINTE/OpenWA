@@ -74,10 +74,14 @@ export interface SessionResponse {
    */
   restriction?: AccountRestriction | null;
   /**
-   * Whether the gateway holds a live engine for this session right now — the precondition `stop`,
-   * `logout` and `force-kill` require and `start` refuses. Not derivable from `status`:
-   * `disconnected` covers both a session mid automatic-reconnect (engine present) and one stopped
-   * with no engine. Absent from a gateway that predates the field.
+   * Whether the gateway holds a live engine for this session: an engine in the answering process
+   * or, in a multi-node deployment, a live claim by the node running it. On the node running the
+   * session, `true` means `stop`, `logout` and `force-kill` can act and `start` is refused. For a
+   * session another node runs, those routes act only when request routing (`NODE_URL` on every
+   * node) forwards them; without it, other nodes answer 409 to `start` and `stop` and 400 to
+   * `logout` and `force-kill`. Not derivable from `status`: `disconnected` covers both a session
+   * mid automatic-reconnect (engine present) and one stopped with no engine. Absent from a gateway
+   * that predates the field.
    */
   engineLoaded: boolean;
 }
@@ -1059,8 +1063,9 @@ export interface SubscribePresenceRequest {
 export interface MarkChatReadRequest extends MarkChatRequest {
   /**
    * Specific message IDs to acknowledge. Baileys acknowledges individual messages, so without this
-   * only the newest message the engine still holds in memory gets a receipt: a burst leaves its
-   * earlier messages unread forever, and a restarted session has no message to acknowledge at all.
+   * only the newest received message the engine still holds in memory gets a receipt: a burst
+   * leaves its earlier messages unread forever, and a restarted session has no message to
+   * acknowledge at all.
    * Callers that persist inbound message IDs should send them here. Ignored by whatsapp-web.js,
    * whose own sendSeen is chat-level. At most 100 per request; an empty array is rejected.
    */
@@ -1188,6 +1193,7 @@ export interface HealthReadyResponse {
 export interface AuthValidateResponse {
   valid: boolean;
   role?: string;
+  engineType?: string;
 }
 
 // ── Template ──────────────────────────────────────────────────────
@@ -1238,7 +1244,7 @@ export interface ChannelRecord {
   /** Invite code from the channel link. */
   inviteCode?: string;
   subscriberCount?: number;
-  /** Channel picture URL. Populated by Baileys; whatsapp-web.js omits it. */
+  /** Channel picture URL. Not currently filled by either engine. */
   picture?: string;
   verified?: boolean;
   /** Channel creation time as reported by the engine. Populated by Baileys; whatsapp-web.js omits it. */
@@ -1290,9 +1296,11 @@ export interface CatalogProduct {
   id: string;
   name: string;
   description?: string | null;
-  price: number;
-  currency: string;
-  priceFormatted: string;
+  /** Absent when the product has no price. */
+  price?: number;
+  currency?: string;
+  /** Absent when `price` is. */
+  priceFormatted?: string;
   imageUrl?: string | null;
   url: string;
   isAvailable: boolean;

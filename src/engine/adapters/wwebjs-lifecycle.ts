@@ -447,7 +447,18 @@ export class WwebjsLifecycle {
     // removeStaleSingletonFiles. This runs after the orphan kill above and before this attempt's
     // browser exists, so it cannot pull the files out from under a running Chromium.
     await removeStaleSingletonFiles(this.host.config.sessionId, this.host.config.sessionDataPath, this.host.logger);
-    await client.initialize();
+    if (this.tearingDown) return;
+    try {
+      await client.initialize();
+    } finally {
+      // A stop, delete or logout that landed mid-launch ran Client.destroy() before whatsapp-web.js
+      // assigned pupBrowser, so it closed nothing. The handle exists now: close the browser here, or
+      // it stays logged in with no owner until the process exits.
+      if (this.tearingDown || this.client !== client) {
+        await client.destroy().catch(() => undefined);
+      }
+    }
+    if (this.tearingDown || this.client !== client) return;
     // whatsapp-web.js 1.34.x never observes the Chromium process/page it drives, so a crashed
     // browser leaves the client looking READY forever ("silent death"). Attach death listeners
     // to the puppeteer handles so a dead browser surfaces as a normal disconnect → reconnect.

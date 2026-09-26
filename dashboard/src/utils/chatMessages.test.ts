@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildMentionNameMap,
   resolveMentions,
+  stripMentionDelimiters,
   mapEngineHistoryMessage,
   mergeChatMessages,
   mergeReactionSnapshot,
@@ -608,4 +609,28 @@ test('a push name carrying the span delimiters cannot close its own mention earl
     msg({ author: '6281112345@c.us', chatName: `X${MENTION_CLOSE}bit.ly/free ${MENTION_OPEN}Y` }),
   ]);
   assert.equal(resolveMentions('hi @6281112345', names), `hi ${wrap('@Xbit.ly/free')}`);
+});
+
+test('resolveMentions does not fire after "_" or "(" inside a URL, only when the opener run follows whitespace', () => {
+  const names = buildMentionNameMap([msg({ author: '6281234567@c.us', chatName: 'Ann' })]);
+  for (const body of ['https://x.example/p_@6281234567/doc', 'https://x.example/wiki/A_(@6281234567)']) {
+    assert.equal(resolveMentions(body, names), body);
+  }
+  assert.equal(resolveMentions('hi _(@6281234567)_', names), `hi _(${wrap('@Ann')})_`);
+  assert.equal(resolveMentions('`x`*@6281234567*', names), `\`x\`*${wrap('@Ann')}*`);
+});
+
+test('a span delimiter already in a raw body is dropped, so it can never parse as a mention', () => {
+  const raw = `see ${MENTION_OPEN}*not bold* https://x.example${MENTION_CLOSE} end`;
+  assert.equal(stripMentionDelimiters(raw), 'see *not bold* https://x.example end');
+  assert.equal(resolveMentions(raw, new Map()), 'see *not bold* https://x.example end');
+  const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: 'Ann' })]);
+  assert.equal(resolveMentions(`${MENTION_OPEN} *hi* @6281112345`, names), ` *hi* ${wrap('@Ann')}`);
+});
+
+test('a push name whose first word is invisible renders its first visible word, not a bare @', () => {
+  for (const blank of ['\u3164', '\u200B', '\u2800']) {
+    const names = buildMentionNameMap([msg({ author: '6281112345@c.us', chatName: `${blank} Bob Smith` })]);
+    assert.equal(resolveMentions('@6281112345', names), wrap('@Bob'));
+  }
 });

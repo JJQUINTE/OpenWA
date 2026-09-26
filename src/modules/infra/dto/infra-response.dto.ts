@@ -184,7 +184,8 @@ export class AvailableEngineDto {
 
   @ApiPropertyOptional({
     type: EngineLibraryDto,
-    description: 'Absent when the plugin does not report a library, which includes any disabled engine.',
+    description:
+      'Absent when the plugin does not report a library. Built-in engines report it whether or not they are enabled.',
   })
   library?: EngineLibraryDto;
 }
@@ -530,10 +531,15 @@ export class StorageFileCountResponseDto {
 }
 
 export class StorageExportResponseDto {
-  @ApiProperty({ example: 'Storage archive created.' })
+  @ApiProperty({ example: 'Storage export completed' })
   message!: string;
 
-  @ApiProperty({ description: 'Path to download the archive from.', example: '/api/infra/storage/download/xyz.tar' })
+  @ApiProperty({
+    description:
+      'Server-side path of the archive, relative to the gateway working directory. Not a download URL: ' +
+      'pass it as `filePath` to POST /api/infra/storage/import.',
+    example: 'data/exports/storage-export-1750000000000-abc.tar.gz',
+  })
   download!: string;
 }
 

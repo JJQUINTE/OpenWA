@@ -346,6 +346,47 @@ func TestRetryReplaysPostOnBackpressure(t *testing.T) {
 	}
 }
 
+// pacingTransport replies with the gateway's send-pacing refusal: a 429 with no
+// Retry-After whose body carries the real delay, which can be hours.
+type pacingTransport struct{ calls int32 }
+
+func (t *pacingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	atomic.AddInt32(&t.calls, 1)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	return &http.Response{
+		StatusCode: 429,
+		Body: io.NopCloser(strings.NewReader(
+			`{"statusCode":429,"message":"Daily send cap reached","code":"SEND_PACING_LIMITED","retryAfterSeconds":34521}`)),
+		Header:  http.Header{},
+		Request: req,
+	}, nil
+}
+
+// A send-pacing refusal must not be retried before retryAfterSeconds, so the
+// policy returns it after one attempt, with the body intact for the caller.
+func TestRetryDoesNotReplaySendPacingRefusal(t *testing.T) {
+	rt := &pacingTransport{}
+	c := newTestClient(t, rt, WithRetry(RetryPolicy{
+		MaxRetries: 3, BaseDelay: time.Millisecond, MaxDelay: 5 * time.Millisecond,
+		RetryableStatuses: []int{429, 500, 502, 503, 504}, RespectRetryAfter: true,
+	}))
+
+	_, err := c.Messages.SendText(context.Background(), "s1", SendTextRequest{ChatID: "x", Text: "y"})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("expected a 429 APIError, got %v", err)
+	}
+	if rt.calls != 1 {
+		t.Fatalf("a SEND_PACING_LIMITED 429 must not be retried: got %d attempts, want 1", rt.calls)
+	}
+	body, _ := apiErr.Body.(map[string]any)
+	if body["code"] != "SEND_PACING_LIMITED" || body["retryAfterSeconds"] != float64(34521) {
+		t.Fatalf("expected the refusal body to reach the caller, got %#v", apiErr.Body)
+	}
+}
+
 func TestMiddlewarePipeline(t *testing.T) {
 	rt := &recordTransport{status: 200, body: `[]`}
 	var hits int32
@@ -418,6 +459,26 @@ func TestRetryHonorsRetryAfter(t *testing.T) {
 	waited := rt.stamps[1].Sub(rt.stamps[0])
 	if waited < 900*time.Millisecond {
 		t.Fatalf("expected to wait ~1s for Retry-After, waited %s", waited)
+	}
+}
+
+// A Retry-After longer than the time left on the request cannot be honored, so
+// the 429 goes back to the caller at once instead of sleeping out the timeout
+// and surfacing as a *TimeoutError that hides the rate limit.
+func TestRetryReturnsResponseWhenRetryAfterOutlastsDeadline(t *testing.T) {
+	rt := &retryAfterTransport{header: "60"}
+	c := newTestClient(t, rt, WithTimeout(500*time.Millisecond), WithRetry(DefaultRetryPolicy()))
+
+	start := time.Now()
+	_, err := c.Messages.SendText(context.Background(), "s1", SendTextRequest{ChatID: "x", Text: "y"})
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("expected ErrRateLimited, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Fatalf("expected the 429 back at once, waited %s", elapsed)
+	}
+	if rt.calls != 1 {
+		t.Fatalf("expected 1 attempt, got %d", rt.calls)
 	}
 }
 
@@ -873,8 +934,8 @@ func TestUpdateGroupSettingsOmitsUnsetFields(t *testing.T) {
 	}
 }
 
-// A 503 is the gateway's answer when the engine never confirmed an operation — a transport failure,
-// and the one sentinel here worth retrying. It used to have none, while the permanent 501 did.
+// A 503 is the gateway's answer when the engine never confirmed an operation: a transport failure,
+// which is worth retrying, as a 429 is. It used to have no sentinel, while the permanent 501 did.
 func TestServiceUnavailableIsRetryableSentinel(t *testing.T) {
 	rt := &recordTransport{
 		status: 503,
