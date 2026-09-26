@@ -28,7 +28,6 @@ function installFetchStub(): void {
 
 let rtl: typeof import('@testing-library/react');
 let Plugins: (typeof import('./Plugins.tsx'))['default'];
-let RoleProvider: (typeof import('../components/RoleProvider.tsx'))['RoleProvider'];
 let ToastProvider: (typeof import('../components/Toast.tsx'))['ToastProvider'];
 let queryClient: QueryClient | undefined;
 
@@ -52,10 +51,8 @@ before(async () => {
   });
 
   installFetchStub();
-  window.localStorage.setItem('openwa_user_role', 'admin');
   await i18nReady;
   rtl = await import('@testing-library/react');
-  ({ RoleProvider } = await import('../components/RoleProvider.tsx'));
   ({ ToastProvider } = await import('../components/Toast.tsx'));
   ({ default: Plugins } = await import('./Plugins.tsx'));
 });
@@ -73,7 +70,7 @@ function renderPlugins(): void {
     createElement(
       QueryClientProvider,
       { client: queryClient },
-      createElement(RoleProvider, null, createElement(ToastProvider, null, createElement(Plugins))),
+      createElement(ToastProvider, null, createElement(Plugins)),
     ),
   );
 }
@@ -146,9 +143,5 @@ test('PluginConfigUi replies to config:get with localized schema and locale', as
 
   // Bug #1522: The schema must be localized and locale must be present
   assert.equal(msg.locale, 'es', 'locale was not sent in config:value');
-  assert.equal(
-    msg.schema?.properties.field1.title,
-    'Spanish Title',
-    'schema was not localized in config:value',
-  );
+  assert.equal(msg.schema?.properties.field1.title, 'Spanish Title', 'schema was not localized in config:value');
 });
